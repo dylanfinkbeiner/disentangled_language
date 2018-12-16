@@ -4,9 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 '''
-	Should be implementation of Jabberwocky dropout-heavy
-	BiAffine Dependency Parser, specifically using frequency based
-	dropout with alpha=40
+	An implementation of Jabberwocky dropout-heavy
+	BiAffine Attention Dependency Parser
 '''
 
 alpha = 40
