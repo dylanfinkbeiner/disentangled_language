@@ -9,48 +9,62 @@ from ptb_dataset import PTB_Dataset
 import os
 
 NUM_EPOCHS = 100
-BATCH_SIZE = 10
+BATCH_SIZE = 20
+
+WEIGHTS_PATH = '../weights'
+MODEL_NAME = ''
 
 def main():
-	dataset = PTB_Dataset()
+
+
+	parser = BiAffineParser(params)
+
+    if os.path.isdir(WEIGHTS_PATH):
+        parser.load_state_dict(torch.load(WEIGHT_PATH))
+
+	#TODO get model params to feed to optimizer
+
+	if train:
+	train_dataset = PTB_Dataset(train_file)
 	loader = DataLoader(dataset=dataset,
 			batch_size=BATCH_SIZE,
 			shuffle=True)
 
-
 	num_batches = num_samples / BATCH_SIZE
 
-	parser = BiAffineParser()
+		#Optimizer
+		optim = Adam(params, lr=1e-1)
 
-	#TODO get model params to feed to parser
+		parser.train()
+		for e in range(NUM_EPOCHS):
 
-	#Optimizer
-	optim = Adam(params, lr=1e-1)
+			for b in range(num_batches):
+				optim.zero_grad()
 
-	parser.train()
-	for e in range(NUM_EPOCHS):
+				'''Get batch of data (since batches are tensors with shape
+				   [batchsize, ...], does tuple unpacking unpack these components
+				   into [batchsize, words], [batchsize, pos],... tensors?)
+				'''
+				words, pos, sent_lens, arcs, deprels = next(loader)
 
-		for b in range(num_batches):
-			optim.zero_grad()
+				#Forward pass
+				S, L = parser(words, pos)
 
-			#Get batch data
-			words, pos, sent_lens, arcs, deprels = next(loader)
+				#Calculate losses
+				loss =  loss_heads(S, arcs)
+				loss += loss_labels(L, deprels)
 
-			#Forward pass
-			S, L = parser(words, pos)
+				loss.backward()
+				optim.step()
+		
 
-			#Calculate losses
-			loss =  loss_heads(S, arcs)
-			loss += loss_labels(L, deprels)
-
-			loss.backward()
-			optim.step()
+		#Save weights
+		if not os.path.isdir(WEIGHTS_PATH):
+			os.mkdir(WEIGHTS_PATH)
+		torch.save(parser.state_dict(), '%s-%s' % (SAVE_PATH, MODEL_NAME))
 	
-
-	#Save weights
-	if not os.path.isdir(WEIGHTS_PATH):
-		os.mkdir(WEIGHTS_PATH)
-	torch.save(parser.state_dict(), '%s-%s' % (SAVE_PATH, MODEL_NAME))
+	elif test:
+		pass
 			
 
 def make_dicts():
@@ -68,15 +82,30 @@ def sent_to_i(sentences, x2i):
 def train_test_split(data):
 	pass
 
+#Eventually, probably should pull loss functions out into a utilities file
 def loss_heads(S, heads):
-	#Get softmax of outputs from parser forward pass
+	'''
+	S - should be something like a tensor w/ shape
+	    (batch_size, sent_len, sent_len); also, these are
+	    head scores BEFORE softmax applied
+
+	heads - should be a list of integers (the indices)
+	'''
+	Y_heads = Variable(torch.LongTensor(heads), autograd=False)
 
 	#Cross-entropy between S and 
-	return F.cross_entropy(S, heads)
+	return F.cross_entropy(S, Y_heads)
 
 def loss_rels(L, deprels):
+	'''
+	L - should be tensor w/ shape (batch_size, sent_len, d_rel)
 
-	return F.cross_entropy(L, labels)
+	deprels - should be a list of dependency relations as they are indexed in the dict
+	'''
+
+	Y_labels = Variable(torch.LongTensor(deprels), autograd=False)
+
+	return F.cross_entropy(L, Y_labels)
 
 if name == '__main__':
 	main()

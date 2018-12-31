@@ -24,11 +24,11 @@ class BiaffineParser(nn.Module):
 		super(BiaffineParser, self).__init__()
 
 		#Embeddings
-		self.word_em = nn.Embedding(vocab_size, word_e_size)
-		self.pos_em  = nn.Embedding(pos_vocab_size, pos_e_size)
+		self.word_emb = nn.Embedding(vocab_size, word_e_size)
+		self.pos_emb = nn.Embedding(pos_vocab_size, pos_e_size)
 
 		#Dropout
-		self.in_dropout = nn.Dropout(p=input_dropout)
+		self.input_dropout = nn.Dropout(p=input_dropout)
 
 		#LSTM 
 		self.lstm = nn.LSTM(input_size=word_e_size+pos_e_size,
@@ -65,13 +65,13 @@ class BiaffineParser(nn.Module):
 
 	def forward(self, x_words, x_pos, sent_len):
 		#Embeddings
-		w_embs = self.word_em(x_words)
-		p_embs = self.pos_em(x_pos)
-		embs   = torch.cat([w_embs, p_embs], -1)
-		lstm_input = self.in_dropout(embs)
+		w_embs = self.word_emb(x_words)
+		p_embs = self.pos_emb(x_pos)
+		
+		lstm_input = self.input_dropout(torch.cat([w_embs, p_embs], -1))
 
 		#Feed to LSTM
-		H, (h_n,c_n) = self.lstm(lstm_input) #XXX currently assuming lstm outputs a list of output states for each word...
+		H, (h_n, c_n) = self.lstm(lstm_input) #XXX currently assuming lstm outputs a list of output states for each word...
 		# h_n and c_n will have shape (2, #batches, hidden_size) if LSTM 1-layer deep
 
 		#MLPs XXX if you feed a list of h_k's in, does the MLP output a list of outputs?
@@ -85,7 +85,11 @@ class BiaffineParser(nn.Module):
 		HW = torch.mm(H_arc_head, self.W_arc) 
 		Hb = torch.mm(H_arc_head, self.b_arc)
 
-		S = torch.tensor([ nn.Softmax(torch.mm(HW, H_arc_dep[i]) for i in range(sent_len)) ])
+		#Note, we do NOT compute softmax here since F.cross_entropy takes logits
+		#S = torch.tensor([nn.Softmax(torch.mm(HW, H_arc_dep[i]) for i in range(sent_len)) ])
+		S = torch.Tensor(
+				[(torch.mm(HW, H_arc_dep[i]) for i in range(sent_len))]
+				)
 
 		#Collect predicted heads of words by greedy maximum
 		p_heads = torch.zeros(sent_len, 1)
