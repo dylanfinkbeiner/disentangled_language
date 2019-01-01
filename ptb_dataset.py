@@ -2,31 +2,30 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
-import subprocess
 
-DATA_PATH = '../data' #TODO
+DATA_PATH = '../data/' #TODO
 
-class PTB_Dataset(Dataset):
-    def __init__(self, num_sents):
-        #Fetch data
-        self.data = None
 
-        sent_count = subprocess.check_output(
-                f"ls {data_path} | wc -l",
-                shell=True)
-        sent_count = int(sent_count.strip())
+UNK_TOKEN = '<UNK>'
+ROOT_TOKEN = '<ROOT>'
+PAD_TOKEN = '<PAD>'
 
-        self.len = None
-        self.x_data = None
-        self.y_data = None
 
-    def __len__(self):
-        return self.len
+def get_dataset(conllu_file):
+        sents_list = conllu_to_sents(conllu_file)
 
-    def __getitem__(self, index):
+        dicts = build_dicts(sents_list)
 
-        return self.x_data[index], self.y_data[index]
+        data_list = numericalize(sents_list, dicts)
 
+
+
+
+
+def custom_data_loader():
+
+    while True:
+        yield 'uhh'
 
 '''NOTE:
 Probably we will call this once for a 
@@ -44,6 +43,7 @@ def conllu_to_sents(f: str):
 
     mask = [1, 4, 6, 7] # [word, pos, head, rel]
 
+    #TODO should replace this open w/ a "with" block
     conllu_file = open(f, 'r')
     lines = conllu_file.readlines()
 
@@ -63,31 +63,64 @@ def conllu_to_sents(f: str):
 
     return sents_list
 
+def build_dicts(sents_list):
 
-def build_dicts(sents):
-
-    words = []
-    pos = []
-    rels = []
-
-    for s in sents:
+    words, pos, rels = set(), set(), set()
+    for s in sents_list:
         for line in s:
-            words.append(line[0])
-            pos.append(line[1])
-            rels.append(line[3])
+            words.add(line[0])
+            pos.add(line[1])
+            rels.add(line[3])
 
-    word_vocab = set(words)
-    pos_vocab = set(pos)
-    rels_vocab = set(rels)
+    word2num, pos2num, rel2num = dict(), dict(), dict()
+    num2word, num2pos, num2rel = dict(), dict(), dict()
 
-    word2num = {w:i for (i,w) in enumerate(word_vocab)}
-    pos2num = {p:i for (i,p) in enumerate(pos_vocab)}
-    rel2num = {r:i for (i,r) in enumerate(rels_vocab)}
+    word2num[PAD_TOKEN] = 0
+    #word2num[UNK_TOKEN] = 1
+
+    word2num = {w:i for (i,w) in enumerate(words)}
+    pos2num = {p:i for (i,p) in enumerate(pos)}
+    rel2num = {r:i for (i,r) in enumerate(rels)}
 
     num2word = {i:w for (w,i) in word2num.items()}
     num2pos = {i:p for (p,i) in pos2num.items()}
     num2rel = {i:r for (r,i) in rel2num.items()}
 
+    x2num_maps = {'words' : word2num, 'pos' : pos2num, 'rel' : rel2num}
+    num2x_maps = {'words' : word2num, 'pos' : pos2num, 'rel' : rel2num}
 
-    return word2num, pos2num, rel2num
+    return x2num_maps, num2x_maps
+
+
+def numericalize(sents_list, x2num_maps):
+
+    word2num = x2num_maps['words']
+    pos2num = x2num_maps['pos']
+    rel2num = x2num_maps['rel']
+
+    sents_num = []
+
+    for s in sents_list:
+        curr = np.zeros(np.shape(s), dtype=int)
+
+        for i in range(np.shape(s)[0]):
+            curr[i,0] = word2num[s[i, 0]]
+            curr[i,1] = pos2num[s[i, 1]]
+            curr[i,2] = int(s[i, 2]) #head
+            curr[i,3] = rel2num[s[i, 3]]
+
+        sents_num.append(curr)
+
+    return sents_num
+
+def testing():
+    sents_list = conllu_to_sents('/Users/dylanfinkbeiner/Desktop/stanford-parser-full-2018-10-17/treebank.conllu')
+
+    dict2, _ =  build_dicts(sents_list)
+
+    numd = numericalize(sents_list, dict2)
+
+
+if __name__ == '__main__':
+    testing()
 
