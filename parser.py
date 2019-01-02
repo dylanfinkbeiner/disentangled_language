@@ -64,6 +64,12 @@ class BiaffineParser(nn.Module):
 
 
 	def forward(self, x_words, x_pos, sent_len):
+        '''
+        x_words - list/LongTensor of mappings to integers from x2nums dict
+        x_pos - list/LongTensor ...
+        sent_len - 
+        '''
+
 		#Embeddings
 		w_embs = self.word_emb(x_words)
 		p_embs = self.pos_emb(x_pos)
