@@ -38,27 +38,26 @@ def chunk_to_batch(chunk):
     '''
 
     batch_size = len(chunk)
-
-    lengths_list = [np.shape(s)[0] for s in chunk]
-    length_longest = max(lengths_list)
+    chunk_sorted = sorted(chunk, key = lambda s: np.shape(s)[0])
+    sent_lens = [np.shape(s)[0] for s in chunk_sorted]
+    length_longest = lengths_list[0]
 
     words = torch.zeros((batch_size, length_longest), dtype=torch.long)
     pos = torch.zeros((batch_size, length_longest), dtype=torch.long)
     heads = torch.zeros((batch_size, length_longest), dtype=torch.long)
     rels = torch.zeros((batch_size, length_longest), dtype=torch.long)
-    for i, s in enumerate(chunk):
+    for i, s in enumerate(chunk_sorted):
         for j, _ in enumerate(s):
             '''
             Casting as ints because for some stupid reason
             you cannot set a value in torch long tensor using 
             numpy's 64 bit ints
             '''
-            words[i][j] = int(s[j,0]) 
+            words[i,j] = int(s[j,0]) 
             pos[i,j] = int(s[j,1])
             heads[i,j] =  int(s[j,2])
             rels[i,j] =  int(s[j,3])
 
-    sent_lens = lengths_list #XXX wrong
 
     return words, pos, sent_lens, heads, rels
 

@@ -46,10 +46,10 @@ def main():
                 words, pos, sent_lens, heads, rels = next(loader)
 
                 #Forward pass
-                S, L = parser(words, pos)
+                S, L = parser(words, pos, sent_lens)
 
                 #Calculate losses
-                loss =  loss_heads(S, heads)
+                loss = loss_heads(S, heads)
                 loss += loss_labels(L, rels)
 
                 loss.backward()
@@ -76,7 +76,7 @@ def loss_heads(S, heads):
 
     heads - should be a list of integers (the indices)
     '''
-    Y_heads = Variable(torch.LongTensor(heads), autograd=False)
+    Y_heads = Variable(heads, autograd=False)
 
     #Cross-entropy between S and 
     return F.cross_entropy(S, Y_heads)
@@ -88,7 +88,7 @@ def loss_rels(L, rels):
     deprels - should be a list of dependency relations as they are indexed in the dict
     '''
 
-    Y_labels = Variable(torch.LongTensor(rels), autograd=False)
+    Y_labels = Variable(rels, autograd=False)
 
     return F.cross_entropy(L, Y_labels)
 

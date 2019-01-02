@@ -54,7 +54,7 @@ class BiaffineParser(nn.Module):
 				nn.Linear(hidden_size*2, d_rel),
 				nn.ReLU())
 
-		#Biaffine Attention
+		#Biaffine Attention Parameters
 		self.W_arc = torch.randn(d_arc, d_arc)
 		self.b_arc = torch.randn(d_arc, 1)
 
@@ -63,7 +63,7 @@ class BiaffineParser(nn.Module):
 		self.b_rel = torch.randn(num_relations, 1)
 
 
-	def forward(self, x_words, x_pos, sent_len):
+	def forward(self, words, pos, sent_lens):
         '''
         x_words - list/LongTensor of mappings to integers from x2nums dict
         x_pos - list/LongTensor ...
@@ -71,14 +71,19 @@ class BiaffineParser(nn.Module):
         '''
 
 		#Embeddings
-		w_embs = self.word_emb(x_words)
-		p_embs = self.pos_emb(x_pos)
+		w_embs = self.word_emb(words)
+		p_embs = self.pos_emb(pos)
 		
 		lstm_input = self.input_dropout(torch.cat([w_embs, p_embs], -1))
 
+        #Packing
+        packed_input = pack_padded_sequence(lstm_input, sent_lens, batch_first=True)
+
 		#Feed to LSTM
-		H, (h_n, c_n) = self.lstm(lstm_input) #XXX currently assuming lstm outputs a list of output states for each word...
-		# h_n and c_n will have shape (2, #batches, hidden_size) if LSTM 1-layer deep
+		H, _ = self.lstm(packed_input) #XXX currently assuming lstm outputs a list of output states for each word...
+
+        #Unpack
+        pad_packed_sequence(H, batch_first=True) #XXX probably wrong
 
 		#MLPs XXX if you feed a list of h_k's in, does the MLP output a list of outputs?
 		H_arc_head = self.h_arc_head(H)
