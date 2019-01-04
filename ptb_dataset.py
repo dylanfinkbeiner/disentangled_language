@@ -2,12 +2,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
+from collections import defaultdict
 
-DATA_PATH = '../data/' #TODO
 
-UNK_TOKEN = '<UNK>'
-ROOT_TOKEN = '<ROOT>'
-PAD_TOKEN = '<PAD>'
+UNK_TOKEN = '<unk>'
+ROOT_TOKEN = '<root>'
+PAD_TOKEN = '<pad>'
 
 
 def get_dataset(conllu_file):
@@ -17,7 +17,11 @@ def get_dataset(conllu_file):
 
         data_list = numericalize(sents_list, dicts)
 
-        return data_list
+        word_vocab_size = len(dicts['words'])
+        pos_vocab_size = len(dicts['pos'])
+
+        return data_list, word_vocab_size, pos_vocab_size
+
 
 def custom_data_loader(data_list, batch_size):
 
@@ -26,6 +30,7 @@ def custom_data_loader(data_list, batch_size):
     while True:
         for chunk in chunks:
             yield chunk_to_batch(chunk)
+
 
 def chunk_to_batch(chunk):
     '''
@@ -38,9 +43,9 @@ def chunk_to_batch(chunk):
     '''
 
     batch_size = len(chunk)
-    chunk_sorted = sorted(chunk, key = lambda s: np.shape(s)[0])
+    chunk_sorted = sorted(chunk, key = lambda s: np.shape(s)[0], reverse=True)
     sent_lens = [np.shape(s)[0] for s in chunk_sorted]
-    length_longest = lengths_list[0]
+    length_longest = sent_lens[0]
 
     words = torch.zeros((batch_size, length_longest), dtype=torch.long)
     pos = torch.zeros((batch_size, length_longest), dtype=torch.long)
@@ -53,13 +58,14 @@ def chunk_to_batch(chunk):
             you cannot set a value in torch long tensor using 
             numpy's 64 bit ints
             '''
-            words[i,j] = int(s[j,0]) 
+            words[i,j] = int(s[j,0])
             pos[i,j] = int(s[j,1])
             heads[i,j] =  int(s[j,2])
             rels[i,j] =  int(s[j,3])
 
 
     return words, pos, sent_lens, heads, rels
+
 
 def chunk_generator(data, chunk_size):
     for i in range(0, len(data), chunk_size):
@@ -99,29 +105,35 @@ def conllu_to_sents(f: str):
 
     return sents_list
 
-#TODO Dicts still need rework to include padding, unknown, and root tokens
+
 def build_dicts(sents_list):
 
     words, pos, rels = set(), set(), set()
     for s in sents_list:
         for line in s:
-            words.add(line[0])
+            words.add(line[0].lower())
             pos.add(line[1])
             rels.add(line[3])
 
-    word2num, pos2num, rel2num = dict(), dict(), dict()
+    word2num = defaultdict(lambda : len(word2num))
+    pos2num = defaultdict(lambda : len(pos2num))
+    rel2num = defaultdict(lambda : len(rel2num))
     num2word, num2pos, num2rel = dict(), dict(), dict()
 
-    word2num[PAD_TOKEN] = 0
-    #word2num[UNK_TOKEN] = 1
+    num2word[word2num[PAD_TOKEN]] = PAD_TOKEN
+    num2pos[pos2num[PAD_TOKEN]] = PAD_TOKEN
+    num2rel[rel2num[PAD_TOKEN]] = PAD_TOKEN
 
-    word2num = {w:i for (i,w) in enumerate(words)}
-    pos2num = {p:i for (i,p) in enumerate(pos)}
-    rel2num = {r:i for (i,r) in enumerate(rels)}
+    num2word[word2num[UNK_TOKEN]] = UNK_TOKEN
 
-    num2word = {i:w for (w,i) in word2num.items()}
-    num2pos = {i:p for (p,i) in pos2num.items()}
-    num2rel = {i:r for (r,i) in rel2num.items()}
+    num2rel[rel2num[ROOT_TOKEN]] = ROOT_TOKEN
+
+    for w in words:
+        num2word[word2num[w]] = w
+    for p in pos:
+        num2pos[pos2num[p]] = p
+    for r in rels:
+        num2rel[rel2num[r]] = r
 
     x2num_maps = {'words' : word2num, 'pos' : pos2num, 'rels' : rel2num}
     num2x_maps = {'words' : word2num, 'pos' : pos2num, 'rels' : rel2num}
@@ -141,7 +153,7 @@ def numericalize(sents_list, x2num_maps):
         curr = np.zeros(np.shape(s), dtype=int)
 
         for i in range(np.shape(s)[0]):
-            curr[i,0] = word2num[s[i, 0]]
+            curr[i,0] = word2num[s[i, 0].lower()]
             curr[i,1] = pos2num[s[i, 1]]
             curr[i,2] = int(s[i, 2]) #head
             curr[i,3] = rel2num[s[i, 3]]
@@ -150,21 +162,21 @@ def numericalize(sents_list, x2num_maps):
 
     return sents_num
 
-def testing():
-    #sents_list = conllu_to_sents('/Users/dylanfinkbeiner/Desktop/stanford-parser-full-2018-10-17/treebank.conllu')
-
-    #dict2, _ =  build_dicts(sents_list)
-
-    #numd = numericalize(sents_list, dict2)
-
-    data_list = get_dataset('/Users/dylanfinkbeiner/Desktop/stanford-parser-full-2018-10-17/treebank.conllu')
-
-    loader = custom_data_loader(data_list, 10)
-
-    print(next(loader))
-    
-
-
-if __name__ == '__main__':
-    testing()
+#def testing():
+#    #sents_list = conllu_to_sents('/Users/dylanfinkbeiner/Desktop/stanford-parser-full-2018-10-17/treebank.conllu')
+#
+#    #dict2, _ =  build_dicts(sents_list)
+#
+#    #numd = numericalize(sents_list, dict2)
+#
+#    data_list = get_dataset('/Users/dylanfinkbeiner/Desktop/stanford-parser-full-2018-10-17/treebank.conllu')
+#
+#    loader = custom_data_loader(data_list, 10)
+#
+#    print(next(loader))
+#    
+#
+#
+#if __name__ == '__main__':
+#    testing()
 
