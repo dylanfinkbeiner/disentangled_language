@@ -10,6 +10,17 @@ ROOT_TOKEN = '<root>'
 PAD_TOKEN = '<pad>'
 
 
+'''
+   Things that still need doing:
+   1. Shuffling the data
+   2. A way of splitting to train/dev/test
+   3. Usage of num2x_maps dict anywhere
+   4. Properly filtering words
+
+
+'''
+
+
 def get_dataset(conllu_file):
         sents_list = conllu_to_sents(conllu_file)
 
@@ -17,18 +28,21 @@ def get_dataset(conllu_file):
 
         data_list = numericalize(sents_list, dicts)
 
-        word_vocab_size = len(dicts['words'])
-        pos_vocab_size = len(dicts['pos'])
+        word_vsize = len(dicts['word'])
+        pos_vsize = len(dicts['pos'])
+        rel_vsize = len(dicts['rel'])
 
-        return data_list, word_vocab_size, pos_vocab_size
+        return data_list, word_vsize, pos_vsize, rel_vsize
 
 
+#TODO Possible edit required: EelcovdW's implementation
+# uses chunks of shuffled INDICES rather than chunks of the 
+# data list itself; this may be a more convenient/efficient
+# implementation once I get to the point of SHUFFLING the data
 def custom_data_loader(data_list, batch_size):
 
-    chunks = chunk_generator(data_list, batch_size)
-
     while True:
-        for chunk in chunks:
+        for chunk in chunk_generator(data_list, batch_size):
             yield chunk_to_batch(chunk)
 
 
@@ -47,6 +61,7 @@ def chunk_to_batch(chunk):
     sent_lens = [np.shape(s)[0] for s in chunk_sorted]
     length_longest = sent_lens[0]
 
+    #By using zeros tensors, implicitly filling with padding
     words = torch.zeros((batch_size, length_longest), dtype=torch.long)
     pos = torch.zeros((batch_size, length_longest), dtype=torch.long)
     heads = torch.zeros((batch_size, length_longest), dtype=torch.long)
@@ -108,18 +123,19 @@ def conllu_to_sents(f: str):
 
 def build_dicts(sents_list):
 
-    words, pos, rels = set(), set(), set()
+    words, pos, rel = set(), set(), set()
     for s in sents_list:
         for line in s:
             words.add(line[0].lower())
             pos.add(line[1])
-            rels.add(line[3])
+            rel.add(line[3])
 
     word2num = defaultdict(lambda : len(word2num))
     pos2num = defaultdict(lambda : len(pos2num))
     rel2num = defaultdict(lambda : len(rel2num))
     num2word, num2pos, num2rel = dict(), dict(), dict()
 
+    #Crucial that PAD_TOKEN map to 0 so that chunk_to_batch() definition correct
     num2word[word2num[PAD_TOKEN]] = PAD_TOKEN
     num2pos[pos2num[PAD_TOKEN]] = PAD_TOKEN
     num2rel[rel2num[PAD_TOKEN]] = PAD_TOKEN
@@ -132,20 +148,20 @@ def build_dicts(sents_list):
         num2word[word2num[w]] = w
     for p in pos:
         num2pos[pos2num[p]] = p
-    for r in rels:
+    for r in rel:
         num2rel[rel2num[r]] = r
 
-    x2num_maps = {'words' : word2num, 'pos' : pos2num, 'rels' : rel2num}
-    num2x_maps = {'words' : word2num, 'pos' : pos2num, 'rels' : rel2num}
+    x2num_maps = {'word' : word2num, 'pos' : pos2num, 'rel' : rel2num}
+    num2x_maps = {'word' : num2word, 'pos' : num2pos, 'rel' : num2rel}
 
     return x2num_maps, num2x_maps
 
 
 def numericalize(sents_list, x2num_maps):
 
-    word2num = x2num_maps['words']
+    word2num = x2num_maps['word']
     pos2num = x2num_maps['pos']
-    rel2num = x2num_maps['rels']
+    rel2num = x2num_maps['rel']
 
     sents_num = []
 

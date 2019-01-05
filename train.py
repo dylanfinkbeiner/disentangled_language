@@ -1,65 +1,76 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
+from torch.optim import Adam
+from torch.autograd import Variable
 import numpy as np
 
-from parser import BiAffineParser
-from ptb_dataset import PTB_Dataset
+import torch.nn.functional as F
 
-import os
+from parser import BiaffineParser
+from ptb_dataset import get_dataset, custom_data_loader
+
+from math import ceil
 
 NUM_EPOCHS = 100
-BATCH_SIZE = 20
+BATCH_SIZE = 10
 
 WEIGHTS_PATH = '../weights'
-MODEL_NAME = ''
+MODEL_NAME = 'newmodel'
 
-CONLLU_FILE = './data/sentences.conllu'
+CONLLU_FILE = './data/treebank.conllu'
+
+train = True
+
+
+'''
+    What remains to be done:
+    1. Train/test splitting
+    2. During-training evaluation
+    3. Code for getting results for test data
+    4. Confirm cross entropy loss being calculated properly
+    5. Assessing padding situation (i.e. shall we account for it in loss equation?)
+
+'''
 
 def main():
-	parser = BiAffineParser(params)
-
-    if os.path.isdir(WEIGHTS_PATH):
-        parser.load_state_dict(torch.load(WEIGHT_PATH))
-
-	#TODO get model params to feed to optimizer
+    #if os.path.isdir(WEIGHTS_PATH):
+    #    parser.load_state_dict(torch.load(WEIGHTS_PATH))
 
     if train:
-        train_dataset = get_dataset(CONLLU_FILE)
-        loader = custom_data_loader(train_dataset, BATCH_SIZE) 
+        dataset, word_vsize, pos_vsize, rel_vsize  = get_dataset(CONLLU_FILE)
+        loader = custom_data_loader(dataset, BATCH_SIZE) 
+        parser = BiaffineParser(
+                word_vocab_size = word_vsize, 
+                pos_vocab_size = pos_vsize,
+                num_relations = rel_vsize)
 
-        num_batches = num_samples / BATCH_SIZE
+        n_batches = ceil(len(dataset) / BATCH_SIZE)
 
         #Optimizer
-        optim = Adam(params, lr=1e-1)
+        opt = Adam(parser.parameters(), lr = 1e-2)
 
-        parser.train()
         for e in range(NUM_EPOCHS):
 
-            for b in range(num_batches):
-                optim.zero_grad()
+            parser.train()
+            for b in range(n_batches):
+                opt.zero_grad()
 
-                '''Get batch of data (since batches are tensors with shape
-                   [batchsize, ...], does tuple unpacking unpack these components
-                   into [batchsize, words], [batchsize, pos],... tensors?)
-                '''
                 words, pos, sent_lens, heads, rels = next(loader)
 
-                #Forward pass
-                S, L = parser(words, pos, sent_lens)
+                S, L = parser(words, pos, sent_lens, train=True)
 
                 #Calculate losses
                 loss = loss_heads(S, heads)
-                loss += loss_labels(L, rels)
+                loss += loss_rels(L, rels)
 
+                print("Loss")
                 loss.backward()
-                optim.step()
-
+                opt.step()
 
         #Save weights
         if not os.path.isdir(WEIGHTS_PATH):
             os.mkdir(WEIGHTS_PATH)
-        torch.save(parser.state_dict(), '%s-%s' % (SAVE_PATH, MODEL_NAME))
+        torch.save(parser.state_dict(), '%s-%s' % (WEIGHTS_PATH, MODEL_NAME))
 
     elif test:
         pass
@@ -75,23 +86,26 @@ def loss_heads(S, heads):
         head scores BEFORE softmax applied
 
     heads - should be a list of integers (the indices)
-    '''
-    Y_heads = Variable(heads, autograd=False)
 
-    #Cross-entropy between S and 
+    '''
+    Y_heads = Variable(heads)
+
     return F.cross_entropy(S, Y_heads)
 
 def loss_rels(L, rels):
     '''
     L - should be tensor w/ shape (batch_size, sent_len, d_rel)
 
-    deprels - should be a list of dependency relations as they are indexed in the dict
+    rels - should be a list of dependency relations as they are indexed in the dict
     '''
 
-    Y_labels = Variable(rels, autograd=False)
+    Y_labels = Variable(rels)
 
-    return F.cross_entropy(L, Y_labels)
+    print("Y_labels shape: ", Y_labels.shape)
 
-if name == '__main__':
+    #XXX As of now, permuting axes 1 and 2 to represent "transpose", not sure if this is right
+    return F.cross_entropy(L.permute(0,2,1), Y_labels)
+
+if __name__ == '__main__':
     main()
 

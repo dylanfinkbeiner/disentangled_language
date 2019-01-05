@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from torch import unsqueeze
 import torch.nn as nn
 import torch.nn.functional as F
 import sys
@@ -14,7 +15,7 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 alpha = 40
 
 class BiaffineParser(nn.Module):
-    def __init__(self, 
+    def __init__(self,
             word_e_size=100,
             pos_e_size=25,
             word_vocab_size=None,
@@ -35,7 +36,7 @@ class BiaffineParser(nn.Module):
         #Dropout
         self.input_dropout = nn.Dropout(p=input_dropout)
 
-        #LSTM 
+        #LSTM
         self.lstm = nn.LSTM(input_size=word_e_size+pos_e_size,
                 hidden_size=hidden_size,
                 num_layers=num_layers,
@@ -61,19 +62,19 @@ class BiaffineParser(nn.Module):
 
         #Biaffine Attention Parameters
         self.W_arc = torch.randn(d_arc, d_arc)
-        self.b_arc = torch.randn(d_arc, 1)
+        self.b_arc = torch.randn(d_arc)
 
         #self.U_rel = torch.randn(d_rel, d_rel, num_relations)
         self.U_rel = torch.randn(d_rel, num_relations, d_rel)
-        self.W_rel = torch.randn(num_relations, d_rel)
-        self.b_rel = torch.randn(num_relations, 1)
+        self.W_rel = torch.randn(d_rel, num_relations)
+        self.b_rel = torch.randn(num_relations)
 
 
     def forward(self, words, pos, sent_lens, train=True):
         '''
         x_words - list/LongTensor of mappings to integers from x2nums dict
         x_pos - list/LongTensor ...
-        sent_len - 
+        sent_len -
         '''
 
         #Embeddings
@@ -95,7 +96,7 @@ class BiaffineParser(nn.Module):
         H, _ = self.lstm(packed_input)
 
         #Unpack
-        unpacked, _ = pad_packed_sequence(H, batch_first=True) 
+        unpacked, _ = pad_packed_sequence(H, batch_first=True)
 
         print(unpacked.shape) #(b_size, longest_sent, 800)
 
@@ -110,29 +111,34 @@ class BiaffineParser(nn.Module):
         #This chunk is basically a torch paraphrase of Kasai et al's tensorflow imp.
         b, l, d_arc = H_arc_head.size() #l for "longest_sentence"
         S = torch.mm(H_arc_dep.view(b*l, d_arc), self.W_arc).view(b, l, d_arc)
-        S = torch.mm(S, H_arc_head.permute(0, 2, 1))
+        S = torch.bmm(S, H_arc_head.permute(0, 2, 1))
         bias = torch.mm(H_arc_head.view(b*l, d_arc), self.b_arc.unsqueeze(1))
         bias = bias.view(b, l, 1).permute(0, 2, 1) #(B x 1 x L), for broadcasting
         S += bias
         #XXX I don't actually understand what is going on, though
 
         if train: #Predict heads by greedy maximum on scores in S
-            pass
+                predictions = torch.argmax(S, 2)
 
         else: #Call MST algorithm to predict heads
+            #predictions = predict_heads(S)
             pass
 
-
-        _, _, num_rel = self.U_rel.size()
+        d_rel, num_rel, _ = self.U_rel.size()
         #Again, basically copypasted from Kasai
-
-        one_hot_pred = predictions
-        H_rel_head = #Filtering
+        one_hot_pred = torch.zeros(b, l, l) 
+        for i in range(b):
+            for j in range(l):
+                k = predictions[i,j]
+                one_hot_pred[i,j,k] = 1
+        H_rel_head = torch.bmm(one_hot_pred, H_rel_head)
         U_rel = self.U_rel.view(-1, num_rel * d_rel)
         interactions = torch.mm(H_rel_head.view(b*l, d_rel), U_rel).view(b*l, num_rel, d_rel)
-        interactions = torch.mm(interactions, H_rel_dep.view(b*l, d_rel, 1)).view(b, l, num_rel)
+        interactions = torch.bmm(interactions, H_rel_dep.view(b*l, d_rel, 1)).view(b, l, num_rel)
         sums = (torch.mm((H_rel_head+H_rel_dep).view(b*l, d_rel), self.W_rel) + self.b_rel).view(b, l, num_rel)
         L = interactions + sums
+        print("L shape: ", L.shape)
+        print("Num_rel: ", num_rel)
 
         #Pre-softmax scores for heads, labels
         return S, L
