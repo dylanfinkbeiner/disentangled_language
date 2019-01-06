@@ -24,16 +24,22 @@ PAD_TOKEN = '<pad>'
 def get_dataset(conllu_file):
         sents_list = conllu_to_sents(conllu_file)
 
-        dicts, _ = build_dicts(sents_list)
+        x2num_maps, num2x_maps = build_dicts(sents_list)
 
-        data_list = numericalize(sents_list, dicts)
+        #Cleaning goes here? (replace 0's of heads with root token
 
-        word_vsize = len(dicts['word'])
-        pos_vsize = len(dicts['pos'])
-        rel_vsize = len(dicts['rel'])
+        data_list = numericalize(sents_list, x2num_maps)
 
-        return data_list, word_vsize, pos_vsize, rel_vsize
+        return get_train_dev_test(data_list), x2num_maps, num2x_maps
 
+def get_train_dev_test(data_list):
+    n_samples = len(data_list)
+    
+    #XXX Incredibly stupid way of splitting data
+    x = int(.8 * n_samples)
+    y = int(.9 * n_samples)
+
+    return {'train': data_list[:x], 'dev': data_list[x:y], 'test': data_list[y:] }
 
 #TODO Possible edit required: EelcovdW's implementation
 # uses chunks of shuffled INDICES rather than chunks of the 
@@ -171,7 +177,7 @@ def numericalize(sents_list, x2num_maps):
         for i in range(np.shape(s)[0]):
             curr[i,0] = word2num[s[i, 0].lower()]
             curr[i,1] = pos2num[s[i, 1]]
-            curr[i,2] = int(s[i, 2]) #head
+            curr[i,2] = int(s[i, 2]) #Head idx
             curr[i,3] = rel2num[s[i, 3]]
 
         sents_num.append(curr)

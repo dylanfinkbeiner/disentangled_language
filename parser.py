@@ -148,5 +148,4 @@ class BiaffineParser(nn.Module):
         sums = (torch.mm((H_rel_head+H_rel_dep).view(b*l, d_rel), self.W_rel) + self.b_rel).view(b, l, num_rel)
         L = interactions + sums # (b, l, num_rel) where pre-softmax l_i vectors are on 3rd axis of L
 
-        #Pre-softmax scores for heads, labels
         return S, L, head_preds
