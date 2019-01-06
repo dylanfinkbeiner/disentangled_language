@@ -12,12 +12,12 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
     BiAffine Attention Dependency Parser
 '''
 
-alpha = 40 #For calculating word dropout rates
+alpha = 40 #For calculating word dropout rates...
 
 class BiaffineParser(nn.Module):
     def __init__(self,
             word_e_size=100,
-            pos_e_size=25, #original Dozat/Manning paper uses 100
+            pos_e_size=25, #Original Dozat/Manning paper uses 100
             word_vocab_size=None,
             pos_vocab_size=None,
             hidden_size=400,
@@ -48,11 +48,11 @@ class BiaffineParser(nn.Module):
                 dropout=lstm_dropout)
 
         #Arc-scoring MLPs
-        self.h_arc_dep   = nn.Sequential(
+        self.h_arc_dep = nn.Sequential(
                 nn.Linear(hidden_size*2, d_arc),
                 nn.ReLU(),
                 nn.Dropout(p=arc_dropout))
-        self.h_arc_head  = nn.Sequential(
+        self.h_arc_head = nn.Sequential(
                 nn.Linear(hidden_size*2, d_arc),
                 nn.ReLU(),
                 nn.Dropout(p=arc_dropout))
@@ -67,26 +67,30 @@ class BiaffineParser(nn.Module):
                 nn.ReLU(),
                 nn.Dropout(p=rel_dropout))
 
-        '''
-            Amsterdam initializes weights/biases uniformly using
-            a std deviation
-        '''
         #Biaffine Attention Parameters
         self.W_arc = nn.Parameter(torch.randn(d_arc, d_arc))
         self.b_arc = nn.Parameter(torch.randn(d_arc))
 
-        #In paper, shape is (d, d, r) but in implementation Kasai uses (d,r,d)
+        #Note to self: in paper, U shape is (d, d, r) but in implementation Kasai uses (d,r,d)
         self.U_rel = nn.Parameter(torch.randn(d_rel, num_relations, d_rel))
-        #self.U_rel = torch.randn(d_rel, d_rel, num_relations)
         self.W_rel = nn.Parameter(torch.randn(d_rel, num_relations))
         self.b_rel = nn.Parameter(torch.randn(num_relations))
 
 
     def forward(self, words, pos, sent_lens, train=True):
         '''
-        x_words - list/LongTensor of mappings to integers from x2nums dict
-        x_pos - list/LongTensor ...
-        sent_lens - a LIST of ints
+        ins:
+            words::Tensor
+            pos::Tensor
+            sent_lens::List
+
+        outs:
+            S::Tensor - Shape(b, l, l); [i,j] is pre-softmax vector s_j, i.e.
+                        logits for dist. over heads of jth word in ith sentence
+            L::Tensor - Shape(b, l, num_rel); [i,j] is pre-softmax vector
+                        l_i as described in paper
+            head_preds::Tensor - Shape(b, l); [i,j] entry is
+                                 prediction of jth word in ith sentence
         '''
 
         #Embeddings
@@ -111,9 +115,6 @@ class BiaffineParser(nn.Module):
         H_arc_dep  = self.h_arc_dep(unpacked) # (b, l, d_arc)
         H_rel_head = self.h_rel_head(unpacked) # (b, l, d_rel)
         H_rel_dep  = self.h_rel_dep(unpacked) # (b, l, d_rel)
-
-
-        #XXX MAY WANT TO CONSIDER USING TORCH'S BILINEAR LAYER INSTEAD
 
         #This chunk is basically a torch paraphrase of Kasai et al's tensorflow imp.
         b, l, d_arc = H_arc_head.size() #l for "longest_sentence"
