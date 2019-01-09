@@ -1,19 +1,20 @@
 import numpy as np
 from collections import defaultdict
 
-
+'''
+    What are the assumptions about 'scores'? 
+    Seem to be that it is a square numpy array,
+    that the first row represents <root> token.
+    Also appears that scores is ASSUMED to be
+    the softmax outputs of S, logits for arcs
+    FOR THAT SENTENCE.
+'''
 def mst(scores):
     """
-    Chu-Liu-Edmonds' algorithm for finding minimum spanning arborescence in graphs.
-    Calculates the arborescence with node 0 as root.
-    Source: https://github.com/chantera/biaffineparser/blob/master/utils.py
-    :param scores: `scores[i][j]` is the weight of edge from node `i` to node `j`
-    :returns an array containing the head node (node with edge pointing to current node) for each node,
-             with head[0] fixed as 0
+    https://github.com/tdozat/Parser/blob/0739216129cd39d69997d28cbc4133b360ea3934/lib/models/nn.py#L692  # NOQA
     """
     length = scores.shape[0]
-    MAX = 10000.0
-    scores = (1.0-np.eye(length))*scores - np.eye(length)*MAX
+    scores = scores * (1 - np.eye(length))
     heads = np.argmax(scores, axis=1)
     heads[0] = 0
     tokens = np.arange(1, length)
@@ -21,14 +22,14 @@ def mst(scores):
     if len(roots) < 1:
         root_scores = scores[tokens, 0]
         head_scores = scores[tokens, heads[tokens]]
-        new_root = tokens[np.argmax(root_scores - head_scores)]
+        new_root = tokens[np.argmax(root_scores / head_scores)]
         heads[new_root] = 0
     elif len(roots) > 1:
         root_scores = scores[roots, 0]
         scores[roots, 0] = 0
         new_heads = np.argmax(scores[roots][:, tokens], axis=1) + 1
         new_root = roots[np.argmin(
-            scores[roots, new_heads] - root_scores)]
+            scores[roots, new_heads] / root_scores)]
         heads[roots] = new_heads
         heads[new_root] = 0
 
@@ -50,9 +51,9 @@ def mst(scores):
         old_scores = scores[cycle, old_heads]
         non_heads = np.array(list(dependents))
         scores[np.repeat(cycle, len(non_heads)),
-               np.repeat([non_heads], len(cycle), axis=0).flatten()] = -MAX
+               np.repeat([non_heads], len(cycle), axis=0).flatten()] = 0
         new_heads = np.argmax(scores[cycle][:, tokens], axis=1) + 1
-        new_scores = scores[cycle, new_heads] - old_scores
+        new_scores = scores[cycle, new_heads] / old_scores
         change = np.argmax(new_scores)
         changed_cycle = cycle[change]
         old_head = old_heads[change]
@@ -69,7 +70,7 @@ def _find_cycle(vertices, edges):
     https://en.wikipedia.org/wiki/Tarjan%27s_strongly_connected_components_algorithm  # NOQA
     https://github.com/tdozat/Parser/blob/0739216129cd39d69997d28cbc4133b360ea3934/lib/etc/tarjan.py  # NOQA
     """
-    _index = [0]
+    _index = 0
     _stack = []
     _indices = {}
     _lowlinks = {}
@@ -77,9 +78,10 @@ def _find_cycle(vertices, edges):
     _SCCs = []
 
     def _strongconnect(v):
-        _indices[v] = _index[0]
-        _lowlinks[v] = _index[0]
-        _index[0] += 1
+        nonlocal _index
+        _indices[v] = _index
+        _lowlinks[v] = _index
+        _index += 1
         _stack.append(v)
         _onstack[v] = True
 
@@ -96,7 +98,7 @@ def _find_cycle(vertices, edges):
                 w = _stack.pop()
                 _onstack[w] = False
                 SCC.add(w)
-                if not (w != v):
+                if not(w != v):
                     break
             _SCCs.append(SCC)
 

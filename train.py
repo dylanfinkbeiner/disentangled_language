@@ -23,6 +23,7 @@ CONLLU_FILE = './data/treebank.conllu'
 
 train = True
 
+PAD_TOKEN = '<pad>'
 
 '''
     What remains to be done:
@@ -39,7 +40,7 @@ def main():
     #    parser.load_state_dict(torch.load(WEIGHTS_PATH))
 
     if train:
-        data_split, x2num_maps, num2x_maps = get_dataset(CONLLU_FILE)
+        data_split, x2num_maps, num2x_maps, word_counts = get_dataset(CONLLU_FILE, training = True)
 
         train_data = data_split['train']
         dev_data = data_split['dev']
@@ -48,21 +49,21 @@ def main():
         pos2num = x2num_maps['pos']
         rel2num = x2num_maps['rel']
 
-        print(rel2num['<root>'])
-        sys.exit()
+        num2word = num2x_maps['word']
 
-        train_loader = custom_data_loader(train_data, BATCH_SIZE) 
-        dev_loader = custom_data_loader(dev_data, BATCH_SIZE) 
+        train_loader = custom_data_loader(train_data, BATCH_SIZE, word2num, num2word, word_counts) 
+        dev_loader = custom_data_loader(dev_data, BATCH_SIZE, word2num, num2word, word_counts) 
 
         parser = BiaffineParser(
                 word_vocab_size = len(word2num),
                 pos_vocab_size = len(pos2num),
-                num_relations = len(rel2num))
+                num_relations = len(rel2num),
+                padding_idx = word2num[PAD_TOKEN])
 
         n_train_batches = ceil(len(train_data) / BATCH_SIZE)
         n_dev_batches = ceil(len(dev_data) / BATCH_SIZE)
 
-        #Optimizer
+        # Optimizer (still not doing the exponential annealing decay thing from Dozat/Manning
         opt = Adam(parser.parameters(), lr = 2e-3, betas=[0.9, 0.9])
 
         earlystop_counter = 0
@@ -74,13 +75,13 @@ def main():
             for b in range(n_train_batches):
                 opt.zero_grad()
 
-                words, pos, sent_lens, gold_heads, gold_rels = next(train_loader)
+                words, pos, sent_lens, target_heads, target_rels = next(train_loader)
 
-                S, L, _ = parser(words, pos, sent_lens, train=True)
+                S, L, _ = parser(words, pos, sent_lens)
 
-                loss_h = loss_heads(S, gold_heads)
-                loss_r = loss_rels(L, gold_rels)
-                loss = loss_h + (.25 * loss_r)
+                loss_h = loss_heads(S, target_heads)
+                loss_r = loss_rels(L, target_rels)
+                loss = loss_h + loss_r
                 
                 train_loss += loss_h.item() + loss_r.item()
 
@@ -89,21 +90,22 @@ def main():
 
             train_loss /= n_train_batches
 
-            parser.eval()
+            parser.eval() #Crucial! Toggles dropout effects throughout network...
             dev_loss = 0
             arc_accuracy = 0
             rel_accuracy = 0
             for b in range(n_dev_batches):
-                words, pos, sent_lens, gold_heads, gold_rels = next(dev_loader)
+                words, pos, sent_lens, target_heads, target_rels = next(dev_loader)
 
-                S, L, head_preds = parser(words, pos, sent_lens, train=False)
+                S, L, head_preds = parser(words, pos, sent_lens)
+                sys.exit()
 
-                loss_h = loss_heads(S, gold_heads)
-                loss_r = loss_rels(L, gold_rels)
+                loss_h = loss_heads(S, target_heads)
+                loss_r = loss_rels(L, target_rels)
                 dev_loss = loss_h.item() + loss_r.item()
 
-                head_accuracy = accuracy_heads(head_preds, heads)
-                rel_accuracy = accuracy_rels(L, rels)
+                head_accuracy = accuracy_heads(head_preds, target_heads)
+                rel_accuracy = accuracy_rels(L, target_rels)
 
             dev_loss /= n_dev_batches
 
@@ -134,7 +136,7 @@ def main():
         pass
 
 #Eventually, probably should pull loss functions out into a utilities file
-def loss_heads(S, gold_heads, pad_idx=0):
+def loss_heads(S, target_heads, pad_idx = -1):
     '''
     S - should be something like a tensor w/ shape
         (batch_size, sent_len, sent_len); also, these are
@@ -143,44 +145,52 @@ def loss_heads(S, gold_heads, pad_idx=0):
     heads - should be a list of integers (the indices)
 
     '''
-
-    print(gold_heads.shape)
-    print(gold_heads[0,:])
-    print(gold_heads[3,:])
-    print(gold_heads[7,:])
-    sys.exit()
+    #print(target_heads.shape)
+    #T1 = F.cross_entropy(S.permute(0,2,1), Variable(target_heads), ignore_index=pad_idx)
+    #T2 = F.cross_entropy(S.permute(0,2,1), Variable(target_heads), ignore_index=pad_idx, reduction='none')
+    #print(T1)
+    #print(T2)
+    #print(T2.size())
+    #sys.exit()
 
     #For input to cross_entropy, shape must be (b, C, ...) where C is number of classes
-    return F.cross_entropy(S.permute(0,2,1), Variable(gold_heads), ignore_index=pad_idx)
+    return F.cross_entropy(S.permute(0,2,1), Variable(target_heads), ignore_index=pad_idx)
 
-def loss_rels(L, gold_rels):
+def loss_rels(L, target_rels, pad_idx = -1):
     '''
     L - should be tensor w/ shape (batch_size, sent_len, d_rel)
 
     rels - should be a list of dependency relations as they are indexed in the dict
     '''
+    return F.cross_entropy(L.permute(0,2,1), Variable(target_rels), ignore_index=pad_idx)
 
-
-    return F.cross_entropy(L.permute(0,2,1), Variable(gold_rels), ignore_index=pad_idx)
-
-def accuracy_heads(head_preds, gold_heads):
+def accuracy_heads(head_preds, target_heads):
     #Incoming heads will have been predicted via heuristic
 
-    batch_size = gold_heads.shape[0]
-    n_correct = head_preds.eq(gold_heads).sum()
+    batch_size = target_heads.shape[0]
+    n_correct = head_preds.eq(target_heads).sum()
 
     return n_correct.item() / batch_size #XXX Wrong
 
-def accuracy_rels(L, gold_rels):
+def accuracy_rels(L, target_rels):
     #As of now, we predict relations by a simple argmax
     
     #rels should already be a LongTensor thanks to chunk_to_batch
 
-    batch_size = gold_rels.shape[0]
-    rel_preds = L.argmax(2).type(torch.LongTensor) #Must be LongTensor to do eq comparison with gold
-    n_correct = rel_preds.eq(gold_rels).sum()
+    batch_size = target_rels.shape[0]
+    #rel_preds = L.argmax(2).type(torch.LongTensor) #Must be LongTensor to do eq comparison with target
+    rel_preds = L.argmax(2).long() #Must be LongTensor to do eq comparison with target
+    n_correct = rel_preds.eq(target_rels).sum()
+
+
+    #NOTE LAS is measured by counting the number of (head, relation) PAIRS that were correctly predicted
 
     return n_correct.item() / batch_size #XXX Wrong
+
+
+
+def parse(head_preds, L):
+    pass
 
     
 
