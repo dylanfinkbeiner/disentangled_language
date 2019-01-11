@@ -7,7 +7,7 @@ import sys
 
 import mst
 
-from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
+from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence, pad_sequence
 
 '''
     An implementation of Jabberwocky dropout-heavy
@@ -36,8 +36,16 @@ class BiaffineParser(nn.Module):
         super(BiaffineParser, self).__init__()
 
         #Embeddings
-        self.word_emb = nn.Embedding(word_vocab_size, word_e_size, padding_idx=padding_idx)
-        self.pos_emb = nn.Embedding(pos_vocab_size, pos_e_size, padding_idx=padding_idx)
+        self.word_emb = nn.Embedding(
+                word_vocab_size, 
+                word_e_size,
+                padding_idx=padding_idx)
+        self.word_emb.weight.data.copy_(torch.zeros(word_vocab_size, word_e_size))
+
+        self.pos_emb = nn.Embedding(
+            pos_vocab_size, 
+            pos_e_size, 
+            padding_idx=padding_idx)
 
         #Dropout
         self.embedding_dropout = nn.Dropout(p=embedding_dropout)
@@ -128,8 +136,9 @@ class BiaffineParser(nn.Module):
             head_preds = torch.argmax(S, 2) # (b, l, l) -> (b, l)
 
         else: # Single-rooted, acyclic heads
-            head_preds = mst_preds(S, sent_lens)
-            #head_preds = torch.argmax(S, 2) #XXX Wrong (temporary, until MST algorithm implemented)
+            head_preds = mst_preds(S, sent_lens) # (b, l, l) -> length-b list of np arrays
+            head_preds = pad_sequence([torch.Tensor(s).long() for s in head_preds],
+                    batch_first=True, padding_value=-1) #NOTE Need to assess use of -1 padding here in relation to L computation
 
         d_rel, num_rel, _ = self.U_rel.size()
         #Again, basically copypasted from Kasai
@@ -155,15 +164,15 @@ class BiaffineParser(nn.Module):
 
 '''
 def mst_preds(S, sent_lens):
-       #ROOT_TOKEN = 
-
     heads_batch = []
     
-    S = S.data.cpu().numpy() # Take to numpy arrays
+    batch_logits = S.data.cpu().numpy() # Take to numpy arrays
 
-    for arcs_logits, length in zip(S, sent_lens):
-        arcs_probs = softmax2d(arcs_logits[:length, :length]) # Select out THE ACTUAL SENTENCE
-        head_preds = mst.mst(arcs_probs) # NOTE Input to mst is softmax of arc scores
+    for sent_logits, true_length in zip(batch_logits, sent_lens):
+        sent_probs = softmax2d(sent_logits[:true_length, :true_length]) # Select out THE ACTUAL SENTENCE
+        head_preds = mst.mst(sent_probs) # NOTE Input to mst is softmax of arc scores
+
+        heads_batch.append(head_preds)
         
         #label_probs = softmax2d(label_logit[np.arange(length), arcs])
         #labels = np.argmax(label_probs, axis=1) # NOTE Simple argmax to get label predictions
@@ -180,13 +189,12 @@ def mst_preds(S, sent_lens):
         #    root_arc = np.where(arcs[tokens] == 0)[0] + 1
         #    labels[roots] = new_labels
         #    labels[root_arc] = ROOT
-        heads_batch.append(head_preds)
         #labels_batch.append(labels)
 
-    print(len(heads_batch))
-    print(heads_batch[0].shape)
-    print(heads_batch[4].shape)
-    sys.exit()
+    #print(len(heads_batch))
+    #print(heads_batch[0].shape)
+    #print(heads_batch[4].shape)
+    #print(heads_batch)
     return heads_batch # (b, l, l)
 
 def softmax2d(x): #Just doing softmax of row vectors

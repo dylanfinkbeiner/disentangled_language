@@ -58,7 +58,7 @@ def custom_data_loader(data_list, batch_size, word2num, num2word, word_counts):
     #num2word = x2num_maps['word']
     #word2num = x2num_maps['word']
 
-    print("Batch_size")
+    print("Batch size is", batch_size)
 
     while True:
         for chunk in chunk_generator(data_list, batch_size):
@@ -196,8 +196,8 @@ def numericalize(sents_list, x2num_maps):
     sents_numericalized = []
     for s in sents_list:
         new_shape = (s.shape[0] + 1, s.shape[1])
-        new_s = np.zeros(new_shape, dtype=int)
-        new_s[0,:] = word2num[ROOT_TOKEN], pos2num[ROOT_TOKEN], -1, -1
+        new_s = np.zeros(new_shape, dtype=int) # Making room for ROOT_TOKEN
+        new_s[0,:] = word2num[ROOT_TOKEN], pos2num[ROOT_TOKEN], -1, -1 # -1s here become crucial for attachment scoring
 
         for i in range(s.shape[0]):
             new_s[i+1,0] = word2num.get(s[i,0].lower(), word2num[UNK_TOKEN])
