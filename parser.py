@@ -135,20 +135,27 @@ class BiaffineParser(nn.Module):
         if self.training: # Greedy
             head_preds = torch.argmax(S, 2) # (b, l, l) -> (b, l)
 
-        else: # Single-rooted, acyclic heads
+        else: # Single-rooted, acyclic graph of head-dependency relations
             head_preds = mst_preds(S, sent_lens) # (b, l, l) -> length-b list of np arrays
             head_preds = pad_sequence([torch.Tensor(s).long() for s in head_preds],
                     batch_first=True, padding_value=-1) #NOTE Need to assess use of -1 padding here in relation to L computation
 
         d_rel, num_rel, _ = self.U_rel.size()
-        #Again, basically copypasted from Kasai
-        one_hot_pred = torch.zeros(b, l, l)
-        #NOTE  This one hot code could probably be replaced by clever use of index_select
-        for i in range(b): # ith sentence
-            for j in range(l): # jth word
-                k = head_preds[i,j] # k is index of predicted head
-                one_hot_pred[i,j,k] = 1
-        H_rel_head = torch.bmm(one_hot_pred, H_rel_head) # (b, l, d_rel)
+
+        for i in range(b):
+            H_rel_head[i] = H_rel_head[i].index_select(0, head_preds[i].view(-1))
+
+        ##Again, basically copypasted from Kasai
+        #one_hot_pred = torch.zeros(b, l, l)
+        ##NOTE  This one hot code could probably be replaced by clever use of index_select
+        #for i in range(b): # ith sentence
+        #    for j in range(l): # jth word
+        #        k = head_preds[i,j] # k is index of predicted head
+        #        one_hot_pred[i,j,k] = 1
+        #H_rel_head = torch.bmm(one_hot_pred, H_rel_head) # (b, l, d_rel)
+        
+        #H_rel_head = H_rel_head.view(b*l, d_rel).index_select(0, head_preds.view(-1)).view(b, l, d_rel)
+
         #H_rel_head: Now the i-th row of this matrix is h_p_i^(rel_head), the MLP output for predicted head of ith word
         U_rel = self.U_rel.view(-1, num_rel * d_rel) # (d_rel, num_rel * d_rel)
         interactions = torch.mm(H_rel_head.view(b*l, d_rel), U_rel).view(b*l, num_rel, d_rel) # (b*l, num_rel, d_rel)
