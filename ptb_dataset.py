@@ -4,6 +4,8 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 from collections import defaultdict, Counter
 
+from memory_profiler import profile
+
 import string
 import random
 
@@ -19,22 +21,19 @@ PAD_TOKEN = '<pad>'
    Things that still need doing:
    1. Shuffling the data
    2. A way of splitting to train/dev/test
-   3. Usage of num2x_maps dict anywhere
-   4. Properly filtering words
-
-
 '''
 
-def get_dataset(conllu_file, training = False):
-        sents_list = conllu_to_sents(conllu_file)
+def get_dataset(conllu_file, training=False):
+    sents_list = conllu_to_sents(conllu_file)
 
-        x2num_maps, num2x_maps = build_dicts(sents_list)
+    x2num_maps, num2x_maps = build_dicts(sents_list)
+    
+    sents_list, word_counts = filter_and_count(sents_list, filter_single=training)
+    
+    sent_list = numericalize(sents_list, x2num_maps)
+    
+    return get_train_dev_test(sent_list), x2num_maps, num2x_maps, word_counts
 
-        sents_list, word_counts = filter_and_count(sents_list, filter_single = training)
-
-        sent_list = numericalize(sents_list, x2num_maps)
-
-        return get_train_dev_test(sent_list), x2num_maps, num2x_maps, word_counts
 
 def get_train_dev_test(data_list):
     n_samples = len(data_list)
@@ -45,28 +44,32 @@ def get_train_dev_test(data_list):
 
     return {'train': data_list[:x], 'dev': data_list[x:y], 'test': data_list[y:] }
 
+
 #TODO Possible edit required: EelcovdW's implementation
 # uses chunks of shuffled INDICES rather than chunks of the
 # data list itself; this may be a more convenient/efficient
 # implementation once I get to the point of SHUFFLING the data
-def custom_data_loader(data_list, batch_size, word2num, num2word, word_counts):
+def custom_data_loader(data, b_size, word2num, num2word, word_counts):
 
     '''NOTE We pass the entirety of data_list as input to this function,
     which seems to not really make use of the space-efficient pattern of
     a generator. Should consider some kind of refactor here if time allows it.
     '''
-    #num2word = x2num_maps['word']
-    #word2num = x2num_maps['word']
-
-    print("Batch size is", batch_size)
+    chunk_generator = (data[i:i+b_size] for i in range(0, len(data, b_size)))
 
     while True:
-        for chunk in chunk_generator(data_list, batch_size):
+        for chunk in chunk_generator:
             yield chunk_to_batch(chunk, word2num, num2word, word_counts)
+
+    #while True:
+    #    for chunk in chunk_generator(data, batch_size):
+    #        yield chunk_to_batch(chunk, word2num, num2word, word_counts)
+
 
 def chunk_generator(data, chunk_size):
     for i in range(0, len(data), chunk_size):
         yield data[i:i+chunk_size]
+
 
 def chunk_to_batch(chunk, word2num, num2word, word_counts):
     '''
@@ -81,18 +84,13 @@ def chunk_to_batch(chunk, word2num, num2word, word_counts):
     alpha = 40 # NOTE This is not a great place for this variable.
 
     batch_size = len(chunk)
-    chunk_sorted = sorted(chunk, key = lambda s: np.shape(s)[0], reverse=True)
+    chunk_sorted = sorted(chunk, key = lambda s: s.shape[0], reverse=True)
     sent_lens = [np.shape(s)[0] for s in chunk_sorted] # Keep in mind, these lengths include ROOT token in each sent
     length_longest = sent_lens[0]
 
-    #By using zeros tensors, implicitly filling with padding
-    #words = torch.zeros((batch_size, length_longest), dtype=torch.long)
-    #pos = torch.zeros((batch_size, length_longest), dtype=torch.long)
-    #heads = torch.zeros((batch_size, length_longest), dtype=torch.long)
-    #rels = torch.zeros((batch_size, length_longest), dtype=torch.long)
     words = torch.zeros((batch_size, length_longest)).long()
     pos = torch.zeros((batch_size, length_longest)).long()
-    heads = torch.Tensor(batch_size, length_longest).fill_(-1).long() # See loss function for rationale
+    heads = torch.Tensor(batch_size, length_longest).fill_(-1).long()
     rels = torch.Tensor(batch_size, length_longest).fill_(-1).long()
 
     for i, s in enumerate(chunk_sorted):
@@ -115,10 +113,7 @@ def chunk_to_batch(chunk, word2num, num2word, word_counts):
 
     return words, pos, sent_lens, heads, rels
 
-'''NOTE:
-Probably we will call this once for a
-separate conllu file for the train, dev, and test sets
-'''
+
 def conllu_to_sents(f: str):
     '''
     inputs:
@@ -129,7 +124,7 @@ def conllu_to_sents(f: str):
 
     '''
 
-    mask = [1, 4, 6, 7] # [word, pos, head, rel]
+    mask = [1, 4, 6, 7]  # [word, pos, head, rel]
 
     with open(f, 'r') as conllu_file:
         lines = conllu_file.readlines()
@@ -150,7 +145,6 @@ def conllu_to_sents(f: str):
 
 
 def build_dicts(sents_list):
-
     words, pos, rel = set(), set(), set()
     for s in sents_list:
         for line in s:
@@ -166,10 +160,8 @@ def build_dicts(sents_list):
     #Crucial that PAD_TOKEN map to 0 so that chunk_to_batch() definition correct
     num2word[word2num[PAD_TOKEN]] = PAD_TOKEN
     num2pos[pos2num[PAD_TOKEN]] = PAD_TOKEN
-    #num2rel[rel2num[PAD_TOKEN]] = PAD_TOKEN
 
     num2word[word2num[UNK_TOKEN]] = UNK_TOKEN
-    #num2word[word2num[UNK_TOKEN]] = UNK_TOKEN
 
     num2word[word2num[ROOT_TOKEN]] = ROOT_TOKEN
     num2pos[pos2num[ROOT_TOKEN]] = ROOT_TOKEN
@@ -188,7 +180,6 @@ def build_dicts(sents_list):
 
 
 def numericalize(sents_list, x2num_maps):
-
     word2num = x2num_maps['word']
     pos2num = x2num_maps['pos']
     rel2num = x2num_maps['rel']

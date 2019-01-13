@@ -1,25 +1,38 @@
+import sys
+import time
+import logging
+from memory_profiler import profile
+
 import numpy as np
 import torch
 from torch import unsqueeze
 import torch.nn as nn
-import torch.nn.functional as F
-import sys
+import nn.functional as F
+from nn.utils.rnn import pad_packed_sequence, \
+        pack_padded_sequence, pad_sequence
 
 import mst
 
-from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence, pad_sequence
+log = logging.getLogger(__name__)
+handler = logging.FileHandler('../log/parser.log')
+formatter = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
+log.addHandler(handler)
+log.setFormatter(formatter)
+log.setLevel(logging.DEBUG)
 
 '''
     An implementation of Jabberwocky dropout-heavy
     BiAffine Attention Dependency Parser
 '''
 
-alpha = 40 #For calculating word dropout rates...
+alpha = 40  # For calculating word dropout rates...
+
 
 class BiaffineParser(nn.Module):
-    def __init__(self,
+    def __init__(
+            self,
             word_e_size=100,
-            pos_e_size=25, #Original Dozat/Manning paper uses 100
+            pos_e_size=25,  # Original Dozat/Manning paper uses 100
             word_vocab_size=None,
             pos_vocab_size=None,
             hidden_size=400,
@@ -35,30 +48,32 @@ class BiaffineParser(nn.Module):
 
         super(BiaffineParser, self).__init__()
 
-        #Embeddings
+        # Embeddings (words initialized to zero)
         self.word_emb = nn.Embedding(
-                word_vocab_size, 
+                word_vocab_size,
                 word_e_size,
                 padding_idx=padding_idx)
-        self.word_emb.weight.data.copy_(torch.zeros(word_vocab_size, word_e_size))
+        self.word_emb.weight.data.copy_(
+                torch.zeros(word_vocab_size, word_e_size))
 
         self.pos_emb = nn.Embedding(
-            pos_vocab_size, 
-            pos_e_size, 
+            pos_vocab_size,
+            pos_e_size,
             padding_idx=padding_idx)
 
-        #Dropout
+        # Dropout
         self.embedding_dropout = nn.Dropout(p=embedding_dropout)
 
-        #LSTM
-        self.lstm = nn.LSTM(input_size=word_e_size + pos_e_size,
+        # LSTM
+        self.lstm = nn.LSTM(
+                input_size=(word_e_size + pos_e_size),
                 hidden_size=hidden_size,
                 num_layers=lstm_layers,
                 bidirectional=True,
                 batch_first=True,
                 dropout=lstm_dropout)
 
-        #Arc-scoring MLPs
+        # Arc-scoring MLPs
         self.h_arc_dep = nn.Sequential(
                 nn.Linear(hidden_size*2, d_arc),
                 nn.ReLU(),
@@ -68,8 +83,8 @@ class BiaffineParser(nn.Module):
                 nn.ReLU(),
                 nn.Dropout(p=arc_dropout))
 
-        #Label-scoring MLPs
-        self.h_rel_dep  = nn.Sequential(
+        # Label-scoring MLPs
+        self.h_rel_dep = nn.Sequential(
                 nn.Linear(hidden_size*2, d_rel),
                 nn.ReLU(),
                 nn.Dropout(p=rel_dropout))
@@ -78,15 +93,13 @@ class BiaffineParser(nn.Module):
                 nn.ReLU(),
                 nn.Dropout(p=rel_dropout))
 
-        #Biaffine Attention Parameters
+        # Biaffine Attention parameters
         self.W_arc = nn.Parameter(torch.randn(d_arc, d_arc))
         self.b_arc = nn.Parameter(torch.randn(d_arc))
 
-        #Note to self: in paper, U shape is (d, d, r) but in implementation Kasai uses (d,r,d)
         self.U_rel = nn.Parameter(torch.randn(d_rel, num_relations, d_rel))
         self.W_rel = nn.Parameter(torch.randn(d_rel, num_relations))
         self.b_rel = nn.Parameter(torch.randn(num_relations))
-
 
     def forward(self, words, pos, sent_lens):
         '''
@@ -103,16 +116,17 @@ class BiaffineParser(nn.Module):
             head_preds::Tensor - Shape(b, l); [i,j] entry is
                                  prediction of jth word in ith sentence
         '''
-
         #if not self.train:
         #    self.word_emb.weight.data[,:] = 0.0 # Zero-out "unk" word at test time
 
         w_embs = self.word_emb(words) # (b, l, w_e)
         p_embs = self.pos_emb(pos) # (b, l, p_e)
 
-        lstm_input = self.embedding_dropout(torch.cat([w_embs, p_embs], -1)) # (b, l, w_e + p_e)
+        lstm_input = self.embedding_dropout(
+                torch.cat([w_embs, p_embs], -1)) # (b, l, w_e + p_e)
 
-        packed_input = pack_padded_sequence(lstm_input, sent_lens, batch_first=True)
+        packed_input = pack_padded_sequence(
+                lstm_input, sent_lens, batch_first=True)
 
         H, _ = self.lstm(packed_input) # H, presumably, is the tensor of h_k's described in Kasai
         H, _ = pad_packed_sequence(H, batch_first=True) # (b, l, 2*hidden_size)
@@ -125,7 +139,7 @@ class BiaffineParser(nn.Module):
         H_rel_dep  = self.h_rel_dep(H) # (b, l, d_rel)
 
         b, l, d_arc = H_arc_head.size() # l for "longest_sentence"
-        S = torch.mm(H_arc_dep.view(b*l, d_arc), self.W_arc).view(b, l, d_arc) # Implementing W_arc * h_i_dep
+        S = torch.mm(H_arc_dep.view(b * l, d_arc), self.W_arc).view(b, l, d_arc) # Implementing W_arc * h_i_dep
         S = torch.bmm(S, H_arc_head.permute(0, 2, 1)) # (b, l, l)
         bias = torch.mm(H_arc_head.view(b*l, d_arc), self.b_arc.unsqueeze(1)) # (b*l, 1)
         #bias : Unsqueezing here allows intuitive matrix-vector multiply
@@ -135,7 +149,7 @@ class BiaffineParser(nn.Module):
         if self.training: # Greedy
             head_preds = torch.argmax(S, 2) # (b, l, l) -> (b, l)
 
-        else: # Single-rooted, acyclic graph of head-dependency relations
+        else:  # Single-rooted, acyclic graph of head-dependency relations
             head_preds = mst_preds(S, sent_lens) # (b, l, l) -> length-b list of np arrays
             head_preds = pad_sequence([torch.Tensor(s).long() for s in head_preds],
                     batch_first=True, padding_value=-1) #NOTE Need to assess use of -1 padding here in relation to L computation
@@ -145,31 +159,17 @@ class BiaffineParser(nn.Module):
         for i in range(b):
             H_rel_head[i] = H_rel_head[i].index_select(0, head_preds[i].view(-1))
 
-        ##Again, basically copypasted from Kasai
-        #one_hot_pred = torch.zeros(b, l, l)
-        ##NOTE  This one hot code could probably be replaced by clever use of index_select
-        #for i in range(b): # ith sentence
-        #    for j in range(l): # jth word
-        #        k = head_preds[i,j] # k is index of predicted head
-        #        one_hot_pred[i,j,k] = 1
-        #H_rel_head = torch.bmm(one_hot_pred, H_rel_head) # (b, l, d_rel)
-        
-        #H_rel_head = H_rel_head.view(b*l, d_rel).index_select(0, head_preds.view(-1)).view(b, l, d_rel)
-
         #H_rel_head: Now the i-th row of this matrix is h_p_i^(rel_head), the MLP output for predicted head of ith word
         U_rel = self.U_rel.view(-1, num_rel * d_rel) # (d_rel, num_rel * d_rel)
-        interactions = torch.mm(H_rel_head.view(b*l, d_rel), U_rel).view(b*l, num_rel, d_rel) # (b*l, num_rel, d_rel)
-        interactions = torch.bmm(interactions, H_rel_dep.view(b*l, d_rel, 1)).view(b, l, num_rel) # (b*l, l, num_rel)
-        sums = (torch.mm((H_rel_head+H_rel_dep).view(b*l, d_rel), self.W_rel) + self.b_rel).view(b, l, num_rel)
+        interactions = torch.mm(H_rel_head.view(b * l, d_rel), U_rel).view(b * l, num_rel, d_rel) # (b*l, num_rel, d_rel)
+        interactions = torch.bmm(interactions, H_rel_dep.view(b * l, d_rel, 1)).view(b, l, num_rel) # (b*l, l, num_rel)
+        sums = (torch.mm((H_rel_head + H_rel_dep).view(b*l, d_rel), self.W_rel) + self.b_rel).view(b, l, num_rel)
         L = interactions + sums # (b, l, num_rel) where logits vectors l_i are 3rd axis of L
 
         return S, L, head_preds
 
 
 ## From https://github.com/chantera/biaffineparser/blob/master/pytorch_model.py#L86
-'''THE POINT OF THIS FUNCTION IS...
-
-'''
 def mst_preds(S, sent_lens):
     heads_batch = []
     
@@ -198,10 +198,6 @@ def mst_preds(S, sent_lens):
         #    labels[root_arc] = ROOT
         #labels_batch.append(labels)
 
-    #print(len(heads_batch))
-    #print(heads_batch[0].shape)
-    #print(heads_batch[4].shape)
-    #print(heads_batch)
     return heads_batch # (b, l, l)
 
 def softmax2d(x): #Just doing softmax of row vectors
