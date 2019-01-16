@@ -1,1 +1,4 @@
 sentence.conllu
+debug.txt
+*.log
+__pycache__
