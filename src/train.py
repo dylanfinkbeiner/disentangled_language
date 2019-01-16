@@ -22,7 +22,7 @@ BATCH_SIZE = 100  #As Jabberwocky paper stated
 WEIGHTS_DIR = '../weights'
 LOG_DIR = '../log'
 DATA_DIR = '../data'
-MODEL_NAME = 'makeanargparser'
+MODEL_NAME = 'makeanargparser.tch'
 CONLLU_FILE = 'tenpercentsample.conllu'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
