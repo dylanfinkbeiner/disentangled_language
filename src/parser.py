@@ -68,6 +68,7 @@ class BiaffineParser(nn.Module):
         self.embedding_dropout = nn.Dropout(p=embedding_dropout)
 
         # LSTM
+        self.hidden_size = hidden_size
         self.lstm = nn.LSTM(
                 input_size=(word_e_size + pos_e_size),
                 hidden_size=hidden_size,
@@ -104,7 +105,7 @@ class BiaffineParser(nn.Module):
         self.W_rel = nn.Parameter(torch.randn(d_rel, num_relations))
         self.b_rel = nn.Parameter(torch.randn(num_relations))
 
-    def forward(self, words, pos, sent_lens):
+    def forward(self, words, pos, sent_lens, train_type='syn', dropped=None):
         '''
         ins:
             words::Tensor
@@ -123,16 +124,33 @@ class BiaffineParser(nn.Module):
         #    self.word_emb.weight.data[,:] = 0.0 # Zero-out "unk" word at test time
 
         w_embs = self.word_emb(words) # (b, l, w_e)
+        if(train_type == 'syn'):
+            w_embs_drop = self.word_emb(dropped)
         p_embs = self.pos_emb(pos) # (b, l, p_e)
 
         lstm_input = self.embedding_dropout(
                 torch.cat([w_embs, p_embs], -1)) # (b, l, w_e + p_e)
 
+        if(train_type == 'syn'):
+            lstm_input_drop = slef.embedding_dropout(
+                    torch.cat([w_embs_drop, p_embs], -1))
+
         packed_input = pack_padded_sequence(
                 lstm_input, sent_lens, batch_first=True)
 
+        if(train_type == 'syn'):
+            packed_input_drop = pack_padded_sequence(
+                    lstm_input_drop, sent_lens, batch_first=True)
+
         H, _ = self.lstm(packed_input) # H, presumably, is the tensor of h_k's described in Kasai
         H, _ = pad_packed_sequence(H, batch_first=True) # (b, l, 2*hidden_size)
+
+        # Splice syntactic content from H_drop, semantic content from H
+        if(train_type == 'syn'):
+            H_drop, _ = self.lstm(packed_input_drop)
+            H_drop, _ = pad_packed_sequence(H_drop, batch_first=True)
+
+            H[:,:,self.hidden_size:] = H_drop[:,:,self.hidden_size:]
 
         #Recap so far: H is a (b,l,800) tensor; first axis: sentence | second: word | third: lstm output
 
@@ -149,20 +167,20 @@ class BiaffineParser(nn.Module):
         bias = bias.view(b, l, 1).permute(0, 2, 1) # (b, 1, l)
         S += bias # (b, l, l) where logits vectors s_i are 3rd axis of S
 
-        if self.training: # Greedy
+        if self.training:  # Greedy
             head_preds = torch.argmax(S, 2) # (b, l, l) -> (b, l)
 
         else:  # Single-rooted, acyclic graph of head-dependency relations
-            head_preds = mst_preds(S, sent_lens) # (b, l, l) -> length-b list of np arrays
+            head_preds = mst_preds(S, sent_lens) # S:(b, l, l) -> [length-b list of np arrays]
             head_preds = pad_sequence([torch.Tensor(s).long() for s in head_preds],
-                    batch_first=True, padding_value=-1) #NOTE Need to assess use of -1 padding here in relation to L computation
+                    batch_first=True, padding_value=0) # (b, l)
 
         d_rel, num_rel, _ = self.U_rel.size()
 
         for i in range(b):
             H_rel_head[i] = H_rel_head[i].index_select(0, head_preds[i].view(-1))
 
-        #H_rel_head: Now the i-th row of this matrix is h_p_i^(rel_head), the MLP output for predicted head of ith word
+        # H_rel_head: Now the i-th row of this matrix is h_p_i^(rel_head), the MLP output for predicted head of ith word
         U_rel = self.U_rel.view(-1, num_rel * d_rel) # (d_rel, num_rel * d_rel)
         interactions = torch.mm(H_rel_head.view(b * l, d_rel), U_rel).view(b * l, num_rel, d_rel) # (b*l, num_rel, d_rel)
         interactions = torch.bmm(interactions, H_rel_dep.view(b * l, d_rel, 1)).view(b, l, num_rel) # (b*l, l, num_rel)

@@ -23,7 +23,7 @@ WEIGHTS_DIR = '../weights'
 LOG_DIR = '../log'
 DATA_DIR = '../data'
 MODEL_NAME = 'makeanargparser.tch'
-CONLLU_FILE = 'tenpercentsample.conllu'
+CONLLU_FILE = 'treebank.conllu'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
 
@@ -118,8 +118,6 @@ def main():
         log.info('Starting train loop.')
         for e in range(NUM_EPOCHS):
 
-            continue #XXX
-
             parser.train()
             train_loss = 0
             for b in range(n_train_batches):
@@ -127,7 +125,8 @@ def main():
 
                 words, pos, sent_lens, head_targets, rel_targets = next(train_loader)
 
-                S, L, _ = parser(words, pos, sent_lens)
+                S, L, _ = parser(words.to(device), pos.to(device), sent_lens)
+                breakpoint()
 
                 loss_h = loss_heads(S, head_targets)
                 loss_r = loss_rels(L, rel_targets)
@@ -138,6 +137,11 @@ def main():
                 loss.backward()
                 opt.step()
 
+                if(semantic_training):
+                    parser(words, pos, sent_lens)
+
+
+
             train_loss /= n_train_batches
 
             parser.eval()  # Crucial! Toggles dropout effects
@@ -145,7 +149,8 @@ def main():
             UAS = 0
             LAS = 0
             for b in range(n_dev_batches):
-                words, pos, sent_lens, head_targets, rel_targets = next(dev_loader)
+                with torch.no_grad():
+                    words, pos, sent_lens, head_targets, rel_targets = next(dev_loader)
 
                 S, L, head_preds = parser(words, pos, sent_lens)
                 rel_preds = predict_relations(L, head_preds)
@@ -163,10 +168,6 @@ def main():
 
             dev_loss /= n_dev_batches
 
-            #print('Training Loss:: Heads: {:.3f}\t Rels: {:.3f}\t Dev Accuracy:: Heads: {:.3f}\t Rels: {:.3f}\t'.format(
-            #    arc_loss, rel_loss, arc_accuracy, rel_accuracy))
-            #print('Epoch:: {:.3f}\t [Training Loss:: {:.3f}\t Dev Loss:: {:.3f}]\t [Dev Accuracy:: Heads: {:.3f}\t Rels: {:.3f}]'.format(
-            #    e, train_loss, dev_loss, head_accuracy, rel_accuracy))
             update = '''Epoch: {:}\t
                     Train Loss: {:.3f}\t
                     Dev Loss: {:.3f}\t
@@ -174,6 +175,7 @@ def main():
                     LAS: {:.3f} '''.format(e, train_loss, dev_loss, UAS, LAS)
             log.info(update)
 
+            # Early stopping heuristic from Jabberwocky paper
             if LAS > prev_best:
                 earlystop_counter = 0
                 prev_best = LAS
@@ -181,7 +183,7 @@ def main():
                 earlystop_counter += 1
                 if earlystop_counter >= 5:
                     print('''LAS has not improved for 5 consecutive epochs,
-                          stopping after {:} epochs'''.format(e))
+                          stopping after {} epochs'''.format(e))
                     break
 
         # Save weights
@@ -213,6 +215,13 @@ def loss_rels(L, rel_targets, pad_idx=-1):
     '''
 
     return F.cross_entropy(L.permute(0,2,1), rel_targets, ignore_index=pad_idx)
+
+def loss_lm(s, s_para, neg_sample):
+    margin = 1
+    paraphrase_attract = torch.dot(s, s_para)
+    neg_repel = torch.dot(s, neg_sample)
+
+    return F.relu(margin - para_attract + neg_repel)
 
 
 def predict_relations(L, head_preds):

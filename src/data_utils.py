@@ -55,15 +55,15 @@ def custom_data_loader(data, b_size, word2num, num2word, word_counts):
     which seems to not really make use of the space-efficient pattern of
     a generator. Should consider some kind of refactor here if time allows it.
     '''
-    chunk_generator = (data[i:i+b_size] for i in range(0, len(data), b_size))
-
-    while True:
-        for chunk in chunk_generator:
-            yield chunk_to_batch(chunk, word2num, num2word, word_counts)
+    #chunk_generator = (data[i:i+b_size] for i in range(0, len(data), b_size))
 
     #while True:
-    #    for chunk in chunk_generator(data, batch_size):
+    #    for chunk in chunk_generator:
     #        yield chunk_to_batch(chunk, word2num, num2word, word_counts)
+
+    while True:
+        for chunk in chunk_generator(data, b_size):
+            yield chunk_to_batch(chunk, word2num, num2word, word_counts)
 
 
 def chunk_generator(data, chunk_size):
