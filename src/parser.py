@@ -39,7 +39,6 @@ Hypothesis: We can break up parser into to submodules:
     2) BiAffine Attention
         in: (lstm_out, sent_len)
         out: (arc_scores, rel_scores, head_preds)
-
 '''
 
 
