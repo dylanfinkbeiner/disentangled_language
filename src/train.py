@@ -42,8 +42,8 @@ log.addHandler(stream_handler)
 
 def main():
     # Set up begins
-    INIT_DATA = False
-    INIT_MODEL = False
+    INIT_DATA = True
+    INIT_MODEL = True
     TRAINING = True
 
     torch.manual_seed(0)
@@ -116,31 +116,52 @@ def main():
         earlystop_counter = 0
         prev_best = 0
         log.info('Starting train loop.')
+
+        # For weight analysis
+        state = parser.state_dict()
+
         for e in range(NUM_EPOCHS):
 
             parser.train()
             train_loss = 0
             for b in range(n_train_batches):
+                log.info('Attention h_rel_head:', state['BiAffineAttention.h_rel_head.0.weight'])
+                log.info('Word embedding weight', state['BiLSTM.word_emb.weight'])
+                # Parser training
                 opt.zero_grad()
 
                 words, pos, sent_lens, head_targets, rel_targets = next(train_loader)
 
-                S, L, _ = parser(words.to(device), pos.to(device), sent_lens)
-                breakpoint()
+                #S, L, _ = parser(words.to(device), pos.to(device), sent_lens)
+                outputs, _, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
 
-                loss_h = loss_heads(S, head_targets)
-                loss_r = loss_rels(L, rel_targets)
+                S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
+
+                loss_h = loss_heads(S_arc, head_targets)
+                loss_r = loss_rels(S_rel, rel_targets)
                 loss = loss_h + loss_r
 
                 train_loss += loss_h.item() + loss_r.item()
 
                 loss.backward()
                 opt.step()
+                time.sleep(3)
 
-                if(semantic_training):
-                    parser(words, pos, sent_lens)
+                # Sentence similarity training
+                #opt.zero_grad()
 
+                #words, pos, sent_lens = next(train_ss_loader)
 
+                #S, L, _ = parser(words.to(device), pos.to(device), sent_lens)
+
+                #loss_h = loss_heads(S, head_targets)
+                #loss_r = loss_rels(L, rel_targets)
+                #loss = loss_h + loss_r
+
+                #train_loss += loss_h.item() + loss_r.item()
+
+                #loss.backward()
+                #opt.step()
 
             train_loss /= n_train_batches
 
@@ -216,6 +237,7 @@ def loss_rels(L, rel_targets, pad_idx=-1):
 
     return F.cross_entropy(L.permute(0,2,1), rel_targets, ignore_index=pad_idx)
 
+
 def loss_lm(s, s_para, neg_sample):
     margin = 1
     paraphrase_attract = torch.dot(s, s_para)
@@ -277,6 +299,7 @@ def attachment_scoring(head_preds, rel_preds, head_targets, rel_targets, sent_le
     LAS = LAS.sum() / b
 
     return UAS, LAS
+
 
 if __name__ == '__main__':
     main()

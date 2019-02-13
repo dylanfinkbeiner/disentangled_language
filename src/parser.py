@@ -45,6 +45,7 @@ Hypothesis: We can break up parser into to submodules:
 
 class BiLSTM(nn.Module):
     def __init__(
+            self,
             word_e_size=100,
             pos_e_size=25,  # Original Dozat/Manning paper uses 100
             word_vocab_size=None,
@@ -54,7 +55,7 @@ class BiLSTM(nn.Module):
             lstm_dropout=0.33,
             embedding_dropout=0.33,
             padding_idx=None):
-        
+        print('in bilstm, ', word_e_size)
         super(BiLSTM, self).__init__()
 
         # Embeddings (words initialized to zero) 
@@ -83,26 +84,26 @@ class BiLSTM(nn.Module):
                 batch_first=True,
                 dropout=lstm_dropout)
 
-        def forward(words, pos, sent_len):
-            h_size = self.hidden_size
+    def forward(self, words, pos, sent_lens):
+        h_size = self.hidden_size
 
-            #if not self.train:
-            #    self.word_emb.weight.data[,:] = 0.0 # Zero-out "unk" word at test time
+        #if not self.train:
+        #    self.word_emb.weight.data[,:] = 0.0 # Zero-out "unk" word at test time
 
-            p_embs = self.pos_emb(pos) # (b, l, p_e)
+        p_embs = self.pos_emb(pos) # (b, l, p_e)
 
-            w_embs = self.word_emb(words) # (b, l, w_e)
+        w_embs = self.word_emb(words) # (b, l, w_e)
 
-            lstm_input = self.embedding_dropout(
-                    torch.cat([w_embs, p_embs], -1)) # (b, l, w_e + p_e)
+        lstm_input = self.embedding_dropout(
+                torch.cat([w_embs, p_embs], -1)) # (b, l, w_e + p_e)
 
-            packed_input = pack_padded_sequence(
-                    lstm_input, sent_lens, batch_first=True)
+        packed_input = pack_padded_sequence(
+                lstm_input, sent_lens, batch_first=True)
 
-            outputs, (h_n, c_n) = self.lstm(packed_input)
-            outputs, (h_n, c_n) = pad_packed_sequence(outputs, batch_first=True) # (b, l, 2*hidden_size)
+        outputs, (h_n, c_n) = self.lstm(packed_input)
+        outputs, _ = pad_packed_sequence(outputs, batch_first=True) # (b, l, 2*hidden_size)
 
-            return outputs, h_n, c_n
+        return outputs, h_n, c_n
 
 
 class BiAffineAttention(nn.Module):
@@ -145,7 +146,7 @@ class BiAffineAttention(nn.Module):
         self.b_rel = nn.Parameter(torch.randn(num_relations))
 
 
-    def forward(H):
+    def forward(self, H, sent_lens):
         #Recap so far: H is a (b,l,800) tensor; first axis: sentence | second: word | third: lstm output
         H_arc_head = self.h_arc_head(H) # (b, l, d_arc)
         H_arc_dep  = self.h_arc_dep(H) # (b, l, d_arc)
@@ -154,17 +155,17 @@ class BiAffineAttention(nn.Module):
 
         b, l, d_arc = H_arc_head.size() # l for "longest_sentence"
         S_arc = torch.mm(H_arc_dep.view(b * l, d_arc), self.W_arc).view(b, l, d_arc) # Implementing W_arc * h_i_dep
-        S_arc = torch.bmm(S, H_arc_head.permute(0, 2, 1)) # (b, l, l)
+        S_arc = torch.bmm(S_arc, H_arc_head.permute(0, 2, 1)) # (b, l, l)
         bias = torch.mm(H_arc_head.view(b*l, d_arc), self.b_arc.unsqueeze(1)) # (b*l, 1)
         #bias : Unsqueezing here allows intuitive matrix-vector multiply
         bias = bias.view(b, l, 1).permute(0, 2, 1) # (b, 1, l)
         S_arc += bias # (b, l, l) where logits vectors s_i are 3rd axis of S
 
         if self.training:  # Greedy
-            head_preds = torch.argmax(S, 2) # (b, l, l) -> (b, l)
+            head_preds = torch.argmax(S_arc, 2) # (b, l, l) -> (b, l)
 
         else:  # Single-rooted, acyclic graph of head-dependency relations
-            head_preds = mst_preds(S, sent_lens) # S:(b, l, l) -> [length-b list of np arrays]
+            head_preds = mst_preds(S_arc, sent_lens) # S:(b, l, l) -> [length-b list of np arrays]
             head_preds = pad_sequence([torch.Tensor(s).long() for s in head_preds],
                     batch_first=True, padding_value=0) # (b, l)
 
@@ -200,9 +201,9 @@ class BiaffineParser(nn.Module):
             arc_dropout=0.33,
             rel_dropout=0.33,
             padding_idx=None):
-
         super(BiaffineParser, self).__init__()
 
+        print('in biaparse ', word_e_size)
         self.BiLSTM = BiLSTM(
                 word_e_size=word_e_size,
                 pos_e_size=pos_e_size,
@@ -218,7 +219,6 @@ class BiaffineParser(nn.Module):
             d_arc=d_arc,
             d_rel=d_rel,
             num_relations=num_relations,
-            embedding_dropout=embedding_dropout,
             arc_dropout=arc_dropout,
             rel_dropout=rel_dropout)
         
@@ -239,7 +239,7 @@ class BiaffineParser(nn.Module):
         '''
 
         outputs, h_n, c_n = self.BiLSTM(words, pos, sent_lens)
-        return self.BiAffineAttention(outputs)
+        return self.BiAffineAttention(outputs, sent_lens)
         
         # old forward, just in case
         #h_size = self.hidden_size
