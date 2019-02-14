@@ -14,7 +14,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 from parser import BiaffineParser
-from data_utils import get_dataset, custom_data_loader
+from data_utils import get_dataset, custom_data_loader, word_dropout
 
 NUM_EPOCHS = 100
 BATCH_SIZE = 100  #As Jabberwocky paper stated
@@ -59,33 +59,33 @@ def main():
         INIT_DATA = True
 
     if INIT_DATA:
-        data_split, x2num_maps, num2x_maps, word_counts = get_dataset(
+        data_split, x2i_maps, i2x_maps, word_counts = get_dataset(
                 os.path.join(DATA_DIR, CONLLU_FILE), training=True)
         with open(vocabs_pkl, 'wb') as f:
-            pickle.dump((x2num_maps, num2x_maps), f)
+            pickle.dump((x2i_maps, i2x_maps), f)
         with open(data_pkl, 'wb') as f:
             pickle.dump((data_split, word_counts), f)
     else:
         with open(vocabs_pkl, 'rb') as f:
-            x2num_maps, num2x_maps = pickle.load(f)
+            x2i_maps, i2x_maps = pickle.load(f)
         with open(data_pkl, 'rb') as f:
             data_split, word_counts = pickle.load(f)
 
     train_data = data_split['train']
     dev_data = data_split['dev']
 
-    word2num = x2num_maps['word']
-    pos2num = x2num_maps['pos']
-    rel2num = x2num_maps['rel']
+    w2i = x2i_maps['word']
+    p2i = x2i_maps['pos']
+    r2i = x2i_maps['rel']
 
-    num2word = num2x_maps['word']
+    i2w = i2x_maps['word']
 
     parser = BiaffineParser(
-            word_vocab_size = len(word2num),
-            pos_vocab_size = len(pos2num),
-            num_relations = len(rel2num),
+            word_vocab_size = len(w2i),
+            pos_vocab_size = len(p2i),
+            num_relations = len(r2i),
             hidden_size = H_SIZE,
-            padding_idx = word2num[PAD_TOKEN])
+            padding_idx = w2i[PAD_TOKEN])
     parser.to(device)
 
     model_weights = os.path.join(WEIGHTS_DIR, MODEL_NAME)
@@ -102,20 +102,20 @@ def main():
         train_sdp_loader = sdp_data_loader(
                 train_data,
                 BATCH_SIZE,
-                word2num,
-                num2word,
+                w2i,
+                i2w,
                 word_counts)
         train_ss_loader = ss_data_loader(
                 train_data,
                 BATCH_SIZE,
-                word2num,
-                num2word,
+                w2i,
+                i2w,
                 word_counts)
         dev_loader = sdp_data_loader(
                 dev_data,
                 BATCH_SIZE,
-                word2num,
-                num2word,
+                w2i,
+                i2w,
                 word_counts)
 
         n_train_batches = ceil(len(train_data) / BATCH_SIZE)
@@ -144,14 +144,14 @@ def main():
                 opt.zero_grad()
 
                 words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
-                drop_words = apply_dropout(words)
+                words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
 
-                outputs, _, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
-                drop_outputs, _, _ = parser.BiLSTM(drop_words.to(device), pos.to(device), sent_lens)
+                outputs, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
+                outputs_d, _ = parser.BiLSTM(words_d.to(device), pos.to(device), sent_lens)
 
                 # Splice
-                outputs[:,:,H_SIZE/2:H_SIZE] = drop_outputs[:,:,H_SIZE/2:H_SIZE]
-                outputs[:,:,H_SIZE+(H_SIZE/2):] = drop_outputs[:,:,H_SIZE+(H_SIZE/2):]
+                outputs[:,:,H_SIZE/2:H_SIZE] = outputs_d[:,:,H_SIZE/2:H_SIZE]
+                outputs[:,:,H_SIZE+(H_SIZE/2):] = outputs_d[:,:,H_SIZE+(H_SIZE/2):]
 
                 S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
 

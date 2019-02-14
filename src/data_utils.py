@@ -26,13 +26,13 @@ PAD_TOKEN = '<pad>'
 def get_dataset(conllu_file, training=False):
     sents_list = conllu_to_sents(conllu_file)
 
-    x2num_maps, num2x_maps = build_dicts(sents_list)
-    
     sents_list, word_counts = filter_and_count(sents_list, filter_single=training)
+
+    x2i_maps, i2x_maps = build_dicts(sents_list)
     
-    sent_list = numericalize(sents_list, x2num_maps)
+    sent_list = numericalize(sents_list, x2i_maps)
     
-    return get_train_dev_test(sent_list), x2num_maps, num2x_maps, word_counts
+    return get_train_dev_test(sent_list), x2i_maps, i2x_maps, word_counts
 
 
 def get_train_dev_test(data_list):
@@ -49,36 +49,43 @@ def get_train_dev_test(data_list):
 # uses chunks of shuffled INDICES rather than chunks of the
 # data list itself; this may be a more convenient/efficient
 # implementation once I get to the point of SHUFFLING the data
-def custom_data_loader(data, b_size, word2num, num2word, word_counts):
+def sdp_data_loader(data, b_size, w2i, i2w, word_counts):
 
     '''NOTE We pass the entirety of data_list as input to this function,
     which seems to not really make use of the space-efficient pattern of
     a generator. Should consider some kind of refactor here if time allows it.
     '''
-    #chunk_generator = (data[i:i+b_size] for i in range(0, len(data), b_size))
-
-    #while True:
-    #    for chunk in chunk_generator:
-    #        yield chunk_to_batch(chunk, word2num, num2word, word_counts)
-
+    idx = list(range(len(data)))
     while True:
-        for chunk in chunk_generator(data, b_size):
-            yield chunk_to_batch(chunk, word2num, num2word, word_counts)
+        shuffle(idx) # In-place shuffle
+        for chunk in idx_to_chunks(idx, b_size):
+            batch = [data[i] for i in chunk]
+            yield prepare_batch(batch)
 
 
-def chunk_generator(data, chunk_size):
-    for i in range(0, len(data), chunk_size):
-        yield data[i:i+chunk_size]
+def idx_to_chunks(idx, chunk_size):
+    for i in range(0, len(idx), chunk_size):
+        yield idx[i:i+chunk_size]
 
 
-def chunk_to_batch(chunk, word2num, num2word, word_counts):
+def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=40):
     '''
-    Transform a chunk (list) of sentences
-    into a batch for training the parser
-    in the form of five LongTensors representing
-    the sentences as words, pos, arcs, deprels
+       Words coming in as tensor, should be (b,l)
+    '''
+    for i, s in enumerate(words):
+        for j in range(1, lens[i]): # Skip root token
+            p = -1
+            c = counts[ i2w[s[j]] ]
+            p = alpha / (c + alpha) # Dropout probability
+            if random.random() <= p:
+                words[i,j] = int(w2i[UNK_TOKEN])
 
-    requires PADDING
+
+
+def prepare_batch(chunk):
+    '''
+    Transform a batch from a np array of sentences
+    into several tensors to use in training
     '''
 
     alpha = 40 # NOTE This is not a great place for this variable.
@@ -100,16 +107,10 @@ def chunk_to_batch(chunk, word2num, num2word, word_counts):
             you cannot set a value in torch long tensor using
             numpy's 64 bit ints
             '''
-            p = -1
-            if j > 0: # First token in a sentence is ROOT_TOKEN
-                c = word_counts[num2word[s[j,0]]]
-                p = alpha / (c + alpha) # Dropout probability
-
-            words[i,j] = int(s[j,0]) if random.random() > p else int(word2num[UNK_TOKEN])
+            words[i,j] = int(s[j,0])
             pos[i,j] = int(s[j,1])
             heads[i,j] = int(s[j,2])
             rels[i,j] =  int(s[j,3])
-
 
     return words, pos, sent_lens, heads, rels
 
@@ -152,50 +153,50 @@ def build_dicts(sents_list):
             pos.add(line[1])
             rel.add(line[3])
 
-    word2num = defaultdict(lambda : len(word2num))
-    pos2num = defaultdict(lambda : len(pos2num))
-    rel2num = defaultdict(lambda : len(rel2num))
-    num2word, num2pos, num2rel = dict(), dict(), dict()
+    w2i = defaultdict(lambda : len(w2i))
+    p2i = defaultdict(lambda : len(p2i))
+    r2i = defaultdict(lambda : len(r2i))
+    i2w, i2p, i2r = dict(), dict(), dict()
 
     #Crucial that PAD_TOKEN map to 0 so that chunk_to_batch() definition correct
-    num2word[word2num[PAD_TOKEN]] = PAD_TOKEN
-    num2pos[pos2num[PAD_TOKEN]] = PAD_TOKEN
+    i2w[w2i[PAD_TOKEN]] = PAD_TOKEN
+    i2p[p2i[PAD_TOKEN]] = PAD_TOKEN
 
-    num2word[word2num[UNK_TOKEN]] = UNK_TOKEN
-    num2pos[pos2num[UNK_TOKEN]] = UNK_TOKEN
+    i2w[w2i[UNK_TOKEN]] = UNK_TOKEN
+    i2p[p2i[UNK_TOKEN]] = UNK_TOKEN
 
-    num2word[word2num[ROOT_TOKEN]] = ROOT_TOKEN
-    num2pos[pos2num[ROOT_TOKEN]] = ROOT_TOKEN
+    i2w[w2i[ROOT_TOKEN]] = ROOT_TOKEN
+    i2p[p2i[ROOT_TOKEN]] = ROOT_TOKEN
 
     for w in words:
-        num2word[word2num[w]] = w
+        i2w[w2i[w]] = w
     for p in pos:
-        num2pos[pos2num[p]] = p
+        i2p[p2i[p]] = p
     for r in rel:
-        num2rel[rel2num[r]] = r
+        i2r[r2i[r]] = r
 
-    x2num_maps = {'word' : dict(word2num), 'pos' : dict(pos2num), 'rel' : dict(rel2num)}
-    num2x_maps = {'word' : num2word, 'pos' : num2pos, 'rel' : num2rel}
+    x2i_maps = {'word' : dict(w2i), 'pos' : dict(p2i), 'rel' : dict(r2i)}
+    i2x_maps = {'word' : i2w, 'pos' : i2p, 'rel' : i2r}
 
-    return x2num_maps, num2x_maps
+    return x2i_maps, i2x_maps
 
 
-def numericalize(sents_list, x2num_maps):
-    word2num = x2num_maps['word']
-    pos2num = x2num_maps['pos']
-    rel2num = x2num_maps['rel']
+def numericalize(sents_list, x2i_maps):
+    w2i = x2i_maps['word']
+    p2i = x2i_maps['pos']
+    r2i = x2i_maps['rel']
 
     sents_numericalized = []
     for s in sents_list:
         new_shape = (s.shape[0] + 1, s.shape[1])
         new_s = np.zeros(new_shape, dtype=int) # Making room for ROOT_TOKEN
-        new_s[0,:] = word2num[ROOT_TOKEN], pos2num[ROOT_TOKEN], -1, -1 # -1s here become crucial for attachment scoring
+        new_s[0,:] = w2i[ROOT_TOKEN], p2i[ROOT_TOKEN], -1, -1 # -1s here become crucial for attachment scoring
 
         for i in range(s.shape[0]):
-            new_s[i+1,0] = word2num.get(s[i,0].lower(), word2num[UNK_TOKEN])
-            new_s[i+1,1] = pos2num.get(s[i,1], pos2num[UNK_TOKEN])
+            new_s[i+1,0] = w2i.get(s[i,0].lower(), w2i[UNK_TOKEN])
+            new_s[i+1,1] = p2i.get(s[i,1], p2i[UNK_TOKEN])
             new_s[i+1,2] = int(s[i,2]) # Head idx
-            new_s[i+1,3] = rel2num[s[i,3]]
+            new_s[i+1,3] = r2i[s[i,3]]
 
         sents_numericalized.append(new_s)
 

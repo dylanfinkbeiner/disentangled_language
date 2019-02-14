@@ -102,7 +102,7 @@ class BiLSTM(nn.Module):
         outputs, (h_n, c_n) = self.lstm(packed_input)
         outputs, _ = pad_packed_sequence(outputs, batch_first=True) # (b, l, 2*hidden_size)
 
-        return outputs, h_n, c_n
+        return outputs, (h_n, c_n)
 
 
 class BiAffineAttention(nn.Module):
