@@ -27,6 +27,8 @@ CONLLU_FILE = 'treebank.conllu'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
 
+H_SIZE = 400
+
 log = logging.getLogger(__name__)
 formatter = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
 log.setLevel(logging.DEBUG)
@@ -57,7 +59,8 @@ def main():
         INIT_DATA = True
 
     if INIT_DATA:
-        data_split, x2num_maps, num2x_maps, word_counts = get_dataset(os.path.join(DATA_DIR, CONLLU_FILE), training=True)
+        data_split, x2num_maps, num2x_maps, word_counts = get_dataset(
+                os.path.join(DATA_DIR, CONLLU_FILE), training=True)
         with open(vocabs_pkl, 'wb') as f:
             pickle.dump((x2num_maps, num2x_maps), f)
         with open(data_pkl, 'wb') as f:
@@ -81,6 +84,7 @@ def main():
             word_vocab_size = len(word2num),
             pos_vocab_size = len(pos2num),
             num_relations = len(rel2num),
+            hidden_size = H_SIZE,
             padding_idx = word2num[PAD_TOKEN])
     parser.to(device)
 
@@ -95,13 +99,19 @@ def main():
         log.info(f'There are {len(train_data)} training examples.')
         log.info(f'There are {len(dev_data)} validation examples.')
 
-        train_loader = custom_data_loader(
+        train_sdp_loader = sdp_data_loader(
                 train_data,
                 BATCH_SIZE,
                 word2num,
                 num2word,
                 word_counts)
-        dev_loader = custom_data_loader(
+        train_ss_loader = ss_data_loader(
+                train_data,
+                BATCH_SIZE,
+                word2num,
+                num2word,
+                word_counts)
+        dev_loader = sdp_data_loader(
                 dev_data,
                 BATCH_SIZE,
                 word2num,
@@ -125,15 +135,23 @@ def main():
             parser.train()
             train_loss = 0
             for b in range(n_train_batches):
+
+                # Checking to see weights are changing
                 log.info('Attention h_rel_head:', state['BiAffineAttention.h_rel_head.0.weight'])
                 log.info('Word embedding weight', state['BiLSTM.word_emb.weight'])
-                # Parser training
+
+                # Parser training step
                 opt.zero_grad()
 
-                words, pos, sent_lens, head_targets, rel_targets = next(train_loader)
+                words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
+                drop_words = apply_dropout(words)
 
-                #S, L, _ = parser(words.to(device), pos.to(device), sent_lens)
                 outputs, _, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
+                drop_outputs, _, _ = parser.BiLSTM(drop_words.to(device), pos.to(device), sent_lens)
+
+                # Splice
+                outputs[:,:,H_SIZE/2:H_SIZE] = drop_outputs[:,:,H_SIZE/2:H_SIZE]
+                outputs[:,:,H_SIZE+(H_SIZE/2):] = drop_outputs[:,:,H_SIZE+(H_SIZE/2):]
 
                 S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
 
@@ -145,23 +163,22 @@ def main():
 
                 loss.backward()
                 opt.step()
-                time.sleep(3)
 
-                # Sentence similarity training
-                #opt.zero_grad()
+                # Sentence similarity training step
+                opt.zero_grad()
 
-                #words, pos, sent_lens = next(train_ss_loader)
+                batch = next(train_ss_loader)
+                for s in batch:
+                    
 
-                #S, L, _ = parser(words.to(device), pos.to(device), sent_lens)
+                _, _ = parser.BiLSTM()
+                _, _ = parser.BiLSTM()
+                _, _ = parser.BiLSTM()
 
-                #loss_h = loss_heads(S, head_targets)
-                #loss_r = loss_rels(L, rel_targets)
-                #loss = loss_h + loss_r
+                loss = loss_ss(s, s_para, s_neg)
 
-                #train_loss += loss_h.item() + loss_r.item()
-
-                #loss.backward()
-                #opt.step()
+                loss.backward()
+                opt.step()
 
             train_loss /= n_train_batches
 
@@ -212,7 +229,11 @@ def main():
             os.makedirs(WEIGHTS_DIR)
         torch.save(parser.state_dict(), model_weights)
 
-        # End main
+    if TEST:
+        #Generate CONLLU file, run test script
+        pass
+
+    # End main
 
 
 #Eventually, probably should pull loss functions out into a utilities file
@@ -238,10 +259,10 @@ def loss_rels(L, rel_targets, pad_idx=-1):
     return F.cross_entropy(L.permute(0,2,1), rel_targets, ignore_index=pad_idx)
 
 
-def loss_lm(s, s_para, neg_sample):
-    margin = 1
-    paraphrase_attract = torch.dot(s, s_para)
-    neg_repel = torch.dot(s, neg_sample)
+def loss_ss(s, s_para, s_neg):
+    margin = 0.4 # As stated in ParaNMT paper
+    para_attract = F.cosine_similarity(s, s_para)
+    neg_repel = F.cosine_similarity(s, s_neg)
 
     return F.relu(margin - para_attract + neg_repel)
 
