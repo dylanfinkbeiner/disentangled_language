@@ -23,7 +23,16 @@ PAD_TOKEN = '<pad>'
    2. A way of splitting to train/dev/test
 '''
 
-def get_dataset(conllu_file, training=False):
+def get_dataset_ss(file):
+
+    return None
+
+def prepare_batch_ss(batch):
+
+
+    
+
+def get_dataset_sdp(conllu_file, training=False):
     sents_list = conllu_to_sents(conllu_file)
 
     sents_list, word_counts = filter_and_count(sents_list, filter_single=training)
@@ -42,14 +51,14 @@ def get_train_dev_test(data_list):
     x = int(.8 * n_samples)
     y = int(.9 * n_samples)
 
-    return {'train': data_list[:x], 'dev': data_list[x:y], 'test': data_list[y:] }
+    return { 'train': data_list[:x], 'dev': data_list[x:y], 'test': data_list[y:] }
 
 
 #TODO Possible edit required: EelcovdW's implementation
 # uses chunks of shuffled INDICES rather than chunks of the
 # data list itself; this may be a more convenient/efficient
 # implementation once I get to the point of SHUFFLING the data
-def sdp_data_loader(data, b_size, w2i, i2w, word_counts):
+def sdp_data_loader(data, b_size):
 
     '''NOTE We pass the entirety of data_list as input to this function,
     which seems to not really make use of the space-efficient pattern of
@@ -79,7 +88,6 @@ def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=40):
             p = alpha / (c + alpha) # Dropout probability
             if random.random() <= p:
                 words[i,j] = int(w2i[UNK_TOKEN])
-
 
 
 def prepare_batch(chunk):

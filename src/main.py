@@ -18,16 +18,16 @@ from data_utils import get_dataset, custom_data_loader, word_dropout
 
 NUM_EPOCHS = 100
 BATCH_SIZE = 100  #As Jabberwocky paper stated
+H_SIZE = 400
 
 WEIGHTS_DIR = '../weights'
 LOG_DIR = '../log'
 DATA_DIR = '../data'
 MODEL_NAME = 'makeanargparser.tch'
 CONLLU_FILE = 'treebank.conllu'
+PARANMT_FILE = 'para-nmt-processed-5m.txt'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
-
-H_SIZE = 400
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
@@ -42,7 +42,7 @@ stream_handler.setFormatter(formatter)
 log.addHandler(stream_handler)
 
 
-def main():
+def train():
     # Set up begins
     INIT_DATA = True
     INIT_MODEL = True
@@ -53,26 +53,35 @@ def main():
 
     vocabs_pkl = os.path.join(DATA_DIR, 
             f'{os.path.splitext(CONLLU_FILE)[0]}_vocabs.pkl')
-    data_pkl = os.path.join(DATA_DIR,
+    data_sdp_pkl = os.path.join(DATA_DIR,
             f'{os.path.splitext(CONLLU_FILE)[0]}_data.pkl')
-    if not os.path.exists(vocabs_pkl) or not os.path.exists(data_pkl):
+    data_ss_pkl = os.path.join(DATA_DIR,
+            f'{os.path.splitext(PARANMT_FILE)[0]}_data.pkl')
+    if not os.path.exists(vocabs_pkl) \
+            or not os.path.exists(data_sdp_pkl) \
+            or not os.path.exists(data_ss_pkl):
         INIT_DATA = True
 
     if INIT_DATA:
-        data_split, x2i_maps, i2x_maps, word_counts = get_dataset(
+        data_sdp, x2i_maps, i2x_maps, word_counts = get_dataset_sdp(
                 os.path.join(DATA_DIR, CONLLU_FILE), training=True)
+        data_ss = get_dataset_ss(os.path.join(DATA_DIR, PARANMT_FILE))
         with open(vocabs_pkl, 'wb') as f:
             pickle.dump((x2i_maps, i2x_maps), f)
-        with open(data_pkl, 'wb') as f:
-            pickle.dump((data_split, word_counts), f)
+        with open(data_sdp_pkl, 'wb') as f:
+            pickle.dump((data_sdp, word_counts), f)
+        with open(data_ss_pkl, 'wb') as f:
+            pickle.dump((data_ss), f)
     else:
         with open(vocabs_pkl, 'rb') as f:
             x2i_maps, i2x_maps = pickle.load(f)
-        with open(data_pkl, 'rb') as f:
-            data_split, word_counts = pickle.load(f)
+        with open(data_sdp_pkl, 'rb') as f:
+            data_sdp, word_counts = pickle.load(f)
+        with open(data_ss_pkl, 'rb') as f:
+            data_ss = pickle.load(f)
 
-    train_data = data_split['train']
-    dev_data = data_split['dev']
+    train_sdp = data_sdp['train']
+    dev = data_sdp['dev']
 
     w2i = x2i_maps['word']
     p2i = x2i_maps['pos']
@@ -99,24 +108,9 @@ def main():
         log.info(f'There are {len(train_data)} training examples.')
         log.info(f'There are {len(dev_data)} validation examples.')
 
-        train_sdp_loader = sdp_data_loader(
-                train_data,
-                BATCH_SIZE,
-                w2i,
-                i2w,
-                word_counts)
-        train_ss_loader = ss_data_loader(
-                train_data,
-                BATCH_SIZE,
-                w2i,
-                i2w,
-                word_counts)
-        dev_loader = sdp_data_loader(
-                dev_data,
-                BATCH_SIZE,
-                w2i,
-                i2w,
-                word_counts)
+        train_sdp_loader = sdp_data_loader(train_sdp, BATCH_SIZE)
+        train_ss_loader = ss_data_loader(train_ss, BATCH_SIZE)
+        dev_loader = sdp_data_loader(dev, BATCH_SIZE)
 
         n_train_batches = ceil(len(train_data) / BATCH_SIZE)
         n_dev_batches = ceil(len(dev_data) / BATCH_SIZE)
@@ -138,7 +132,7 @@ def main():
 
                 # Checking to see weights are changing
                 log.info('Attention h_rel_head:', state['BiAffineAttention.h_rel_head.0.weight'])
-                log.info('Word embedding weight', state['BiLSTM.word_emb.weight'])
+                log.info('Word embedding weight:', state['BiLSTM.word_emb.weight'])
 
                 # Parser training step
                 opt.zero_grad()
@@ -167,15 +161,14 @@ def main():
                 # Sentence similarity training step
                 opt.zero_grad()
 
-                batch = next(train_ss_loader)
-                for s in batch:
-                    
+                words, pos, sent_lens = next(train_ss_loader)
 
-                _, _ = parser.BiLSTM()
-                _, _ = parser.BiLSTM()
-                _, _ = parser.BiLSTM()
+                H1, _ = parser.BiLSTM(words[0], pos[0], sent_lens[0])
+                H2, _ = parser.BiLSTM(words[1], pos[1], sent_lens[1])
 
-                loss = loss_ss(s, s_para, s_neg)
+                H1, H2 = average_hiddens(H1,H2)
+
+                loss = loss_ss(H1, H2, T)
 
                 loss.backward()
                 opt.step()
@@ -235,6 +228,18 @@ def main():
 
     # End main
 
+
+def average_hiddens(H1, H2, sent_lens):
+    H1 = H1.sum(axis=1)
+    H2 = H2.sum(axis=1)
+
+    #sent_lens[0] = torch.Tensor(sent_lens[0]).view(-1, 1)
+    sent_lens = torch.Tensor(sent_lens).view(2, -1, 1)  # Column vector
+
+    H1 / sent_lens[0]
+    H2 / sent_lens[1]
+
+    return H1, H2
 
 #Eventually, probably should pull loss functions out into a utilities file
 def loss_heads(S, head_targets, pad_idx=-1):
@@ -322,5 +327,8 @@ def attachment_scoring(head_preds, rel_preds, head_targets, rel_targets, sent_le
     return UAS, LAS
 
 
+
+
 if __name__ == '__main__':
-    main()
+    options = parse_args
+    train()
