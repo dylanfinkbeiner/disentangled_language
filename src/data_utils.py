@@ -23,15 +23,6 @@ PAD_TOKEN = '<pad>'
    2. A way of splitting to train/dev/test
 '''
 
-def get_dataset_ss(file):
-
-    return None
-
-def prepare_batch_ss(batch):
-
-
-    
-
 def get_dataset_sdp(conllu_file, training=False):
     sents_list = conllu_to_sents(conllu_file)
 
@@ -39,9 +30,17 @@ def get_dataset_sdp(conllu_file, training=False):
 
     x2i_maps, i2x_maps = build_dicts(sents_list)
     
-    sent_list = numericalize(sents_list, x2i_maps)
+    sents_list = numericalize(sents_list, x2i_maps)
     
-    return get_train_dev_test(sent_list), x2i_maps, i2x_maps, word_counts
+    return get_train_dev_test(sents_list), x2i_maps, i2x_maps, word_counts
+
+
+def get_dataset_ss(paranmt_file, x2i_maps=None):
+    sents_list = txt_to_sents(paranmt_file)
+
+    sents_list2 = numericalize_ss(sents_list, x2i_maps)
+
+    return sents_list, sents_list2
 
 
 def get_train_dev_test(data_list):
@@ -69,7 +68,16 @@ def sdp_data_loader(data, b_size):
         shuffle(idx) # In-place shuffle
         for chunk in idx_to_chunks(idx, b_size):
             batch = [data[i] for i in chunk]
-            yield prepare_batch(batch)
+            yield prepare_batch_sdp(batch)
+
+def ss_data_loader(data, b_size):
+
+    idx = list(range(len(data)))
+    while True:
+        shuffle(idx)
+        for chunk in idx_to_chunks(idx, b_size):
+            batch = [data[i] for i in chunk]
+            yield prepare_batch_ss(batch)
 
 
 def idx_to_chunks(idx, chunk_size):
@@ -90,17 +98,15 @@ def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=40):
                 words[i,j] = int(w2i[UNK_TOKEN])
 
 
-def prepare_batch(chunk):
+def prepare_batch_sdp(chunk):
     '''
     Transform a batch from a np array of sentences
     into several tensors to use in training
     '''
 
-    alpha = 40 # NOTE This is not a great place for this variable.
-
     batch_size = len(chunk)
     chunk_sorted = sorted(chunk, key = lambda s: s.shape[0], reverse=True)
-    sent_lens = [np.shape(s)[0] for s in chunk_sorted] # Keep in mind, these lengths include ROOT token in each sent
+    sent_lens = [s.shape[0] for s in chunk_sorted] # Keep in mind, these lengths include ROOT token in each sent
     length_longest = sent_lens[0]
 
     words = torch.zeros((batch_size, length_longest)).long()
@@ -121,6 +127,31 @@ def prepare_batch(chunk):
             rels[i,j] =  int(s[j,3])
 
     return words, pos, sent_lens, heads, rels
+
+
+def prepare_batch_ss(chunk):
+    batch_size = len(chunk)
+    chunk_sorted = sorted(chunk, key = lambda s: s[0].shape[0], reverse=True)
+    sent_lens = ([s[0].shape[0] for s in chunk], s[1].shape[0] for s in chunk])
+    length_longest = max(sent_lens[0][0], max([s[1].shape[0] for s in chunk]))
+
+    w1 = torch.zeros((batch_size, length_longest)).long()
+    w2 = torch.zeros((batch_size, length_longest)).long()
+    p1 = torch.zeros((batch_size, length_longest)).long()
+    p2 = torch.zeros((batch_size, length_longest)).long()
+
+    for i, (s1, s2) in enumerate(chunk_sorted):
+        for j, _ in enumerate s1:
+            w1[i,j] = int(s1[j,0])
+            p1[i,j] = int(s1[j,1])
+        for j, _ in enumerate s2:
+            w2[i,j] = int(s2[j,0])
+            p2[i,j] = int(s2[j,1])
+
+    words = (w1, w2)
+    pos = (p1, p2)
+
+    return words, pos, sent_lens # All tuples
 
 
 def conllu_to_sents(f: str):
@@ -144,11 +175,25 @@ def conllu_to_sents(f: str):
     sent_start = 0
     for sent_end in split_points: # Assumes the final line is '\n'
         sents_list.append(lines[sent_start: sent_end])
-        sent_start = sent_end + 1
+        sent_start = sent_end + 1 # Skipping the line break
 
     for i, s in enumerate(sents_list):
         s_split = [line.split('\t') for line in s]
         sents_list[i] = np.array(s_split)[:, mask]
+
+    return sents_list
+
+
+def txt_to_sents(f: str):
+    with open(f, 'r') as txt_file:
+        lines = txt_file.readlines()
+
+    sents_list = []
+    for line in lines:
+        sents = line.split('\t')
+        s1 = sents[0].strip().split(' ')
+        s2 = sents[1].strip().split(' ')
+        sents_list.append( (s1,s2) )
 
     return sents_list
 
@@ -197,6 +242,7 @@ def numericalize(sents_list, x2i_maps):
     sents_numericalized = []
     for s in sents_list:
         new_shape = (s.shape[0] + 1, s.shape[1])
+
         new_s = np.zeros(new_shape, dtype=int) # Making room for ROOT_TOKEN
         new_s[0,:] = w2i[ROOT_TOKEN], p2i[ROOT_TOKEN], -1, -1 # -1s here become crucial for attachment scoring
 
@@ -207,6 +253,27 @@ def numericalize(sents_list, x2i_maps):
             new_s[i+1,3] = r2i[s[i,3]]
 
         sents_numericalized.append(new_s)
+
+    return sents_numericalized
+
+
+def numericalize_ss(sents_list, x2i_maps):
+    w2i = x2i_maps['word']
+    p2i = x2i_maps['pos']
+
+    sents_numericalized = []
+    for s1, s2 in sents_list:
+        new_s1 = np.zeros((len(s1), 2), dtype=int)
+        new_s2 = np.zeros((len(s2), 2), dtype=int)
+
+        for i in range(len(s1)):
+            new_s1[i,0] = w2i.get(s1[i].lower(), w2i[UNK_TOKEN])
+            new_s1[i,1] = p2i[UNK_TOKEN]
+        for i in range(len(s2)):
+            new_s2[i,0] = w2i.get(s2[i].lower(), w2i[UNK_TOKEN])
+            new_s2[i,1] = p2i[UNK_TOKEN]
+
+        sents_numericalized.append( (new_s1, new_s2) )
 
     return sents_numericalized
 
@@ -279,20 +346,24 @@ def has_digits(word):
 
 # End of https://github.com/EelcovdW/Biaffine-Parser/blob/master/data_utils.py
 
-#def testing():
-#    #sents_list = conllu_to_sents('/Users/dylanfinkbeiner/Desktop/stanford-parser-full-2018-10-17/treebank.conllu')
-#
-#    #dict2, _ =  build_dicts(sents_list)
-#
-#    #numd = numericalize(sents_list, dict2)
-#
-#    data_list = get_dataset('/Users/dylanfinkbeiner/Desktop/stanford-parser-full-2018-10-17/treebank.conllu')
-#
-#    loader = custom_data_loader(data_list, 10)
-#
-#    print(next(loader))
-#
-#
-#
-#if __name__ == '__main__':
-#    testing()
+def testing():
+    #sents_list = conllu_to_sents('/Users/dylanfinkbeiner/Desktop/stanford-parser-full-2018-10-17/treebank.conllu')
+
+    #dict2, _ =  build_dicts(sents_list)
+
+    #numd = numericalize(sents_list, dict2)
+
+    _, x2i, i2x, _  = get_dataset_sdp('../data/tenpercentsample.conllu')
+    f = '../data/para_sample.txt'
+
+    sents_before, sents_after = get_dataset_ss(f, x2i)
+
+    print(sents_before[0])
+    print(sents_after[0])
+    print(sents_before[-1])
+    print(sents_after[-1])
+
+
+
+if __name__ == '__main__':
+    testing()

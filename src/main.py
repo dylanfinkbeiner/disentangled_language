@@ -14,16 +14,14 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 from parser import BiaffineParser
-from data_utils import get_dataset, custom_data_loader, word_dropout
+from data_utils import get_dataset_sdp, sdp_data_loader, word_dropout
+from args import get_args
 
-NUM_EPOCHS = 100
-BATCH_SIZE = 100  #As Jabberwocky paper stated
-H_SIZE = 400
 
 WEIGHTS_DIR = '../weights'
 LOG_DIR = '../log'
 DATA_DIR = '../data'
-MODEL_NAME = 'makeanargparser.tch'
+MODEL_NAME = ''
 CONLLU_FILE = 'treebank.conllu'
 PARANMT_FILE = 'para-nmt-processed-5m.txt'
 
@@ -42,27 +40,30 @@ stream_handler.setFormatter(formatter)
 log.addHandler(stream_handler)
 
 
-def train():
-    # Set up begins
-    INIT_DATA = True
-    INIT_MODEL = True
-    TRAINING = True
+def train(args):
+    batch_size = args.batchsize
+    h_size = args.numhidden
+    init_data = args.initdata
+    init_model = args.initmodel
+    seed = args.seed
 
-    torch.manual_seed(0)
+    torch.manual_seed(seed)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
+    # Filenames
     vocabs_pkl = os.path.join(DATA_DIR, 
             f'{os.path.splitext(CONLLU_FILE)[0]}_vocabs.pkl')
     data_sdp_pkl = os.path.join(DATA_DIR,
             f'{os.path.splitext(CONLLU_FILE)[0]}_data.pkl')
     data_ss_pkl = os.path.join(DATA_DIR,
             f'{os.path.splitext(PARANMT_FILE)[0]}_data.pkl')
+
     if not os.path.exists(vocabs_pkl) \
             or not os.path.exists(data_sdp_pkl) \
             or not os.path.exists(data_ss_pkl):
-        INIT_DATA = True
+        init_data = True
 
-    if INIT_DATA:
+    if init_data:
         data_sdp, x2i_maps, i2x_maps, word_counts = get_dataset_sdp(
                 os.path.join(DATA_DIR, CONLLU_FILE), training=True)
         data_ss = get_dataset_ss(os.path.join(DATA_DIR, PARANMT_FILE))
@@ -81,6 +82,7 @@ def train():
             data_ss = pickle.load(f)
 
     train_sdp = data_sdp['train']
+    train_ss = data_ss
     dev = data_sdp['dev']
 
     w2i = x2i_maps['word']
@@ -99,134 +101,131 @@ def train():
 
     model_weights = os.path.join(WEIGHTS_DIR, MODEL_NAME)
 
-    if not INIT_MODEL and os.path.exists(model_weights):
+    if not init_model and os.path.exists(model_weights):
         parser.load_state_dict(torch.load(model_weights))
 
     # Set up finished
 
-    if TRAINING:
-        log.info(f'There are {len(train_data)} training examples.')
-        log.info(f'There are {len(dev_data)} validation examples.')
+    log.info(f'There are {len(train_data)} training examples.')
+    log.info(f'There are {len(dev_data)} validation examples.')
 
-        train_sdp_loader = sdp_data_loader(train_sdp, BATCH_SIZE)
-        train_ss_loader = ss_data_loader(train_ss, BATCH_SIZE)
-        dev_loader = sdp_data_loader(dev, BATCH_SIZE)
+    train_sdp_loader = sdp_data_loader(train_sdp, batch_size)
+    train_ss_loader = ss_data_loader(train_ss, batch_size)
+    dev_loader = sdp_data_loader(dev, batch_size)
 
-        n_train_batches = ceil(len(train_data) / BATCH_SIZE)
-        n_dev_batches = ceil(len(dev_data) / BATCH_SIZE)
+    n_train_batches = ceil(len(train_data) / batch_size)
+    n_dev_batches = ceil(len(dev_data) / batch_size)
 
-        opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
+    opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
 
-        earlystop_counter = 0
-        prev_best = 0
-        log.info('Starting train loop.')
+    earlystop_counter = 0
+    prev_best = 0
+    log.info('Starting train loop.')
 
-        # For weight analysis
-        state = parser.state_dict()
+    # For weight analysis
+    state = parser.state_dict()
 
-        for e in range(NUM_EPOCHS):
+    for e in range(NUM_EPOCHS):
 
-            parser.train()
-            train_loss = 0
-            for b in range(n_train_batches):
+        parser.train()
+        train_loss = 0
+        for b in range(n_train_batches):
 
-                # Checking to see weights are changing
-                log.info('Attention h_rel_head:', state['BiAffineAttention.h_rel_head.0.weight'])
-                log.info('Word embedding weight:', state['BiLSTM.word_emb.weight'])
+            # Checking to see weights are changing
+            log.info('Attention h_rel_head:', state['BiAffineAttention.h_rel_head.0.weight'])
+            log.info('Word embedding weight:', state['BiLSTM.word_emb.weight'])
 
-                # Parser training step
-                opt.zero_grad()
+            # Parser training step
+            opt.zero_grad()
 
-                words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
-                words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
+            words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
+            words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
 
-                outputs, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
-                outputs_d, _ = parser.BiLSTM(words_d.to(device), pos.to(device), sent_lens)
+            outputs, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
+            outputs_d, _ = parser.BiLSTM(words_d.to(device), pos.to(device), sent_lens)
 
-                # Splice
-                outputs[:,:,H_SIZE/2:H_SIZE] = outputs_d[:,:,H_SIZE/2:H_SIZE]
-                outputs[:,:,H_SIZE+(H_SIZE/2):] = outputs_d[:,:,H_SIZE+(H_SIZE/2):]
+            # Splice
+            outputs[:,:,H_SIZE/2:H_SIZE] = outputs_d[:,:,H_SIZE/2:H_SIZE]
+            outputs[:,:,H_SIZE+(H_SIZE/2):] = outputs_d[:,:,H_SIZE+(H_SIZE/2):]
 
-                S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
+            S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
 
-                loss_h = loss_heads(S_arc, head_targets)
-                loss_r = loss_rels(S_rel, rel_targets)
-                loss = loss_h + loss_r
+            loss_h = loss_heads(S_arc, head_targets)
+            loss_r = loss_rels(S_rel, rel_targets)
+            loss = loss_h + loss_r
 
-                train_loss += loss_h.item() + loss_r.item()
+            train_loss += loss_h.item() + loss_r.item()
 
-                loss.backward()
-                opt.step()
+            loss.backward()
+            opt.step()
 
-                # Sentence similarity training step
-                opt.zero_grad()
+            # Sentence similarity training step
+            opt.zero_grad()
 
-                words, pos, sent_lens = next(train_ss_loader)
+            words, pos, sent_lens = next(train_ss_loader)
 
-                H1, _ = parser.BiLSTM(words[0], pos[0], sent_lens[0])
-                H2, _ = parser.BiLSTM(words[1], pos[1], sent_lens[1])
+            H1, _ = parser.BiLSTM(words[0], pos[0], sent_lens[0])
+            H2, _ = parser.BiLSTM(words[1], pos[1], sent_lens[1])
 
-                H1, H2 = average_hiddens(H1,H2)
+            H1, H2 = average_hiddens(H1,H2)
 
-                loss = loss_ss(H1, H2, T)
+            loss = loss_ss(H1, H2, N)
 
-                loss.backward()
-                opt.step()
+            loss.backward()
+            opt.step()
 
-            train_loss /= n_train_batches
+        train_loss /= n_train_batches
 
-            parser.eval()  # Crucial! Toggles dropout effects
-            dev_loss = 0
-            UAS = 0
-            LAS = 0
-            for b in range(n_dev_batches):
-                with torch.no_grad():
-                    words, pos, sent_lens, head_targets, rel_targets = next(dev_loader)
+        parser.eval()  # Crucial! Toggles dropout effects
+        dev_loss = 0
+        UAS = 0
+        LAS = 0
+        for b in range(n_dev_batches):
+            with torch.no_grad():
+                words, pos, sent_lens, head_targets, rel_targets = next(dev_loader)
 
-                S, L, head_preds = parser(words, pos, sent_lens)
-                rel_preds = predict_relations(L, head_preds)
+            S, L, head_preds = parser(words, pos, sent_lens)
+            rel_preds = predict_relations(L, head_preds)
 
-                loss_h = loss_heads(S, head_targets)
-                loss_r = loss_rels(L, rel_targets)
-                dev_loss = loss_h.item() + loss_r.item()
+            loss_h = loss_heads(S, head_targets)
+            loss_r = loss_rels(L, rel_targets)
+            dev_loss = loss_h.item() + loss_r.item()
 
-                UAS, LAS = attachment_scoring(
-                        head_preds,
-                        rel_preds,
-                        head_targets,
-                        rel_targets,
-                        sent_lens)
+            UAS, LAS = attachment_scoring(
+                    head_preds,
+                    rel_preds,
+                    head_targets,
+                    rel_targets,
+                    sent_lens)
 
-            dev_loss /= n_dev_batches
+        dev_loss /= n_dev_batches
 
-            update = '''Epoch: {:}\t
-                    Train Loss: {:.3f}\t
-                    Dev Loss: {:.3f}\t
-                    UAS: {:.3f}\t
-                    LAS: {:.3f} '''.format(e, train_loss, dev_loss, UAS, LAS)
-            log.info(update)
+        update = '''Epoch: {:}\t
+                Train Loss: {:.3f}\t
+                Dev Loss: {:.3f}\t
+                UAS: {:.3f}\t
+                LAS: {:.3f} '''.format(e, train_loss, dev_loss, UAS, LAS)
+        log.info(update)
 
-            # Early stopping heuristic from Jabberwocky paper
-            if LAS > prev_best:
-                earlystop_counter = 0
-                prev_best = LAS
-            else:
-                earlystop_counter += 1
-                if earlystop_counter >= 5:
-                    print('''LAS has not improved for 5 consecutive epochs,
-                          stopping after {} epochs'''.format(e))
-                    break
+        # Early stopping heuristic from Jabberwocky paper
+        if LAS > prev_best:
+            earlystop_counter = 0
+            prev_best = LAS
+        else:
+            earlystop_counter += 1
+            if earlystop_counter >= 5:
+                print('''LAS has not improved for 5 consecutive epochs,
+                      stopping after {} epochs'''.format(e))
+                break
 
-        # Save weights
-        if not os.path.isdir(WEIGHTS_DIR):
-            os.makedirs(WEIGHTS_DIR)
-        torch.save(parser.state_dict(), model_weights)
+    # Save weights
+    if not os.path.isdir(WEIGHTS_DIR):
+        os.makedirs(WEIGHTS_DIR)
+    torch.save(parser.state_dict(), model_weights)
 
-    if TEST:
-        #Generate CONLLU file, run test script
-        pass
 
-    # End main
+def test(args):
+    pass
 
 
 def average_hiddens(H1, H2, sent_lens):
@@ -241,8 +240,16 @@ def average_hiddens(H1, H2, sent_lens):
 
     return H1, H2
 
+def get_negative_samps(H1):
+    
+
+
+    return N
+
+
+
 #Eventually, probably should pull loss functions out into a utilities file
-def loss_heads(S, head_targets, pad_idx=-1):
+def loss_heads(S_arc, head_targets, pad_idx=-1):
     '''
     S - should be something like a tensor w/ shape
         (batch_size, sent_len, sent_len); also, these are
@@ -251,25 +258,26 @@ def loss_heads(S, head_targets, pad_idx=-1):
     heads - should be a list of integers (the indices)
     '''
     # For input to cross_entropy, shape must be (b, C, ...) where C is number of classes
-    return F.cross_entropy(S.permute(0,2,1), head_targets, ignore_index=pad_idx)
+    return F.cross_entropy(S_arc.permute(0,2,1), head_targets, ignore_index=pad_idx)
 
 
-def loss_rels(L, rel_targets, pad_idx=-1):
+def loss_rels(S_rel, rel_targets, pad_idx=-1):
     '''
     L - should be tensor w/ shape (batch_size, sent_len, d_rel)
 
     rels - should be a list of dependency relations as they are indexed in the dict
     '''
 
-    return F.cross_entropy(L.permute(0,2,1), rel_targets, ignore_index=pad_idx)
+    return F.cross_entropy(S_rel.permute(0,2,1), rel_targets, ignore_index=pad_idx)
 
 
-def loss_ss(s, s_para, s_neg):
-    margin = 0.4 # As stated in ParaNMT paper
-    para_attract = F.cosine_similarity(s, s_para)
-    neg_repel = F.cosine_similarity(s, s_neg)
+def loss_ss(H1, H2, N, margin=0.4):
+    para_attract = F.cosine_similarity(H1, H2) # (b,2*d), (b,2*d) -> (b)
+    neg_repel = F.cosine_similarity(H1, N)
 
-    return F.relu(margin - para_attract + neg_repel)
+    losses = F.relu(margin - para_attract + neg_repel) # (b)
+
+    return losses.sum()
 
 
 def predict_relations(L, head_preds):
@@ -327,8 +335,15 @@ def attachment_scoring(head_preds, rel_preds, head_targets, rel_targets, sent_le
     return UAS, LAS
 
 
-
-
 if __name__ == '__main__':
-    options = parse_args
-    train()
+    args = get_args()
+
+    MODEL_NAME = f'{args.model}'
+
+    if(not args.eval):
+        # Train model
+        train(args)
+
+    else:
+        # Evaluate model
+        pass
