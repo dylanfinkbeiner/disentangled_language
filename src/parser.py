@@ -84,10 +84,21 @@ class BiLSTM(nn.Module):
                 dropout=lstm_dropout)
 
     def forward(self, words, pos, sent_lens):
+        '''
+            input will be words, pos, sent_lens (NOT IN ORDER)
+            except that words, pos will be tensors whose size depends on the
+            maximum length
+        '''
+
         h_size = self.hidden_size
 
         #if not self.train:
         #    self.word_emb.weight.data[,:] = 0.0 # Zero-out "unk" word at test time
+
+        # Sort the words, pos, sent_lens
+        lens_sorted, indices = torch.sort(sent_lens, descending=True)
+        words = words.index_select(0, indices) # NOTE Keep in mind, this is consuming additional memory!
+        pos = pos.index_select(0, indices)
 
         p_embs = self.pos_emb(pos) # (b, l, p_e)
 
@@ -97,10 +108,14 @@ class BiLSTM(nn.Module):
                 torch.cat([w_embs, p_embs], -1)) # (b, l, w_e + p_e)
 
         packed_input = pack_padded_sequence(
-                lstm_input, sent_lens, batch_first=True)
+                lstm_input, lens_sorted, batch_first=True)
 
         outputs, (h_n, c_n) = self.lstm(packed_input)
         outputs, _ = pad_packed_sequence(outputs, batch_first=True) # (b, l, 2*hidden_size)
+
+        # Un-sort
+        indices_inverted = torch.argsort(indices)
+        outputs = outputs.index_select(0, indices_inverted)
 
         return outputs, (h_n, c_n)
 
@@ -351,3 +366,15 @@ def softmax2d(x): #Just doing softmax of row vectors
     np.exp(y, out=y)
     y /= y.sum(axis=1, keepdims=True)
     return y
+
+
+def average_hiddens(H1, H2, sent_lens):
+    H1 = H1.sum(axis=1)
+    H2 = H2.sum(axis=1)
+
+    #sent_lens[0] = torch.Tensor(sent_lens[0]).view(-1, 1)
+    sent_lens = torch.Tensor(sent_lens).view(2, -1, 1)  # Column vector
+
+    H1 / sent_lens[0]
+    H2 / sent_lens[1]
+

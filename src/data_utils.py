@@ -38,19 +38,9 @@ def get_dataset_sdp(conllu_file, training=False):
 def get_dataset_ss(paranmt_file, x2i_maps=None):
     sents_list = txt_to_sents(paranmt_file)
 
-    sents_list2 = numericalize_ss(sents_list, x2i_maps)
+    sents_list = numericalize_ss(sents_list, x2i_maps)
 
-    return sents_list, sents_list2
-
-
-def get_train_dev_test(data_list):
-    n_samples = len(data_list)
-
-    #XXX Incredibly stupid way of splitting data
-    x = int(.8 * n_samples)
-    y = int(.9 * n_samples)
-
-    return { 'train': data_list[:x], 'dev': data_list[x:y], 'test': data_list[y:] }
+    return sents_list
 
 
 #TODO Possible edit required: EelcovdW's implementation
@@ -66,21 +56,31 @@ def sdp_data_loader(data, b_size):
     idx = list(range(len(data)))
     while True:
         shuffle(idx) # In-place shuffle
-        for chunk in idx_to_chunks(idx, b_size):
+        for chunk in idx_chunks(idx, b_size):
             batch = [data[i] for i in chunk]
             yield prepare_batch_sdp(batch)
 
+
 def ss_data_loader(data, b_size):
+    '''
+        inputs:
+            data - the full Python list of pairs of numericalized sentences (np arrays)
+            b_size - batch size
+
+        yields:
+            batch - list of selected data points (UNPREPARED)
+    '''
 
     idx = list(range(len(data)))
     while True:
         shuffle(idx)
-        for chunk in idx_to_chunks(idx, b_size):
+        for chunk in idx_chunks(idx, b_size):
             batch = [data[i] for i in chunk]
-            yield prepare_batch_ss(batch)
+            yield batch
+            #yield prepare_batch_ss(batch) OLD CODE
 
 
-def idx_to_chunks(idx, chunk_size):
+def idx_chunks(idx, chunk_size):
     for i in range(0, len(idx), chunk_size):
         yield idx[i:i+chunk_size]
 
@@ -129,29 +129,59 @@ def prepare_batch_sdp(chunk):
     return words, pos, sent_lens, heads, rels
 
 
-def prepare_batch_ss(chunk):
-    batch_size = len(chunk)
-    chunk_sorted = sorted(chunk, key = lambda s: s[0].shape[0], reverse=True)
-    sent_lens = ([s[0].shape[0] for s in chunk], s[1].shape[0] for s in chunk])
-    length_longest = max(sent_lens[0][0], max([s[1].shape[0] for s in chunk]))
+def prepare_batch_ss(batch):
+    '''
+        inputs:
+            batch - list of lists of 2 or 3 np arrays (each a sentence)
 
-    w1 = torch.zeros((batch_size, length_longest)).long()
-    w2 = torch.zeros((batch_size, length_longest)).long()
-    p1 = torch.zeros((batch_size, length_longest)).long()
-    p2 = torch.zeros((batch_size, length_longest)).long()
+        outputs:
+            words - 2-tuple of tensors, shape (b,l)
+            pos - 2-tuple of tensors, shape (b, l)
+            sent_lens - 2-tuple of lists, shape (b)
+    '''
+    batch_size = len(batch) # TODO But really, megabatch size, right?
+    n_sents = len(batch[0]) # 0 chosen arbitrarily
 
-    for i, (s1, s2) in enumerate(chunk_sorted):
-        for j, _ in enumerate s1:
-            w1[i,j] = int(s1[j,0])
-            p1[i,j] = int(s1[j,1])
-        for j, _ in enumerate s2:
-            w2[i,j] = int(s2[j,0])
-            p2[i,j] = int(s2[j,1])
+    words = [[] for i in range(n_sents)]
+    pos = [[] for i in range(n_sents)]
 
-    words = (w1, w2)
-    pos = (p1, p2)
+    batch_sorted = [[] for i in range(n_sents)]
+    sent_lens = [[] for i in range(n_sents)]
+    length_longest = [[] for i in range(n_sents)]
+    for instance in batch:
+        for i in range(n_sents):
+            batch_sorted[i].append(instance[i])
+    for i in range(n_sents):
+        batch_sorted[i] = sorted(batch_sorted[i], key=lambda s_i: s_i.shape[0], reverse=True)
+        sent_lens[i] = [s_i.shape[0] for s_i in batch_sorted[i]]
+        length_longest[i] = sent_lens[i][0]
 
-    return words, pos, sent_lens # All tuples
+    #length_longest = max(sent_lens[0][0], max([s[1].shape[0] for s in batch]))
+
+    for i in range(n_sents):
+        words[i] = torch.zeros((batch_size, length_longest[i])).long()
+        pos[i] = torch.zeros((batch_size, length_longest[i])).long()
+    #w1 = torch.zeros((batch_size, length_longest)).long()
+    #w2 = torch.zeros((batch_size, length_longest)).long()
+    #p1 = torch.zeros((batch_size, length_longest)).long()
+    #p2 = torch.zeros((batch_size, length_longest)).long()
+
+    for i in batch_srted
+        for j, _ in enumerate(s):
+            for k in enumerate
+
+            words[i][j,k] = int(s_i[k,0])
+            pos[i][j,k] = int(s_i[k,1])
+
+    # for i, (s1, s2) in enumerate(batch_sorted):
+    #     for j, _ in enumerate s1:
+    #         w1[i,j] = int(s1[j,0])
+    #         p1[i,j] = int(s1[j,1])
+    #     for j, _ in enumerate s2:
+    #         w2[i,j] = int(s2[j,0])
+    #         p2[i,j] = int(s2[j,1])
+
+    return words, pos, sent_lens 
 
 
 def conllu_to_sents(f: str):
@@ -185,6 +215,15 @@ def conllu_to_sents(f: str):
 
 
 def txt_to_sents(f: str):
+    '''
+        inputs:
+            f - name of sentences/paraphrases dataset txt file
+
+        outputs:
+            sents_list - a list of pairs (tuples) of sentences and their
+                         paraphrases
+    '''
+
     with open(f, 'r') as txt_file:
         lines = txt_file.readlines()
 
@@ -344,26 +383,36 @@ def has_digits(word):
     """
     return bool(set(string.digits).intersection(word))
 
+
+def get_train_dev_test(data_list):
+    n_samples = len(data_list)
+
+    #XXX Incredibly stupid way of splitting data
+    x = int(.8 * n_samples)
+    y = int(.9 * n_samples)
+
+    return { 'train': data_list[:x], 'dev': data_list[x:y], 'test': data_list[y:] }
+
 # End of https://github.com/EelcovdW/Biaffine-Parser/blob/master/data_utils.py
 
-def testing():
-    #sents_list = conllu_to_sents('/Users/dylanfinkbeiner/Desktop/stanford-parser-full-2018-10-17/treebank.conllu')
-
-    #dict2, _ =  build_dicts(sents_list)
-
-    #numd = numericalize(sents_list, dict2)
-
-    _, x2i, i2x, _  = get_dataset_sdp('../data/tenpercentsample.conllu')
-    f = '../data/para_sample.txt'
-
-    sents_before, sents_after = get_dataset_ss(f, x2i)
-
-    print(sents_before[0])
-    print(sents_after[0])
-    print(sents_before[-1])
-    print(sents_after[-1])
-
-
-
-if __name__ == '__main__':
-    testing()
+#def testing():
+#    #sents_list = conllu_to_sents('/Users/dylanfinkbeiner/Desktop/stanford-parser-full-2018-10-17/treebank.conllu')
+#
+#    #dict2, _ =  build_dicts(sents_list)
+#
+#    #numd = numericalize(sents_list, dict2)
+#
+#    _, x2i, i2x, _  = get_dataset_sdp('../data/tenpercentsample.conllu')
+#    f = '../data/para_sample.txt'
+#
+#    sents_before, sents_after = get_dataset_ss(f, x2i)
+#
+#    print(sents_before[0])
+#    print(sents_after[0])
+#    print(sents_before[-1])
+#    print(sents_after[-1])
+#
+#
+#
+#if __name__ == '__main__':
+#    testing()

@@ -42,6 +42,7 @@ log.addHandler(stream_handler)
 
 def train(args):
     batch_size = args.batchsize
+    mega_size = args.M
     h_size = args.numhidden
     init_data = args.initdata
     init_model = args.initmodel
@@ -114,6 +115,7 @@ def train(args):
     dev_loader = sdp_data_loader(dev, batch_size)
 
     n_train_batches = ceil(len(train_data) / batch_size)
+    n_megabatches = ceil(len(train_data) / (mega_size * batch_size))
     n_dev_batches = ceil(len(dev_data) / batch_size)
 
     opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
@@ -124,55 +126,63 @@ def train(args):
 
     # For weight analysis
     state = parser.state_dict()
-
     for e in range(NUM_EPOCHS):
 
         parser.train()
         train_loss = 0
-        for b in range(n_train_batches):
+        #for b in range(n_train_batches):
+        for b in range(n_megabatches):
+
+            megabatch = []
+            for i in range(M):
+                megabatch.append(next(train_ss_loader))
+
+
 
             # Checking to see weights are changing
             log.info('Attention h_rel_head:', state['BiAffineAttention.h_rel_head.0.weight'])
             log.info('Word embedding weight:', state['BiLSTM.word_emb.weight'])
 
-            # Parser training step
-            opt.zero_grad()
+            for x in range(mega_size):
+                # Parser training step
+                opt.zero_grad()
 
-            words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
-            words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
+                words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
+                words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
 
-            outputs, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
-            outputs_d, _ = parser.BiLSTM(words_d.to(device), pos.to(device), sent_lens)
+                outputs, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
+                outputs_d, _ = parser.BiLSTM(words_d.to(device), pos.to(device), sent_lens)
 
-            # Splice
-            outputs[:,:,H_SIZE/2:H_SIZE] = outputs_d[:,:,H_SIZE/2:H_SIZE]
-            outputs[:,:,H_SIZE+(H_SIZE/2):] = outputs_d[:,:,H_SIZE+(H_SIZE/2):]
+                # Splice
+                outputs[:,:,H_SIZE/2:H_SIZE] = outputs_d[:,:,H_SIZE/2:H_SIZE]
+                outputs[:,:,H_SIZE+(H_SIZE/2):] = outputs_d[:,:,H_SIZE+(H_SIZE/2):]
 
-            S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
+                S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
 
-            loss_h = loss_heads(S_arc, head_targets)
-            loss_r = loss_rels(S_rel, rel_targets)
-            loss = loss_h + loss_r
+                loss_h = loss_heads(S_arc, head_targets)
+                loss_r = loss_rels(S_rel, rel_targets)
+                loss = loss_h + loss_r
 
-            train_loss += loss_h.item() + loss_r.item()
+                train_loss += loss_h.item() + loss_r.item()
 
-            loss.backward()
-            opt.step()
+                loss.backward()
+                opt.step()
 
-            # Sentence similarity training step
-            opt.zero_grad()
+                # Sentence similarity training step
+                opt.zero_grad()
 
-            words, pos, sent_lens = next(train_ss_loader)
+                words, pos, sent_lens = next(train_ss_loader)
 
-            H1, _ = parser.BiLSTM(words[0], pos[0], sent_lens[0])
-            H2, _ = parser.BiLSTM(words[1], pos[1], sent_lens[1])
+                H1, _ = parser.BiLSTM(words[0], pos[0], sent_lens[0])
+                H2, _ = parser.BiLSTM(words[1], pos[1], sent_lens[1])
+                N, _ = parser.BiLSTM(
 
-            H1, H2 = average_hiddens(H1,H2)
+                H1, H2 = average_hiddens(H1,H2)
 
-            loss = loss_ss(H1, H2, N)
+                loss = loss_ss(H1, H2, N)
 
-            loss.backward()
-            opt.step()
+                loss.backward()
+                opt.step()
 
         train_loss /= n_train_batches
 
@@ -240,11 +250,35 @@ def average_hiddens(H1, H2, sent_lens):
 
     return H1, H2
 
-def get_negative_samps(H1):
-    
+def get_negative_samps(d):
+    X = []
+    T = []
 
+    pairs = []
 
-    return N
+    for i in range(len(d)):
+        (p1, p2) = d[i]
+        X.append(p1.representation.cpu().numpy())
+        X.append(p2.representation.cpu().numpy())
+        T.append(p1)
+        T.append(p2)
+
+    arr = pdist(X, 'cosine')
+    arr = squareform(arr)
+
+    for i in range(len(arr)):
+        arr[i,i] = 0
+
+    arr = np.argmax(arr, axis=1)
+
+    for i in range(len(d)):
+        p1, p2 = None
+        p1 = T[arr[2*i]]
+        p2 = T[arr[2*i+1]]
+
+        pairs.append( (p1,p2) )
+
+    return pairs
 
 
 
