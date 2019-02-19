@@ -238,30 +238,55 @@ def test(args):
     pass
 
 
-def average_hiddens(H1, H2, sent_lens):
-    H1 = H1.sum(axis=1)
-    H2 = H2.sum(axis=1)
+def average_hiddens(hiddens, sent_lens):
+    averaged_hiddens = hiddens.sum(axis=1)
 
-    #sent_lens[0] = torch.Tensor(sent_lens[0]).view(-1, 1)
-    sent_lens = torch.Tensor(sent_lens).view(2, -1, 1)  # Column vector
+    sent_lens = torch.Tensor(sent_lens).view(-1, 1).float()  # Column vector
 
-    H1 / sent_lens[0]
-    H2 / sent_lens[1]
+    averaged_hiddens /= sent_lens[0]
 
-    return H1, H2
+    return averaged_hiddens
 
-def get_negative_samps(d):
+def get_pairs(megabatch, batch_size):
+    g1 = []
+    g2 = []
+    
+    #for i in batch:
+    #    g1.append(i[0])
+    #    g2.append(i[1])
+
+    g1_ = [megabatch[i:i + batch_size] for i in range(0, len(g1), batch_size)]
+
+    megabatch_of_reps = []
+
+    for i in range(len(g1_)):
+        words, pos, sent_lens = prepare_batch(g1_[i])
+
+        embg1_, _ = parser.BiLSTM(words, pos, sent_lens)
+        embg1.append(average_hiddens(embg1_))
+
+    megabatch_of_reps = torch.vstack(embg1)
+
+    neg_samp_sentences = get_negative_samps(megabatch, megabatch_of_reps)
+
+    g1x = prepare_batch(megabatch)
+
+
+    return (g1x, g2x, n1x)
+
+
+def get_negative_samps(sentences, batch_of_reps):
     X = []
     T = []
 
-    pairs = []
+    neg_samps = []
 
-    for i in range(len(d)):
-        (p1, p2) = d[i]
-        X.append(p1.representation.cpu().numpy())
-        X.append(p2.representation.cpu().numpy())
-        T.append(p1)
-        T.append(p2)
+    for i in range(len(batch_of_reps)):
+        (s1, _) = sentences[i]
+        X.append(batch_of_reps[i].cpu().numpy())
+        #X.append(batch_of_reps[i].cpu().numpy())
+        T.append(s1)
+        #T.append(p2)
 
     arr = pdist(X, 'cosine')
     arr = squareform(arr)
@@ -272,13 +297,13 @@ def get_negative_samps(d):
     arr = np.argmax(arr, axis=1)
 
     for i in range(len(d)):
-        p1, p2 = None
+        p1 = None
         p1 = T[arr[2*i]]
-        p2 = T[arr[2*i+1]]
+        #p2 = T[arr[2*i+1]]
 
-        pairs.append( (p1,p2) )
+        neg_samps.append( p1 )
 
-    return pairs
+    return neg_samps
 
 
 

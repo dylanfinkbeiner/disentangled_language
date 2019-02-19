@@ -96,7 +96,7 @@ class BiLSTM(nn.Module):
         #    self.word_emb.weight.data[,:] = 0.0 # Zero-out "unk" word at test time
 
         # Sort the words, pos, sent_lens
-        lens_sorted, indices = torch.sort(sent_lens, descending=True)
+        lens_sorted, indices = torch.sort(torch.LongTensor(sent_lens), descending=True)
         words = words.index_select(0, indices) # NOTE Keep in mind, this is consuming additional memory!
         pos = pos.index_select(0, indices)
 

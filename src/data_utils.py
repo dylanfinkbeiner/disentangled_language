@@ -128,6 +128,36 @@ def prepare_batch_sdp(chunk):
 
     return words, pos, sent_lens, heads, rels
 
+def prepare_batch_ss(batch):
+    '''
+        inputs:
+            batch - batch as a list of np arrays representing sentences
+
+        outputs:
+            words - LongTensor
+            pos - LongTensor
+            sent_lens - list of sentence lengths
+
+    batch_size = len(batch)
+
+    sent_lens = [s.shape[0] for s in batch]
+    length_longest = max(sent_lens)
+
+    words = torch.zeros((batch_size, length_longest)).long()
+    pos = torch.zeros((batch_size, length_longest)).long()
+
+    for i, s in enumerate(batch):
+        for j, _ in enumerate(s):
+            '''
+            Casting as ints because for some stupid reason
+            you cannot set a value in torch long tensor using
+            numpy's 64 bit ints
+            '''
+            words[i,j] = int(s[j,0])
+            pos[i,j] = int(s[j,1])
+
+    return words, pos, sent_lens
+
 
 def prepare_batch_ss(batch):
     '''
@@ -166,7 +196,7 @@ def prepare_batch_ss(batch):
     #p1 = torch.zeros((batch_size, length_longest)).long()
     #p2 = torch.zeros((batch_size, length_longest)).long()
 
-    for i in batch_srted
+    for i in batch_sorted
         for j, _ in enumerate(s):
             for k in enumerate
 
