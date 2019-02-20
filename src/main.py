@@ -12,9 +12,11 @@ import torch.nn as nn
 from torch.optim import Adam
 from torch.autograd import Variable
 import torch.nn.functional as F
+from scipy.spatial.distance import pdist, squareform
 
 from parser import BiaffineParser
 from data_utils import get_dataset_sdp, sdp_data_loader, word_dropout
+from data_utils import get_dataset_ss, ss_data_loader, prepare_batch_ss
 from args import get_args
 
 
@@ -23,9 +25,11 @@ LOG_DIR = '../log'
 DATA_DIR = '../data'
 MODEL_NAME = ''
 CONLLU_FILE = 'treebank.conllu'
-PARANMT_FILE = 'para-nmt-processed-5m.txt'
+PARANMT_FILE = 'para_tiny.txt'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
+
+NUM_EPOCHS = -1
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
@@ -67,7 +71,7 @@ def train(args):
     if init_data:
         data_sdp, x2i_maps, i2x_maps, word_counts = get_dataset_sdp(
                 os.path.join(DATA_DIR, CONLLU_FILE), training=True)
-        data_ss = get_dataset_ss(os.path.join(DATA_DIR, PARANMT_FILE))
+        data_ss = get_dataset_ss(os.path.join(DATA_DIR, PARANMT_FILE), x2i_maps)
         with open(vocabs_pkl, 'wb') as f:
             pickle.dump((x2i_maps, i2x_maps), f)
         with open(data_sdp_pkl, 'wb') as f:
@@ -96,7 +100,7 @@ def train(args):
             word_vocab_size = len(w2i),
             pos_vocab_size = len(p2i),
             num_relations = len(r2i),
-            hidden_size = H_SIZE,
+            hidden_size = h_size,
             padding_idx = w2i[PAD_TOKEN])
     parser.to(device)
 
@@ -107,16 +111,17 @@ def train(args):
 
     # Set up finished
 
-    log.info(f'There are {len(train_data)} training examples.')
-    log.info(f'There are {len(dev_data)} validation examples.')
+    log.info(f'There are {len(train_sdp)} SDP training examples.')
+    log.info(f'There are {len(train_ss)} SS training examples.')
+    log.info(f'There are {len(dev)} validation examples.')
 
     train_sdp_loader = sdp_data_loader(train_sdp, batch_size)
     train_ss_loader = ss_data_loader(train_ss, batch_size)
     dev_loader = sdp_data_loader(dev, batch_size)
 
-    n_train_batches = ceil(len(train_data) / batch_size)
-    n_megabatches = ceil(len(train_data) / (mega_size * batch_size))
-    n_dev_batches = ceil(len(dev_data) / batch_size)
+    n_train_batches = ceil(len(train_sdp) / batch_size)
+    n_megabatches = ceil(len(train_sdp) / (mega_size * batch_size))
+    n_dev_batches = ceil(len(dev) / batch_size)
 
     opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
 
@@ -124,27 +129,33 @@ def train(args):
     prev_best = 0
     log.info('Starting train loop.')
 
-    # For weight analysis
-    state = parser.state_dict()
+    state = parser.state_dict() # For weight analysis
     for e in range(NUM_EPOCHS):
 
         parser.train()
         train_loss = 0
-        #for b in range(n_train_batches):
-        for b in range(n_megabatches):
+        num_steps = 0
+        for m in range(n_megabatches):
 
             megabatch = []
-            for i in range(M):
-                megabatch.append(next(train_ss_loader))
+            idxs = []
+            idx = 0
+            for _ in range(mega_size):
+                instances = [train_ss[j] for j in next(train_ss_loader)]
+                curr_idxs = [i + idx for i in range(len(instances))]
+                megabatch.extend(instances)
+                idxs.append(curr_idxs)
+                idx += len(curr_idxs)
 
-
+            with torch.no_grad():
+                s1, s2, negs = get_triplets(megabatch, batch_size, parser)
 
             # Checking to see weights are changing
-            log.info('Attention h_rel_head:', state['BiAffineAttention.h_rel_head.0.weight'])
-            log.info('Word embedding weight:', state['BiLSTM.word_emb.weight'])
+            #log.info('Attention h_rel_head:', state['BiAffineAttention.h_rel_head.0.weight'])
+            #log.info('Word embedding weight:', state['BiLSTM.word_emb.weight'])
 
-            for x in range(mega_size):
-                # Parser training step
+            for x in range(len(idxs)):
+                log.info('Parser training step begins.')
                 opt.zero_grad()
 
                 words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
@@ -154,8 +165,8 @@ def train(args):
                 outputs_d, _ = parser.BiLSTM(words_d.to(device), pos.to(device), sent_lens)
 
                 # Splice
-                outputs[:,:,H_SIZE/2:H_SIZE] = outputs_d[:,:,H_SIZE/2:H_SIZE]
-                outputs[:,:,H_SIZE+(H_SIZE/2):] = outputs_d[:,:,H_SIZE+(H_SIZE/2):]
+                outputs[:,:,h_size // 2 : h_size] = outputs_d[:,:,h_size // 2 : h_size]
+                outputs[:,:,h_size + (h_size // 2):] = outputs_d[:,:,h_size + (h_size // 2):]
 
                 S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
 
@@ -164,27 +175,31 @@ def train(args):
                 loss = loss_h + loss_r
 
                 train_loss += loss_h.item() + loss_r.item()
+                num_steps += 1
 
                 loss.backward()
                 opt.step()
 
-                # Sentence similarity training step
+                log.info('Sentence similarity training step begins.')
                 opt.zero_grad()
 
-                words, pos, sent_lens = next(train_ss_loader)
+                w1, p1, sl1 = prepare_batch_ss([s1[i] for i in idxs[x]])
+                w2, p2, sl2 = prepare_batch_ss([s2[i] for i in idxs[x]])
+                wn, pn, sln = prepare_batch_ss([negs[i] for i in idxs[x]])
 
-                H1, _ = parser.BiLSTM(words[0], pos[0], sent_lens[0])
-                H2, _ = parser.BiLSTM(words[1], pos[1], sent_lens[1])
-                N, _ = parser.BiLSTM(
+                h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1)
+                h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2)
+                hn, _ = parser.BiLSTM(wn.to(device), pn.to(device), sln)
 
-                H1, H2 = average_hiddens(H1,H2)
-
-                loss = loss_ss(H1, H2, N)
+                loss = loss_ss(
+                        average_hiddens(h1, sl1), 
+                        average_hiddens(h2, sl2),
+                        average_hiddens(hn, sln))
 
                 loss.backward()
                 opt.step()
 
-        train_loss /= n_train_batches
+        train_loss /= num_steps # Just dependency parsing loss
 
         parser.eval()  # Crucial! Toggles dropout effects
         dev_loss = 0
@@ -193,22 +208,25 @@ def train(args):
         for b in range(n_dev_batches):
             with torch.no_grad():
                 words, pos, sent_lens, head_targets, rel_targets = next(dev_loader)
+                S_arc, S_rel, head_preds = parser(words.to(device), pos.to(device), sent_lens)
+                rel_preds = predict_relations(S_rel, head_preds)
 
-            S, L, head_preds = parser(words, pos, sent_lens)
-            rel_preds = predict_relations(L, head_preds)
+                loss_h = loss_heads(S_arc, head_targets)
+                loss_r = loss_rels(S_rel, rel_targets)
+                dev_loss += loss_h.item() + loss_r.item()
 
-            loss_h = loss_heads(S, head_targets)
-            loss_r = loss_rels(L, rel_targets)
-            dev_loss = loss_h.item() + loss_r.item()
-
-            UAS, LAS = attachment_scoring(
-                    head_preds,
-                    rel_preds,
-                    head_targets,
-                    rel_targets,
-                    sent_lens)
+                UAS_, LAS_ = attachment_scoring(
+                        head_preds,
+                        rel_preds,
+                        head_targets,
+                        rel_targets,
+                        sent_lens)
+                UAS += UAS_
+                LAS += LAS_
 
         dev_loss /= n_dev_batches
+        UAS /= n_dev_batches
+        LAS /= n_dev_batches
 
         update = '''Epoch: {:}\t
                 Train Loss: {:.3f}\t
@@ -234,61 +252,84 @@ def train(args):
     torch.save(parser.state_dict(), model_weights)
 
 
-def test(args):
-    pass
-
-
 def average_hiddens(hiddens, sent_lens):
-    averaged_hiddens = hiddens.sum(axis=1)
+    '''
+        inputs:
+            hiddens - tensor w/ shape (b, l, 2*d)
+            sent_lens - list of sentence length
+
+        outputs:
+            averaged_hiddens
+    '''
+
+    #NOTE WE ARE ASSUMING PAD VALUES ARE 0 IN THIS SUM (NEED TO DOUBLE CHECK)
+    averaged_hiddens = hiddens.sum(dim=1)
 
     sent_lens = torch.Tensor(sent_lens).view(-1, 1).float()  # Column vector
 
-    averaged_hiddens /= sent_lens[0]
+    averaged_hiddens /= sent_lens
 
     return averaged_hiddens
 
-def get_pairs(megabatch, batch_size):
-    g1 = []
-    g2 = []
+
+def get_triplets(megabatch, minibatch_size, parser):
+    '''
+        inputs:
+            megabatch - an unprepared megabatch (M many batches) of sentences
+            batch_size - size of a minibatch
+
+        outputs:
+            s1 - list of orig. sentence instances
+            s2 - list of paraphrase instances
+            negs - list of neg sample instances
+    '''
+    s1 = []
+    s2 = []
     
-    #for i in batch:
-    #    g1.append(i[0])
-    #    g2.append(i[1])
+    for mini in megabatch:
+        s1.append(mini[0]) # Does this allocate new memory?
+        s2.append(mini[1])
 
-    g1_ = [megabatch[i:i + batch_size] for i in range(0, len(g1), batch_size)]
+    minibatches = [s1[i:i + minibatch_size] for i in range(0, len(s1), minibatch_size)]
 
-    megabatch_of_reps = []
+    megabatch_of_reps = [] # (megabatch_size, )
+    for m in minibatches:
+        words, pos, sent_lens = prepare_batch_ss(m)
 
-    for i in range(len(g1_)):
-        words, pos, sent_lens = prepare_batch(g1_[i])
+        m_reps, _ = parser.BiLSTM(words, pos, sent_lens)
+        megabatch_of_reps.append(average_hiddens(m_reps, sent_lens))
 
-        embg1_, _ = parser.BiLSTM(words, pos, sent_lens)
-        embg1.append(average_hiddens(embg1_))
+    ''' We just stack all reps for all sentences in each minibatch,
+     and this is fine because the index into this stack is the index
+     of the original sentence (one rep corresponds to one sentence)
+    '''
+    megabatch_of_reps = torch.cat(megabatch_of_reps)
 
-    megabatch_of_reps = torch.vstack(embg1)
+    negs = get_negative_samps(megabatch, megabatch_of_reps)
 
-    neg_samp_sentences = get_negative_samps(megabatch, megabatch_of_reps)
-
-    g1x = prepare_batch(megabatch)
-
-
-    return (g1x, g2x, n1x)
+    return s1, s2, negs
 
 
-def get_negative_samps(sentences, batch_of_reps):
-    X = []
-    T = []
+def get_negative_samps(megabatch, megabatch_of_reps):
+    '''
+        inputs:
+            megabatch - a megabatch (list) of sentences
+            megabatch_of_reps - a tensor of sentence representations
 
-    neg_samps = []
+        outputs:
+            neg_samps - a list matching length of input megabatch consisting
+                        of sentences
+    '''
+    negs = []
 
-    for i in range(len(batch_of_reps)):
-        (s1, _) = sentences[i]
-        X.append(batch_of_reps[i].cpu().numpy())
-        #X.append(batch_of_reps[i].cpu().numpy())
-        T.append(s1)
-        #T.append(p2)
+    reps = []
+    sents = []
+    for i in range(len(megabatch)):
+        (s1, _) = megabatch[i]
+        reps.append(megabatch_of_reps[i].cpu().numpy())
+        sents.append(s1)
 
-    arr = pdist(X, 'cosine')
+    arr = pdist(reps, 'cosine')
     arr = squareform(arr)
 
     for i in range(len(arr)):
@@ -296,18 +337,15 @@ def get_negative_samps(sentences, batch_of_reps):
 
     arr = np.argmax(arr, axis=1)
 
-    for i in range(len(d)):
-        p1 = None
-        p1 = T[arr[2*i]]
-        #p2 = T[arr[2*i+1]]
+    for i in range(len(megabatch)):
+        t = None
+        t = sents[arr[i]]
 
-        neg_samps.append( p1 )
+        negs.append(t)
 
-    return neg_samps
-
+    return negs
 
 
-#Eventually, probably should pull loss functions out into a utilities file
 def loss_heads(S_arc, head_targets, pad_idx=-1):
     '''
     S - should be something like a tensor w/ shape
@@ -330,9 +368,9 @@ def loss_rels(S_rel, rel_targets, pad_idx=-1):
     return F.cross_entropy(S_rel.permute(0,2,1), rel_targets, ignore_index=pad_idx)
 
 
-def loss_ss(H1, H2, N, margin=0.4):
-    para_attract = F.cosine_similarity(H1, H2) # (b,2*d), (b,2*d) -> (b)
-    neg_repel = F.cosine_similarity(H1, N)
+def loss_ss(h1, h2, hn, margin=0.4):
+    para_attract = F.cosine_similarity(h1, h2) # (b,2*d), (b,2*d) -> (b)
+    neg_repel = F.cosine_similarity(h1, hn)
 
     losses = F.relu(margin - para_attract + neg_repel) # (b)
 
@@ -398,6 +436,7 @@ if __name__ == '__main__':
     args = get_args()
 
     MODEL_NAME = f'{args.model}'
+    NUM_EPOCHS = args.epochs
 
     if(not args.eval):
         # Train model

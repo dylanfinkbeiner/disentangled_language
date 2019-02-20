@@ -8,6 +8,7 @@ from memory_profiler import profile
 
 import string
 import random
+from random import shuffle
 
 import sys
 
@@ -68,15 +69,15 @@ def ss_data_loader(data, b_size):
             b_size - batch size
 
         yields:
-            batch - list of selected data points (UNPREPARED)
+            chunk - list of indices representing a minibatch
     '''
 
     idx = list(range(len(data)))
     while True:
         shuffle(idx)
         for chunk in idx_chunks(idx, b_size):
-            batch = [data[i] for i in chunk]
-            yield batch
+            #batch = [data[i] for i in chunk]
+            yield chunk
             #yield prepare_batch_ss(batch) OLD CODE
 
 
@@ -89,13 +90,17 @@ def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=40):
     '''
        Words coming in as tensor, should be (b,l)
     '''
+    dropped = torch.LongTensor(words)
+
     for i, s in enumerate(words):
         for j in range(1, lens[i]): # Skip root token
             p = -1
-            c = counts[ i2w[s[j]] ]
+            c = counts[ i2w[s[j].item()] ]
             p = alpha / (c + alpha) # Dropout probability
             if random.random() <= p:
-                words[i,j] = int(w2i[UNK_TOKEN])
+                dropped[i,j] = int(w2i[UNK_TOKEN])
+    
+    return dropped
 
 
 def prepare_batch_sdp(chunk):
@@ -128,6 +133,7 @@ def prepare_batch_sdp(chunk):
 
     return words, pos, sent_lens, heads, rels
 
+
 def prepare_batch_ss(batch):
     '''
         inputs:
@@ -137,6 +143,7 @@ def prepare_batch_ss(batch):
             words - LongTensor
             pos - LongTensor
             sent_lens - list of sentence lengths
+    '''
 
     batch_size = len(batch)
 
@@ -159,59 +166,59 @@ def prepare_batch_ss(batch):
     return words, pos, sent_lens
 
 
-def prepare_batch_ss(batch):
-    '''
-        inputs:
-            batch - list of lists of 2 or 3 np arrays (each a sentence)
-
-        outputs:
-            words - 2-tuple of tensors, shape (b,l)
-            pos - 2-tuple of tensors, shape (b, l)
-            sent_lens - 2-tuple of lists, shape (b)
-    '''
-    batch_size = len(batch) # TODO But really, megabatch size, right?
-    n_sents = len(batch[0]) # 0 chosen arbitrarily
-
-    words = [[] for i in range(n_sents)]
-    pos = [[] for i in range(n_sents)]
-
-    batch_sorted = [[] for i in range(n_sents)]
-    sent_lens = [[] for i in range(n_sents)]
-    length_longest = [[] for i in range(n_sents)]
-    for instance in batch:
-        for i in range(n_sents):
-            batch_sorted[i].append(instance[i])
-    for i in range(n_sents):
-        batch_sorted[i] = sorted(batch_sorted[i], key=lambda s_i: s_i.shape[0], reverse=True)
-        sent_lens[i] = [s_i.shape[0] for s_i in batch_sorted[i]]
-        length_longest[i] = sent_lens[i][0]
-
-    #length_longest = max(sent_lens[0][0], max([s[1].shape[0] for s in batch]))
-
-    for i in range(n_sents):
-        words[i] = torch.zeros((batch_size, length_longest[i])).long()
-        pos[i] = torch.zeros((batch_size, length_longest[i])).long()
-    #w1 = torch.zeros((batch_size, length_longest)).long()
-    #w2 = torch.zeros((batch_size, length_longest)).long()
-    #p1 = torch.zeros((batch_size, length_longest)).long()
-    #p2 = torch.zeros((batch_size, length_longest)).long()
-
-    for i in batch_sorted
-        for j, _ in enumerate(s):
-            for k in enumerate
-
-            words[i][j,k] = int(s_i[k,0])
-            pos[i][j,k] = int(s_i[k,1])
-
-    # for i, (s1, s2) in enumerate(batch_sorted):
-    #     for j, _ in enumerate s1:
-    #         w1[i,j] = int(s1[j,0])
-    #         p1[i,j] = int(s1[j,1])
-    #     for j, _ in enumerate s2:
-    #         w2[i,j] = int(s2[j,0])
-    #         p2[i,j] = int(s2[j,1])
-
-    return words, pos, sent_lens 
+#def prepare_batch_ss(batch):
+#    '''
+#        inputs:
+#            batch - list of lists of 2 or 3 np arrays (each a sentence)
+#
+#        outputs:
+#            words - 2-tuple of tensors, shape (b,l)
+#            pos - 2-tuple of tensors, shape (b, l)
+#            sent_lens - 2-tuple of lists, shape (b)
+#    '''
+#    batch_size = len(batch) # TODO But really, megabatch size, right?
+#    n_sents = len(batch[0]) # 0 chosen arbitrarily
+#
+#    words = [[] for i in range(n_sents)]
+#    pos = [[] for i in range(n_sents)]
+#
+#    batch_sorted = [[] for i in range(n_sents)]
+#    sent_lens = [[] for i in range(n_sents)]
+#    length_longest = [[] for i in range(n_sents)]
+#    for instance in batch:
+#        for i in range(n_sents):
+#            batch_sorted[i].append(instance[i])
+#    for i in range(n_sents):
+#        batch_sorted[i] = sorted(batch_sorted[i], key=lambda s_i: s_i.shape[0], reverse=True)
+#        sent_lens[i] = [s_i.shape[0] for s_i in batch_sorted[i]]
+#        length_longest[i] = sent_lens[i][0]
+#
+#    #length_longest = max(sent_lens[0][0], max([s[1].shape[0] for s in batch]))
+#
+#    for i in range(n_sents):
+#        words[i] = torch.zeros((batch_size, length_longest[i])).long()
+#        pos[i] = torch.zeros((batch_size, length_longest[i])).long()
+#    #w1 = torch.zeros((batch_size, length_longest)).long()
+#    #w2 = torch.zeros((batch_size, length_longest)).long()
+#    #p1 = torch.zeros((batch_size, length_longest)).long()
+#    #p2 = torch.zeros((batch_size, length_longest)).long()
+#
+#    for i in batch_sorted
+#        for j, _ in enumerate(s):
+#            for k in enumerate
+#
+#            words[i][j,k] = int(s_i[k,0])
+#            pos[i][j,k] = int(s_i[k,1])
+#
+#    # for i, (s1, s2) in enumerate(batch_sorted):
+#    #     for j, _ in enumerate s1:
+#    #         w1[i,j] = int(s1[j,0])
+#    #         p1[i,j] = int(s1[j,1])
+#    #     for j, _ in enumerate s2:
+#    #         w2[i,j] = int(s2[j,0])
+#    #         p2[i,j] = int(s2[j,1])
+#
+#    return words, pos, sent_lens 
 
 
 def conllu_to_sents(f: str):
