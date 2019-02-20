@@ -10,6 +10,8 @@ import string
 import random
 from random import shuffle
 
+from nltk.parse import CoreNLPParser
+
 import sys
 
 
@@ -17,12 +19,8 @@ UNK_TOKEN = '<unk>'
 ROOT_TOKEN = '<root>'
 PAD_TOKEN = '<pad>'
 
+CORENLP_URL = 'http://localhost:9000'
 
-'''
-   Things that still need doing:
-   1. Shuffling the data
-   2. A way of splitting to train/dev/test
-'''
 
 def get_dataset_sdp(conllu_file, training=False):
     sents_list = conllu_to_sents(conllu_file)
@@ -166,61 +164,6 @@ def prepare_batch_ss(batch):
     return words, pos, sent_lens
 
 
-#def prepare_batch_ss(batch):
-#    '''
-#        inputs:
-#            batch - list of lists of 2 or 3 np arrays (each a sentence)
-#
-#        outputs:
-#            words - 2-tuple of tensors, shape (b,l)
-#            pos - 2-tuple of tensors, shape (b, l)
-#            sent_lens - 2-tuple of lists, shape (b)
-#    '''
-#    batch_size = len(batch) # TODO But really, megabatch size, right?
-#    n_sents = len(batch[0]) # 0 chosen arbitrarily
-#
-#    words = [[] for i in range(n_sents)]
-#    pos = [[] for i in range(n_sents)]
-#
-#    batch_sorted = [[] for i in range(n_sents)]
-#    sent_lens = [[] for i in range(n_sents)]
-#    length_longest = [[] for i in range(n_sents)]
-#    for instance in batch:
-#        for i in range(n_sents):
-#            batch_sorted[i].append(instance[i])
-#    for i in range(n_sents):
-#        batch_sorted[i] = sorted(batch_sorted[i], key=lambda s_i: s_i.shape[0], reverse=True)
-#        sent_lens[i] = [s_i.shape[0] for s_i in batch_sorted[i]]
-#        length_longest[i] = sent_lens[i][0]
-#
-#    #length_longest = max(sent_lens[0][0], max([s[1].shape[0] for s in batch]))
-#
-#    for i in range(n_sents):
-#        words[i] = torch.zeros((batch_size, length_longest[i])).long()
-#        pos[i] = torch.zeros((batch_size, length_longest[i])).long()
-#    #w1 = torch.zeros((batch_size, length_longest)).long()
-#    #w2 = torch.zeros((batch_size, length_longest)).long()
-#    #p1 = torch.zeros((batch_size, length_longest)).long()
-#    #p2 = torch.zeros((batch_size, length_longest)).long()
-#
-#    for i in batch_sorted
-#        for j, _ in enumerate(s):
-#            for k in enumerate
-#
-#            words[i][j,k] = int(s_i[k,0])
-#            pos[i][j,k] = int(s_i[k,1])
-#
-#    # for i, (s1, s2) in enumerate(batch_sorted):
-#    #     for j, _ in enumerate s1:
-#    #         w1[i,j] = int(s1[j,0])
-#    #         p1[i,j] = int(s1[j,1])
-#    #     for j, _ in enumerate s2:
-#    #         w2[i,j] = int(s2[j,0])
-#    #         p2[i,j] = int(s2[j,1])
-#
-#    return words, pos, sent_lens 
-
-
 def conllu_to_sents(f: str):
     '''
     inputs:
@@ -261,6 +204,9 @@ def txt_to_sents(f: str):
                          paraphrases
     '''
 
+    # TODO Some kind of try/catch here if server connection fails?
+    tagger = CoreNLPParser(url=f'{CORENLP_URL}', tagtype='pos')
+
     with open(f, 'r') as txt_file:
         lines = txt_file.readlines()
 
@@ -269,6 +215,8 @@ def txt_to_sents(f: str):
         sents = line.split('\t')
         s1 = sents[0].strip().split(' ')
         s2 = sents[1].strip().split(' ')
+        s1 = np.array(tagger.tag(s1))
+        s2 = np.array(tagger.tag(s2))
         sents_list.append( (s1,s2) )
 
     return sents_list
@@ -339,15 +287,15 @@ def numericalize_ss(sents_list, x2i_maps):
 
     sents_numericalized = []
     for s1, s2 in sents_list:
-        new_s1 = np.zeros((len(s1), 2), dtype=int)
-        new_s2 = np.zeros((len(s2), 2), dtype=int)
+        new_s1 = np.zeros(s1.shape), dtype=int)
+        new_s2 = np.zeros(s2.shape), dtype=int)
 
         for i in range(len(s1)):
-            new_s1[i,0] = w2i.get(s1[i].lower(), w2i[UNK_TOKEN])
-            new_s1[i,1] = p2i[UNK_TOKEN]
+            new_s1[i,0] = w2i.get(s1[i,0].lower(), w2i[UNK_TOKEN])
+            new_s1[i,1] = p2i.get(s1[i,1], p2i[UNK_TOKEN])
         for i in range(len(s2)):
-            new_s2[i,0] = w2i.get(s2[i].lower(), w2i[UNK_TOKEN])
-            new_s2[i,1] = p2i[UNK_TOKEN]
+            new_s2[i,0] = w2i.get(s2[i,0].lower(), w2i[UNK_TOKEN])
+            new_s2[i,1] = p2i.get(s2[i,1], p2i[UNK_TOKEN])
 
         sents_numericalized.append( (new_s1, new_s2) )
 

@@ -7,3 +7,4 @@ __pycache__
 *.tch
 TODO
 /data
+conll17_ud_eval.py

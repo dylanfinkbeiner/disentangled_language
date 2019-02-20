@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 formatter = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
 log.setLevel(logging.DEBUG)
 
-file_handler = logging.FileHandler(os.path.join(LOG_DIR, 'train.log'))
+file_handler = logging.FileHandler(os.path.join(LOG_DIR, 'main.log'))
 file_handler.setFormatter(formatter)
 log.addHandler(file_handler)
 
@@ -175,10 +175,10 @@ def train(args):
                 loss = loss_h + loss_r
 
                 train_loss += loss_h.item() + loss_r.item()
-                num_steps += 1
 
                 loss.backward()
                 opt.step()
+                num_steps += 1
 
                 log.info('Sentence similarity training step begins.')
                 opt.zero_grad()
@@ -299,10 +299,6 @@ def get_triplets(megabatch, minibatch_size, parser):
         m_reps, _ = parser.BiLSTM(words, pos, sent_lens)
         megabatch_of_reps.append(average_hiddens(m_reps, sent_lens))
 
-    ''' We just stack all reps for all sentences in each minibatch,
-     and this is fine because the index into this stack is the index
-     of the original sentence (one rep corresponds to one sentence)
-    '''
     megabatch_of_reps = torch.cat(megabatch_of_reps)
 
     negs = get_negative_samps(megabatch, megabatch_of_reps)
@@ -377,7 +373,7 @@ def loss_ss(h1, h2, hn, margin=0.4):
     return losses.sum()
 
 
-def predict_relations(L, head_preds):
+def predict_relations(S_rel, head_preds):
     '''
     args
         L::Tensor - label logits with shape (b, l, num_rels)
@@ -386,7 +382,7 @@ def predict_relations(L, head_preds):
         rel_preds - shape (b, l)
     '''
 
-    rel_preds = L.argmax(2).long()
+    rel_preds = S_rel.argmax(2).long()
     return rel_preds
 
 

@@ -254,10 +254,10 @@ class BiaffineParser(nn.Module):
 
 
 ## From https://github.com/chantera/biaffineparser/blob/master/pytorch_model.py#L86
-def mst_preds(S, sent_lens):
+def mst_preds(S_arc, sent_lens):
     heads_batch = []
     
-    batch_logits = S.data.cpu().numpy() # Take to numpy arrays
+    batch_logits = S_arc.data.cpu().numpy() # Take to numpy arrays
 
     for sent_logits, true_length in zip(batch_logits, sent_lens):
         sent_probs = softmax2d(sent_logits[:true_length, :true_length]) # Select out THE ACTUAL SENTENCE
@@ -289,15 +289,3 @@ def softmax2d(x): #Just doing softmax of row vectors
     np.exp(y, out=y)
     y /= y.sum(axis=1, keepdims=True)
     return y
-
-
-def average_hiddens(H1, H2, sent_lens):
-    H1 = H1.sum(axis=1)
-    H2 = H2.sum(axis=1)
-
-    #sent_lens[0] = torch.Tensor(sent_lens[0]).view(-1, 1)
-    sent_lens = torch.Tensor(sent_lens).view(2, -1, 1)  # Column vector
-
-    H1 / sent_lens[0]
-    H2 / sent_lens[1]
-
