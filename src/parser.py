@@ -23,24 +23,6 @@ file_handler.setFormatter(formatter)
 stream_handler.setFormatter(formatter)
 log.setLevel(logging.DEBUG)
 
-'''
-    An implementation of Jabberwocky dropout-heavy
-    BiAffine Attention Dependency Parser
-'''
-
-alpha = 40  # For calculating word dropout rates...
-
-'''
-Hypothesis: We can break up parser into to submodules:
-    1) BiLSTM
-        in: (words, pos, sent_len)
-        out:  (lstm_out, (h_n, c_n)) [Should this be unpacked?]
-
-    2) BiAffine Attention
-        in: (lstm_out, sent_len)
-        out: (arc_scores, rel_scores, head_preds)
-'''
-
 
 class BiLSTM(nn.Module):
     def __init__(
@@ -236,17 +218,14 @@ class BiaffineParser(nn.Module):
     def forward(self, words, pos, sent_lens):
         '''
         ins:
-            words::Tensor
-            pos::Tensor
-            sent_lens::List
+            words - LongTensor
+            pos - LongTensor
+            sent_lens - list of integers
 
         outs:
-            S::Tensor - Shape(b, l, l); [i,j] is pre-softmax vector s_j, i.e.
-                        logits for dist. over heads of jth word in ith sentence
-            L::Tensor - Shape(b, l, num_rel); [i,j] is pre-softmax vector
-                        l_i as described in paper
-            head_preds::Tensor - Shape(b, l); [i,j] entry is
-                                 prediction of jth word in ith sentence
+            S_arc - Tensor containing scores for arcs
+            S_rel - Tensor containing scores for
+            head_preds - Tensor of predicted heads
         '''
 
         outputs, (h_n, c_n) = self.BiLSTM(words, pos, sent_lens)

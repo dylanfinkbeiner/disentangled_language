@@ -25,6 +25,7 @@ LOG_DIR = '../log'
 DATA_DIR = '../data'
 MODEL_NAME = ''
 CONLLU_FILE = 'treebank.conllu'
+#CONLLU_FILE = 'tenpercentsample.conllu'
 PARANMT_FILE = 'para_tiny.txt'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
@@ -63,6 +64,8 @@ def train(args):
     data_ss_pkl = os.path.join(DATA_DIR,
             f'{os.path.splitext(PARANMT_FILE)[0]}_data.pkl')
 
+
+
     if not os.path.exists(vocabs_pkl) \
             or not os.path.exists(data_sdp_pkl) \
             or not os.path.exists(data_ss_pkl):
@@ -87,6 +90,7 @@ def train(args):
             data_ss = pickle.load(f)
 
     train_sdp = data_sdp['train']
+
     train_ss = data_ss
     dev = data_sdp['dev']
 
@@ -164,9 +168,8 @@ def train(args):
                 outputs, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
                 outputs_d, _ = parser.BiLSTM(words_d.to(device), pos.to(device), sent_lens)
 
-                # Splice
-                outputs[:,:,h_size // 2 : h_size] = outputs_d[:,:,h_size // 2 : h_size]
-                outputs[:,:,h_size + (h_size // 2):] = outputs_d[:,:,h_size + (h_size // 2):]
+                outputs[:,:,h_size // 2 : h_size] = outputs_d[:,:,h_size // 2 : h_size] # Splice forward hiddens
+                outputs[:,:,h_size + (h_size // 2):] = outputs_d[:,:,h_size + (h_size // 2):] # Splice backward hiddens
 
                 S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
 
@@ -255,11 +258,11 @@ def train(args):
 def average_hiddens(hiddens, sent_lens):
     '''
         inputs:
-            hiddens - tensor w/ shape (b, l, 2*d)
-            sent_lens - list of sentence length
+            hiddens - tensor w/ shape (b, l, 2*d) where d is LSTM hidden size
+            sent_lens - list of sentence lengths
 
         outputs:
-            averaged_hiddens
+            averaged_hiddens - 
     '''
 
     #NOTE WE ARE ASSUMING PAD VALUES ARE 0 IN THIS SUM (NEED TO DOUBLE CHECK)

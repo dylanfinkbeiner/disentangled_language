@@ -7,7 +7,7 @@ def get_args():
     parser.add_argument("-seed", type=int, dest='seed', default=7)
 
     parser.add_argument('-e', action="store_true", dest='eval', default=False)
-    parser.add_argument('-initdata', action="store_true", default=False)
+    parser.add_argument('-initdata', action="store_true", default=True)
     parser.add_argument('-initmodel', action="store_true", default=False)
 
     # File names

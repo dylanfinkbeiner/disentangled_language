@@ -25,17 +25,23 @@ CORENLP_URL = 'http://localhost:9000'
 def get_dataset_sdp(conllu_file, training=False):
     sents_list = conllu_to_sents(conllu_file)
 
+    #sorted_sents = [i for i in sents_list if i.shape[0] <= 5]
+    #for i in sorted_sents[:100]:
+    #    print(i)
+    #    print('\n')
+    #exit()
+
     sents_list, word_counts = filter_and_count(sents_list, filter_single=training)
 
     x2i_maps, i2x_maps = build_dicts(sents_list)
     
-    sents_list = numericalize(sents_list, x2i_maps)
+    sents_list = numericalize_sdp(sents_list, x2i_maps)
     
     return get_train_dev_test(sents_list), x2i_maps, i2x_maps, word_counts
 
 
 def get_dataset_ss(paranmt_file, x2i_maps=None):
-    sents_list = txt_to_sents(paranmt_file)
+    sents_list = para_to_sents(paranmt_file)
 
     sents_list = numericalize_ss(sents_list, x2i_maps)
 
@@ -74,9 +80,7 @@ def ss_data_loader(data, b_size):
     while True:
         shuffle(idx)
         for chunk in idx_chunks(idx, b_size):
-            #batch = [data[i] for i in chunk]
             yield chunk
-            #yield prepare_batch_ss(batch) OLD CODE
 
 
 def idx_chunks(idx, chunk_size):
@@ -86,7 +90,16 @@ def idx_chunks(idx, chunk_size):
 
 def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=40):
     '''
-       Words coming in as tensor, should be (b,l)
+        inputs:
+            words - LongTensor, shape (b,l)
+            w2i - word to index dict
+            i2w - index to word dict
+            counts - Counter object associating words to counts in corpus
+            lens - lens of sentences (should be b of them)
+            alpha - hyperparameter for dropout
+
+        outputs:
+            dropped - new LongTensor, shape (b,l)
     '''
     dropped = torch.LongTensor(words)
 
@@ -101,15 +114,15 @@ def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=40):
     return dropped
 
 
-def prepare_batch_sdp(chunk):
+def prepare_batch_sdp(batch):
     '''
     Transform a batch from a np array of sentences
     into several tensors to use in training
     '''
 
-    batch_size = len(chunk)
-    chunk_sorted = sorted(chunk, key = lambda s: s.shape[0], reverse=True)
-    sent_lens = [s.shape[0] for s in chunk_sorted] # Keep in mind, these lengths include ROOT token in each sent
+    batch_size = len(batch)
+    batch_sorted = sorted(batch, key = lambda s: s.shape[0], reverse=True)
+    sent_lens = [s.shape[0] for s in batch_sorted] # Keep in mind, these lengths include ROOT token in each sent
     length_longest = sent_lens[0]
 
     words = torch.zeros((batch_size, length_longest)).long()
@@ -117,7 +130,7 @@ def prepare_batch_sdp(chunk):
     heads = torch.Tensor(batch_size, length_longest).fill_(-1).long()
     rels = torch.Tensor(batch_size, length_longest).fill_(-1).long()
 
-    for i, s in enumerate(chunk_sorted):
+    for i, s in enumerate(batch_sorted):
         for j, _ in enumerate(s):
             '''
             Casting as ints because for some stupid reason
@@ -135,12 +148,12 @@ def prepare_batch_sdp(chunk):
 def prepare_batch_ss(batch):
     '''
         inputs:
-            batch - batch as a list of np arrays representing sentences
+            batch - batch as a list of numpy arrays representing sentences
 
         outputs:
-            words - LongTensor
-            pos - LongTensor
-            sent_lens - list of sentence lengths
+            words - LongTensor, shape (b,l), padded with zeros
+            pos - LongTensor, shape (b,l), padded with zeros
+            sent_lens - list of sentence lengths (integers)
     '''
 
     batch_size = len(batch)
@@ -171,7 +184,6 @@ def conllu_to_sents(f: str):
 
     outputs:
         sents_list - a list of np arrays with shape (#words-in-sentence, 4)
-
     '''
 
     mask = [1, 4, 6, 7]  # [word, pos, head, rel]
@@ -194,7 +206,7 @@ def conllu_to_sents(f: str):
     return sents_list
 
 
-def txt_to_sents(f: str):
+def para_to_sents(f: str):
     '''
         inputs:
             f - name of sentences/paraphrases dataset txt file
@@ -207,8 +219,8 @@ def txt_to_sents(f: str):
     # TODO Some kind of try/catch here if server connection fails?
     tagger = CoreNLPParser(url=f'{CORENLP_URL}', tagtype='pos')
 
-    with open(f, 'r') as txt_file:
-        lines = txt_file.readlines()
+    with open(f, 'r') as para_file:
+        lines = para_file.readlines()
 
     sents_list = []
     for line in lines:
@@ -258,7 +270,7 @@ def build_dicts(sents_list):
     return x2i_maps, i2x_maps
 
 
-def numericalize(sents_list, x2i_maps):
+def numericalize_sdp(sents_list, x2i_maps):
     w2i = x2i_maps['word']
     p2i = x2i_maps['pos']
     r2i = x2i_maps['rel']
@@ -287,8 +299,8 @@ def numericalize_ss(sents_list, x2i_maps):
 
     sents_numericalized = []
     for s1, s2 in sents_list:
-        new_s1 = np.zeros(s1.shape), dtype=int)
-        new_s2 = np.zeros(s2.shape), dtype=int)
+        new_s1 = np.zeros(s1.shape, dtype=int)
+        new_s2 = np.zeros(s2.shape, dtype=int)
 
         for i in range(len(s1)):
             new_s1[i,0] = w2i.get(s1[i,0].lower(), w2i[UNK_TOKEN])
