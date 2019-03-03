@@ -19,11 +19,21 @@ UNK_TOKEN = '<unk>'
 ROOT_TOKEN = '<root>'
 PAD_TOKEN = '<pad>'
 
+CONLLU_MASK = [1, 4, 6, 7]  # [word, pos, head, rel]
 CORENLP_URL = 'http://localhost:9000'
 
-
-def get_dataset_sdp(conllu_file, training=False):
+def get_dataset_evaltime(conllu_file):
     sents_list = conllu_to_sents(conllu_file)
+
+    return 
+
+# Sections 2-21 for training, 22 for dev, 23 for test
+def build_dataset_sdp(conllu_file, training=False):
+    [path for path in os.listdir('../data') if os.path.splitext(path)[1] == '.txt']
+
+    sents_list = conllu_to_sents(conllu_file)
+
+    sents_list = [s[:, CONLLU_MASK] for s in sents_list]
 
     #sorted_sents = [i for i in sents_list if i.shape[0] <= 5]
     #for i in sorted_sents[:100]:
@@ -37,10 +47,10 @@ def get_dataset_sdp(conllu_file, training=False):
     
     sents_list = numericalize_sdp(sents_list, x2i_maps)
     
-    return get_train_dev_test(sents_list), x2i_maps, i2x_maps, word_counts
+    return sents_list, x2i_maps, i2x_maps, word_counts
 
 
-def get_dataset_ss(paranmt_file, x2i_maps=None):
+def build_dataset_ss(paranmt_file, x2i_maps=None):
     sents_list = para_to_sents(paranmt_file)
 
     sents_list = numericalize_ss(sents_list, x2i_maps)
@@ -52,7 +62,7 @@ def get_dataset_ss(paranmt_file, x2i_maps=None):
 # uses chunks of shuffled INDICES rather than chunks of the
 # data list itself; this may be a more convenient/efficient
 # implementation once I get to the point of SHUFFLING the data
-def sdp_data_loader(data, b_size):
+def sdp_data_loader(data, b_size, shuffle=False):
 
     '''NOTE We pass the entirety of data_list as input to this function,
     which seems to not really make use of the space-efficient pattern of
@@ -60,7 +70,8 @@ def sdp_data_loader(data, b_size):
     '''
     idx = list(range(len(data)))
     while True:
-        shuffle(idx) # In-place shuffle
+        if shuffle:
+            shuffle(idx) # In-place shuffle
         for chunk in idx_chunks(idx, b_size):
             batch = [data[i] for i in chunk]
             yield prepare_batch_sdp(batch)
@@ -186,7 +197,6 @@ def conllu_to_sents(f: str):
         sents_list - a list of np arrays with shape (#words-in-sentence, 4)
     '''
 
-    mask = [1, 4, 6, 7]  # [word, pos, head, rel]
 
     with open(f, 'r') as conllu_file:
         lines = conllu_file.readlines()
@@ -201,7 +211,7 @@ def conllu_to_sents(f: str):
 
     for i, s in enumerate(sents_list):
         s_split = [line.split('\t') for line in s]
-        sents_list[i] = np.array(s_split)[:, mask]
+        sents_list[i] = np.array(s_split)
 
     return sents_list
 
