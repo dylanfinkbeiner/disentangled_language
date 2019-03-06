@@ -22,18 +22,20 @@ PAD_TOKEN = '<pad>'
 CONLLU_MASK = [1, 4, 6, 7]  # [word, pos, head, rel]
 CORENLP_URL = 'http://localhost:9000'
 
-def get_dataset_evaltime(conllu_file):
-    sents_list = conllu_to_sents(conllu_file)
-
-    return 
 
 # Sections 2-21 for training, 22 for dev, 23 for test
-def build_dataset_sdp(conllu_file, training=False):
-    [path for path in os.listdir('../data') if os.path.splitext(path)[1] == '.txt']
+def build_dataset_sdp(conllu_files=[], training=False):
+    sents_list = []
+    for f in conllu_files:
+        sents_list.append(conllu_to_sents(f))
 
-    sents_list = conllu_to_sents(conllu_file)
+    for i, f in enumerate(sents_list):
+        sents_list[i] = [s[:, CONLLU_MASK] for s in f]
 
-    sents_list = [s[:, CONLLU_MASK] for s in sents_list]
+    # "Standard" train/dev/split for PTB
+    train_list = [s for f in sents_list[2:22] for s in f]
+    dev_list = sents_list[22]
+    test_list = sents_list[23]
 
     #sorted_sents = [i for i in sents_list if i.shape[0] <= 5]
     #for i in sorted_sents[:100]:
@@ -41,28 +43,34 @@ def build_dataset_sdp(conllu_file, training=False):
     #    print('\n')
     #exit()
 
-    sents_list, word_counts = filter_and_count(sents_list, filter_single=training)
+    train_list, word_counts = filter_and_count(train_list, filter_single=training)
+    dev_list, _ = filter_and_count(dev_list, filter_single=False)
+    test_list, _ = filter_and_count(test_list, filter_single=False)
 
-    x2i_maps, i2x_maps = build_dicts(sents_list)
+    x2i, i2x = build_dicts(train_list)
     
-    sents_list = numericalize_sdp(sents_list, x2i_maps)
+    train_list = numericalize_sdp(train_list, x2i)
+    dev_list = numericalize_sdp(dev_list, x2i)
+    test_list = numericalize_sdp(test_list, x2i)
+
+    data_sdp = {
+            'train': train_list,
+            'dev': dev_list,
+            'test': test_list
+            }
     
-    return sents_list, x2i_maps, i2x_maps, word_counts
+    return data_sdp, x2i, i2x, word_counts
 
 
-def build_dataset_ss(paranmt_file, x2i_maps=None):
+def build_dataset_ss(paranmt_file, x2i=None):
     sents_list = para_to_sents(paranmt_file)
 
-    sents_list = numericalize_ss(sents_list, x2i_maps)
+    sents_list = numericalize_ss(sents_list, x2i)
 
     return sents_list
 
 
-#TODO Possible edit required: EelcovdW's implementation
-# uses chunks of shuffled INDICES rather than chunks of the
-# data list itself; this may be a more convenient/efficient
-# implementation once I get to the point of SHUFFLING the data
-def sdp_data_loader(data, b_size, shuffle=False):
+def sdp_data_loader(data, batch_size=1, shuffle=False):
 
     '''NOTE We pass the entirety of data_list as input to this function,
     which seems to not really make use of the space-efficient pattern of
@@ -210,7 +218,7 @@ def conllu_to_sents(f: str):
         sent_start = sent_end + 1 # Skipping the line break
 
     for i, s in enumerate(sents_list):
-        s_split = [line.split('\t') for line in s]
+        s_split = [line.rstrip().split('\t') for line in s]
         sents_list[i] = np.array(s_split)
 
     return sents_list
@@ -274,16 +282,16 @@ def build_dicts(sents_list):
     for r in rel:
         i2r[r2i[r]] = r
 
-    x2i_maps = {'word' : dict(w2i), 'pos' : dict(p2i), 'rel' : dict(r2i)}
-    i2x_maps = {'word' : i2w, 'pos' : i2p, 'rel' : i2r}
+    x2i = {'word' : dict(w2i), 'pos' : dict(p2i), 'rel' : dict(r2i)}
+    i2x = {'word' : i2w, 'pos' : i2p, 'rel' : i2r}
 
-    return x2i_maps, i2x_maps
+    return x2i, i2x
 
 
-def numericalize_sdp(sents_list, x2i_maps):
-    w2i = x2i_maps['word']
-    p2i = x2i_maps['pos']
-    r2i = x2i_maps['rel']
+def numericalize_sdp(sents_list, x2i):
+    w2i = x2i['word']
+    p2i = x2i['pos']
+    r2i = x2i['rel']
 
     sents_numericalized = []
     for s in sents_list:
@@ -303,9 +311,9 @@ def numericalize_sdp(sents_list, x2i_maps):
     return sents_numericalized
 
 
-def numericalize_ss(sents_list, x2i_maps):
-    w2i = x2i_maps['word']
-    p2i = x2i_maps['pos']
+def numericalize_ss(sents_list, x2i):
+    w2i = x2i['word']
+    p2i = x2i['pos']
 
     sents_numericalized = []
     for s1, s2 in sents_list:

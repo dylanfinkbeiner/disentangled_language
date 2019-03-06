@@ -20,7 +20,6 @@ from data_utils import get_dataset_ss, ss_data_loader, prepare_batch_ss
 from args import get_args
 
 
-WEIGHTS_DIR = '../weights'
 LOG_DIR = '../log'
 DATA_DIR = '../data'
 MODEL_NAME = ''
@@ -29,8 +28,6 @@ CONLLU_FILE = 'treebank.conllu'
 PARANMT_FILE = 'para_tiny.txt'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
-
-NUM_EPOCHS = -1
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
@@ -45,71 +42,32 @@ stream_handler.setFormatter(formatter)
 log.addHandler(stream_handler)
 
 
-def train(args):
+def train(args, parser, data, weights_path=None):
+    seed = args.seed
+    model_name = args.model
+    train_mode = args.train_mode
+    init_model = args.initmodel
     batch_size = args.batchsize
     mega_size = args.M
     h_size = args.numhidden
-    init_data = args.initdata
-    init_model = args.initmodel
-    seed = args.seed
+    n_epochs = args.epochs
 
     torch.manual_seed(seed)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    # Filenames
-    vocabs_pkl = os.path.join(DATA_DIR, 
-            f'{os.path.splitext(CONLLU_FILE)[0]}_vocabs.pkl')
-    data_sdp_pkl = os.path.join(DATA_DIR,
-            f'{os.path.splitext(CONLLU_FILE)[0]}_data.pkl')
-    data_ss_pkl = os.path.join(DATA_DIR,
-            f'{os.path.splitext(PARANMT_FILE)[0]}_data.pkl')
+    x2i = data['vocabs']['x2i']
+    i2x = data['vocabs']['i2x']
+    data_sdp = data['data_sdp']
 
-    if not os.path.exists(vocabs_pkl) \
-            or not os.path.exists(data_sdp_pkl) \
-            or not os.path.exists(data_ss_pkl):
-        init_data = True
-
-    if init_data:
-        data_sdp, x2i_maps, i2x_maps, word_counts = get_dataset_sdp(
-                os.path.join(DATA_DIR, CONLLU_FILE), training=True)
-        data_ss = get_dataset_ss(os.path.join(DATA_DIR, PARANMT_FILE), x2i_maps)
-        with open(vocabs_pkl, 'wb') as f:
-            pickle.dump((x2i_maps, i2x_maps), f)
-        with open(data_sdp_pkl, 'wb') as f:
-            pickle.dump((data_sdp, word_counts), f)
-        with open(data_ss_pkl, 'wb') as f:
-            pickle.dump((data_ss), f)
-    else:
-        with open(vocabs_pkl, 'rb') as f:
-            x2i_maps, i2x_maps = pickle.load(f)
-        with open(data_sdp_pkl, 'rb') as f:
-            data_sdp, word_counts = pickle.load(f)
-        with open(data_ss_pkl, 'rb') as f:
-            data_ss = pickle.load(f)
-
+    train_ss = data['data_ss']
     train_sdp = data_sdp['train']
-
-    train_ss = data_ss
     dev = data_sdp['dev']
 
-    w2i = x2i_maps['word']
-    p2i = x2i_maps['pos']
-    r2i = x2i_maps['rel']
+    w2i = x2i['word']
+    p2i = x2i['pos']
+    r2i = x2i['rel']
 
-    i2w = i2x_maps['word']
-
-    parser = BiaffineParser(
-            word_vocab_size = len(w2i),
-            pos_vocab_size = len(p2i),
-            num_relations = len(r2i),
-            hidden_size = h_size,
-            padding_idx = w2i[PAD_TOKEN])
-    parser.to(device)
-
-    model_weights = os.path.join(WEIGHTS_DIR, MODEL_NAME)
-
-    if not init_model and os.path.exists(model_weights):
-        parser.load_state_dict(torch.load(model_weights))
+    i2w = i2x['word']
 
     # Set up finished
 
@@ -117,9 +75,9 @@ def train(args):
     log.info(f'There are {len(train_ss)} SS training examples.')
     log.info(f'There are {len(dev)} validation examples.')
 
-    train_sdp_loader = sdp_data_loader(train_sdp, batch_size)
-    train_ss_loader = ss_data_loader(train_ss, batch_size)
-    dev_loader = sdp_data_loader(dev, batch_size)
+    train_sdp_loader = sdp_data_loader(train_sdp, batch_size=batch_size, shuffle=True)
+    train_ss_loader = ss_data_loader(train_ss, batch_size=batch_size)
+    dev_loader = sdp_data_loader(dev, batch_size=batch_size)
 
     n_train_batches = ceil(len(train_sdp) / batch_size)
     n_megabatches = ceil(len(train_sdp) / (mega_size * batch_size))
@@ -132,44 +90,19 @@ def train(args):
     log.info('Starting train loop.')
 
     state = parser.state_dict() # For weight analysis
-    for e in range(NUM_EPOCHS):
+
+    for e in range(n_epochs):
 
         parser.train()
         train_loss = 0
         num_steps = 0
-        for m in range(n_megabatches):
-
-            megabatch = []
-            idxs = []
-            idx = 0
-            for _ in range(mega_size):
-                instances = [train_ss[j] for j in next(train_ss_loader)]
-                curr_idxs = [i + idx for i in range(len(instances))]
-                megabatch.extend(instances)
-                idxs.append(curr_idxs)
-                idx += len(curr_idxs)
-
-            with torch.no_grad():
-                s1, s2, negs = get_triplets(megabatch, batch_size, parser)
-
-            # Checking to see weights are changing
-            #log.info('Attention h_rel_head:', state['BiAffineAttention.h_rel_head.0.weight'])
-            #log.info('Word embedding weight:', state['BiLSTM.word_emb.weight'])
-
-            for x in range(len(idxs)):
-                log.info('Parser training step begins.')
+        if train_mode == 0:
+            for b in range(n_train_batches):
                 opt.zero_grad()
-
                 words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
                 words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
-
-                outputs, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
-                outputs_d, _ = parser.BiLSTM(words_d.to(device), pos.to(device), sent_lens)
-
-                outputs[:,:,h_size // 2 : h_size] = outputs_d[:,:,h_size // 2 : h_size] # Splice forward hiddens
-                outputs[:,:,h_size + (h_size // 2):] = outputs_d[:,:,h_size + (h_size // 2):] # Splice backward hiddens
-
-                S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
+                
+                S_arc, S_rel, _ = parser(words_d, pos, sent_lens)
 
                 loss_h = loss_heads(S_arc, head_targets)
                 loss_r = loss_rels(S_rel, rel_targets)
@@ -181,24 +114,67 @@ def train(args):
                 opt.step()
                 num_steps += 1
 
-                log.info('Sentence similarity training step begins.')
-                opt.zero_grad()
+        else if train_mode == 1:
+            for m in range(n_megabatches):
+                megabatch = []
+                idxs = []
+                idx = 0
+                for _ in range(mega_size):
+                    instances = [train_ss[j] for j in next(train_ss_loader)]
+                    curr_idxs = [i + idx for i in range(len(instances))]
+                    megabatch.extend(instances)
+                    idxs.append(curr_idxs)
+                    idx += len(curr_idxs)
 
-                w1, p1, sl1 = prepare_batch_ss([s1[i] for i in idxs[x]])
-                w2, p2, sl2 = prepare_batch_ss([s2[i] for i in idxs[x]])
-                wn, pn, sln = prepare_batch_ss([negs[i] for i in idxs[x]])
+                with torch.no_grad():
+                    s1, s2, negs = get_triplets(megabatch, batch_size, parser)
 
-                h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1)
-                h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2)
-                hn, _ = parser.BiLSTM(wn.to(device), pn.to(device), sln)
+                # Checking to see weights are changing
+                #log.info('Attention h_rel_head:', state['BiAffineAttention.h_rel_head.0.weight'])
+                #log.info('Word embedding weight:', state['BiLSTM.word_emb.weight'])
 
-                loss = loss_ss(
-                        average_hiddens(h1, sl1), 
-                        average_hiddens(h2, sl2),
-                        average_hiddens(hn, sln))
+                for x in range(len(idxs)):
+                    opt.zero_grad()
 
-                loss.backward()
-                opt.step()
+                    words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
+                    words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
+
+                    outputs, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
+                    outputs_d, _ = parser.BiLSTM(words_d.to(device), pos.to(device), sent_lens)
+
+                    outputs[:,:,h_size // 2 : h_size] = outputs_d[:,:,h_size // 2 : h_size] # Splice forward hiddens
+                    outputs[:,:,h_size + (h_size // 2):] = outputs_d[:,:,h_size + (h_size // 2):] # Splice backward hiddens
+
+                    S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
+
+                    loss_h = loss_heads(S_arc, head_targets)
+                    loss_r = loss_rels(S_rel, rel_targets)
+                    loss = loss_h + loss_r
+
+                    train_loss += loss_h.item() + loss_r.item()
+
+                    loss.backward()
+                    opt.step()
+                    num_steps += 1
+
+                    log.info('Sentence similarity training step begins.')
+                    opt.zero_grad()
+
+                    w1, p1, sl1 = prepare_batch_ss([s1[i] for i in idxs[x]])
+                    w2, p2, sl2 = prepare_batch_ss([s2[i] for i in idxs[x]])
+                    wn, pn, sln = prepare_batch_ss([negs[i] for i in idxs[x]])
+
+                    h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1)
+                    h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2)
+                    hn, _ = parser.BiLSTM(wn.to(device), pn.to(device), sln)
+
+                    loss = loss_ss(
+                            average_hiddens(h1, sl1), 
+                            average_hiddens(h2, sl2),
+                            average_hiddens(hn, sln))
+
+                    loss.backward()
+                    opt.step()
 
         train_loss /= num_steps # Just dependency parsing loss
 
@@ -248,9 +224,7 @@ def train(args):
                 break
 
     # Save weights
-    if not os.path.isdir(WEIGHTS_DIR):
-        os.makedirs(WEIGHTS_DIR)
-    torch.save(parser.state_dict(), model_weights)
+    torch.save(parser.state_dict(), weights_path)
 
 
 def average_hiddens(hiddens, sent_lens):
