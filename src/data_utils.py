@@ -135,13 +135,20 @@ def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=40):
 
 def prepare_batch_sdp(batch):
     '''
-    Transform a batch from a np array of sentences
-    into several tensors to use in training
+        inputs:
+            batch - 
+
+        outputs:
+            words - 
+            pos -
+            sent_lens - list of lengths (INCLUDES ROOT TOKEN)
+            heads -
+            rels -
     '''
 
     batch_size = len(batch)
     batch_sorted = sorted(batch, key = lambda s: s.shape[0], reverse=True)
-    sent_lens = [s.shape[0] for s in batch_sorted] # Keep in mind, these lengths include ROOT token in each sent
+    sent_lens = [s.shape[0] for s in batch_sorted] # Keep in mind, these lengths include ROOT token in each sentence
     length_longest = sent_lens[0]
 
     words = torch.zeros((batch_size, length_longest)).long()

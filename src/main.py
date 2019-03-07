@@ -5,6 +5,7 @@ import logging
 import pickle
 #from memory_profiler import profile
 from math import ceil
+import datetime
 
 import numpy as np
 import torch
@@ -48,12 +49,14 @@ log.addHandler(stream_handler)
 
 if __name__ == '__main__':
     args = get_args()
-
     init_data = args.initdata
     init_model = args.initmodel
+
+    d = datetime.datetime.today()
+    log.info('\nNew session with parser: {d}.\n')
+
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    print(f'Initializing model: {init_model}')
-    print(f'Initializing data: {init_data}')
+    log.info(f'Using device: {device}')
 
     # Filenames
     vocabs_path = os.path.join(DATA_DIR, 'vocabs.pkl')
@@ -66,6 +69,7 @@ if __name__ == '__main__':
         init_data = True
 
     if init_data:
+        log.info(f'Initializing data.')
         conllu_files = sorted([os.path.join(DEP_DIR, f) for f in os.listdir(DEP_DIR)])
 
         data_sdp, x2i, i2x, word_counts = build_dataset_sdp(conllu_files, training=True)
@@ -73,19 +77,20 @@ if __name__ == '__main__':
             pickle.dump((x2i, i2x), f)
         with open(data_sdp_path, 'wb') as f:
             pickle.dump((data_sdp, word_counts), f)
-
         if args.mode != 0:
             data_ss = build_dataset_ss(os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
             with open(data_ss_path, 'wb') as f:
                 pickle.dump((data_ss), f)
 
     else:
+        log.info(f'Loading pickled data.')
         with open(vocabs_path, 'rb') as f:
             x2i, i2x = pickle.load(f)
         with open(data_sdp_path, 'rb') as f:
             data_sdp, word_counts = pickle.load(f)
-        with open(data_ss_path, 'rb') as f:
-            data_ss = pickle.load(f)
+        if args.mode != 0:
+            with open(data_ss_path, 'rb') as f:
+                data_ss = pickle.load(f)
 
     vocabs = {'x2i': x2i, 'i2x': i2x}
 
@@ -100,15 +105,17 @@ if __name__ == '__main__':
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
 
     if not init_model and os.path.exists(weights_path):
-        log.info(f'Loading state dict for model {weights_path}.')
+        log.info(f'Loading state dict from: {weights_path}.')
         parser.load_state_dict(torch.load(weights_path))
+    else:
+        log.info(f'Model has initialized parameters.')
 
     if not args.eval:
         data = {'data_sdp' : data_sdp,
                 'vocabs' : vocabs,
                 'word_counts' : word_counts}
         if args.mode != 0:
-            data['data_ss' : data_ss]
+            data['data_ss'] = data_ss
 
         train.train(args, parser, data, weights_path=weights_path)
 

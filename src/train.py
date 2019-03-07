@@ -45,7 +45,7 @@ def train(args, parser, data, weights_path=None):
     h_size = args.hsize
     n_epochs = args.epochs
 
-    log.info(f'Training model named {model_name} for {n_epochs} epochs in training mode {train_mode}.')
+    log.info(f'Training model \"{model_name}\" for {n_epochs} epochs in training mode {train_mode}.')
     log.info(f'Weights will be saved to {weights_path}.')
     sleep(2)
 
@@ -99,7 +99,7 @@ def train(args, parser, data, weights_path=None):
             num_steps = 0
             if train_mode == 0 and False:
                 for b in range(n_train_batches):
-                    log.info(f'Entering batch {b}.')
+                    log.info(f'Entering batch {b+1}/{n_train_batches}.')
                     opt.zero_grad()
                     words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
                     words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
@@ -227,6 +227,7 @@ def train(args, parser, data, weights_path=None):
                     break
             
             torch.save(parser.state_dict(), weights_path)
+            log.info('Weights saved to {weights_path}')
 
     # Save weights
     except KeyboardInterrupt:
@@ -366,6 +367,9 @@ def predict_relations(S_rel, head_preds):
     '''
 
     rel_preds = S_rel.cpu().argmax(2).long()
+    # override predictions according to head_preds labeled '0'
+
+    
     return rel_preds
 
 

@@ -173,6 +173,7 @@ class BiAffineAttention(nn.Module):
             head_preds = pad_sequence([torch.Tensor(s).long() for s in head_preds],
                     batch_first=True, padding_value=0) # (b, l)
 
+        # head_preds should be (b,l), not (b,l-1), as head of a word might be root
         head_preds = head_preds.to(device)
 
         d_rel, num_rel, _ = self.U_rel.size()
@@ -183,7 +184,9 @@ class BiAffineAttention(nn.Module):
         # H_rel_head: Now the i-th row of this matrix is h_p_i^(rel_head), the MLP output for predicted head of ith word
         U_rel = self.U_rel.view(-1, num_rel * d_rel) # (d_rel, num_rel * d_rel)
         interactions = torch.mm(H_rel_head.view(b * l, d_rel), U_rel).view(b * l, num_rel, d_rel) # (b*l, num_rel, d_rel)
+        # XXX SHOUDN'T THERE BE A TRANSPOSE OF H_rel_dep HAPPENING HERE???
         interactions = torch.bmm(interactions, H_rel_dep.view(b * l, d_rel, 1)).view(b, l, num_rel) # (b*l, l, num_rel)
+        # Multiply W_rel on the left by the sum of the the H's
         sums = (torch.mm((H_rel_head + H_rel_dep).view(b*l, d_rel), self.W_rel) + self.b_rel).view(b, l, num_rel)
         S_rel = interactions + sums # (b, l, num_rel) where logits vectors l_i are 3rd axis of L
 
@@ -258,21 +261,22 @@ def mst_preds(S_arc, sent_lens):
         
         #label_probs = softmax2d(label_logit[np.arange(length), arcs])
         #labels = np.argmax(label_probs, axis=1) # NOTE Simple argmax to get label predictions
-        #labels[0] = ROOT
-        #tokens = np.arange(1, length)
-        #roots = np.where(labels[tokens] == ROOT)[0] + 1
-        #if len(roots) < 1:
-        #    root_arc = np.where(arcs[tokens] == 0)[0] + 1
-        #    labels[root_arc] = ROOT
-        #elif len(roots) > 1:
-        #    label_probs[roots, ROOT] = 0
-        #    new_labels = \
-        #        np.argmax(label_probs[roots], axis=1)
-        #    root_arc = np.where(arcs[tokens] == 0)[0] + 1
-        #    labels[roots] = new_labels
-        #    labels[root_arc] = ROOT
-        #labels_batch.append(labels)
+        labels[0] = ROOT
+        tokens = np.arange(1, length)
+        roots = np.where(labels[tokens] == ROOT)[0] + 1
+        if len(roots) < 1:
+            root_arc = np.where(arcs[tokens] == 0)[0] + 1
+            labels[root_arc] = ROOT
+        elif len(roots) > 1:
+            label_probs[roots, ROOT] = 0
+            new_labels = \
+                np.argmax(label_probs[roots], axis=1)
+            root_arc = np.where(arcs[tokens] == 0)[0] + 1
+            labels[roots] = new_labels
+            labels[root_arc] = ROOT
+        labels_batch.append(labels)
 
+    # XXX Technically, this could be a (b, l-1, l-1) tensor, right? the root token shouldn't get a head prediction?
     return heads_batch # (b, l, l)
 
 def softmax2d(x): #Just doing softmax of row vectors

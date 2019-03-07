@@ -1,16 +1,6 @@
 import numpy as np
 from collections import defaultdict
 
-'''
-    What are the assumptions about 'scores'? 
-    Seem to be that it is a square numpy array,
-    that the first row represents <root> token.
-    Also appears that scores is ASSUMED to be
-    the softmax outputs of S, logits for arcs
-    FOR THAT SENTENCE, and that its size (nxn)
-    is where n is the actual length of the
-    sentence, not padded.
-'''
 def mst(scores):
     """
     https://github.com/tdozat/Parser/blob/0739216129cd39d69997d28cbc4133b360ea3934/lib/models/nn.py#L692  # NOQA
