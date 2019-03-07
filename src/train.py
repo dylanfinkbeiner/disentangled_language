@@ -3,7 +3,7 @@ import os
 import time
 import logging
 import pickle
-from memory_profiler import profile
+#from memory_profiler import profile
 from math import ceil
 
 import numpy as np
@@ -14,10 +14,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 from scipy.spatial.distance import pdist, squareform
 
-from parser import BiaffineParser
-from data_utils import get_dataset_sdp, sdp_data_loader, word_dropout
-from data_utils import get_dataset_ss, ss_data_loader, prepare_batch_ss
-from args import get_args
+from data_utils import sdp_data_loader, word_dropout, ss_data_loader, prepare_batch_ss
 
 
 LOG_DIR = '../log'
@@ -45,11 +42,11 @@ log.addHandler(stream_handler)
 def train(args, parser, data, weights_path=None):
     seed = args.seed
     model_name = args.model
-    train_mode = args.train_mode
+    train_mode = args.mode
     init_model = args.initmodel
     batch_size = args.batchsize
     mega_size = args.M
-    h_size = args.numhidden
+    h_size = args.hsize
     n_epochs = args.epochs
 
     torch.manual_seed(seed)
@@ -57,10 +54,12 @@ def train(args, parser, data, weights_path=None):
 
     x2i = data['vocabs']['x2i']
     i2x = data['vocabs']['i2x']
+    word_counts = data['word_counts']
     data_sdp = data['data_sdp']
 
-    train_ss = data['data_ss']
     train_sdp = data_sdp['train']
+    if train_mode != 0:
+        train_ss = data['data_ss']
     dev = data_sdp['dev']
 
     w2i = x2i['word']
@@ -72,11 +71,13 @@ def train(args, parser, data, weights_path=None):
     # Set up finished
 
     log.info(f'There are {len(train_sdp)} SDP training examples.')
-    log.info(f'There are {len(train_ss)} SS training examples.')
+    if train_mode != 0:
+        log.info(f'There are {len(train_ss)} SS training examples.')
     log.info(f'There are {len(dev)} validation examples.')
 
-    train_sdp_loader = sdp_data_loader(train_sdp, batch_size=batch_size, shuffle=True)
-    train_ss_loader = ss_data_loader(train_ss, batch_size=batch_size)
+    train_sdp_loader = sdp_data_loader(train_sdp, batch_size=batch_size, shuffle_idx=True)
+    if train_mode != 0:
+        train_ss_loader = ss_data_loader(train_ss, batch_size=batch_size)
     dev_loader = sdp_data_loader(dev, batch_size=batch_size)
 
     n_train_batches = ceil(len(train_sdp) / batch_size)
@@ -88,21 +89,21 @@ def train(args, parser, data, weights_path=None):
     earlystop_counter = 0
     prev_best = 0
     log.info('Starting train loop.')
-
     state = parser.state_dict() # For weight analysis
-
     for e in range(n_epochs):
+        log.info(f'Entering epoch {e}.')
 
         parser.train()
         train_loss = 0
         num_steps = 0
         if train_mode == 0:
             for b in range(n_train_batches):
+                log.info(f'Entering batch {b}.')
                 opt.zero_grad()
                 words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
                 words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
                 
-                S_arc, S_rel, _ = parser(words_d, pos, sent_lens)
+                S_arc, S_rel, _ = parser(words_d.to(device), pos.to(device), sent_lens)
 
                 loss_h = loss_heads(S_arc, head_targets)
                 loss_r = loss_rels(S_rel, rel_targets)
@@ -114,7 +115,7 @@ def train(args, parser, data, weights_path=None):
                 opt.step()
                 num_steps += 1
 
-        else if train_mode == 1:
+        elif train_mode == 1:
             for m in range(n_megabatches):
                 megabatch = []
                 idxs = []
@@ -178,10 +179,13 @@ def train(args, parser, data, weights_path=None):
 
         train_loss /= num_steps # Just dependency parsing loss
 
+        torch.save(parser.state_dict(), weights_path)
+
         parser.eval()  # Crucial! Toggles dropout effects
         dev_loss = 0
         UAS = 0
         LAS = 0
+        log.info('Evaluation step begins.')
         for b in range(n_dev_batches):
             with torch.no_grad():
                 words, pos, sent_lens, head_targets, rel_targets = next(dev_loader)
@@ -193,7 +197,7 @@ def train(args, parser, data, weights_path=None):
                 dev_loss += loss_h.item() + loss_r.item()
 
                 UAS_, LAS_ = attachment_scoring(
-                        head_preds,
+                        head_preds.cpu(),
                         rel_preds,
                         head_targets,
                         rel_targets,
@@ -326,7 +330,7 @@ def loss_heads(S_arc, head_targets, pad_idx=-1):
     heads - should be a list of integers (the indices)
     '''
     # For input to cross_entropy, shape must be (b, C, ...) where C is number of classes
-    return F.cross_entropy(S_arc.permute(0,2,1), head_targets, ignore_index=pad_idx)
+    return F.cross_entropy(S_arc.permute(0,2,1).cpu(), head_targets, ignore_index=pad_idx)
 
 
 def loss_rels(S_rel, rel_targets, pad_idx=-1):
@@ -336,7 +340,7 @@ def loss_rels(S_rel, rel_targets, pad_idx=-1):
     rels - should be a list of dependency relations as they are indexed in the dict
     '''
 
-    return F.cross_entropy(S_rel.permute(0,2,1), rel_targets, ignore_index=pad_idx)
+    return F.cross_entropy(S_rel.permute(0,2,1).cpu(), rel_targets, ignore_index=pad_idx)
 
 
 def loss_ss(h1, h2, hn, margin=0.4):
@@ -357,7 +361,7 @@ def predict_relations(S_rel, head_preds):
         rel_preds - shape (b, l)
     '''
 
-    rel_preds = S_rel.argmax(2).long()
+    rel_preds = S_rel.cpu().argmax(2).long()
     return rel_preds
 
 

@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 from collections import defaultdict, Counter
 
-from memory_profiler import profile
+#from memory_profiler import profile
 
 import string
 import random
@@ -70,7 +70,7 @@ def build_dataset_ss(paranmt_file, x2i=None):
     return sents_list
 
 
-def sdp_data_loader(data, batch_size=1, shuffle=False):
+def sdp_data_loader(data, batch_size=1, shuffle_idx=False):
 
     '''NOTE We pass the entirety of data_list as input to this function,
     which seems to not really make use of the space-efficient pattern of
@@ -78,9 +78,9 @@ def sdp_data_loader(data, batch_size=1, shuffle=False):
     '''
     idx = list(range(len(data)))
     while True:
-        if shuffle:
+        if shuffle_idx:
             shuffle(idx) # In-place shuffle
-        for chunk in idx_chunks(idx, b_size):
+        for chunk in idx_chunks(idx, batch_size):
             batch = [data[i] for i in chunk]
             yield prepare_batch_sdp(batch)
 

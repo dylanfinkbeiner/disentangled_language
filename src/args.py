@@ -1,5 +1,16 @@
+import os
+
 from argparse import ArgumentParser
 
+LOG_DIR = '../log'
+DATA_DIR = '../data'
+WEIGHTS_DIR = '../weights'
+if not os.path.isdir(LOG_DIR):
+    os.mkdir(LOG_DIR)
+if not os.path.isdir(DATA_DIR):
+    os.mkdir(DATA_DIR)
+if not os.path.isdir(WEIGHTS_DIR):
+    os.mkdir(WEIGHTS_DIR)
 
 def get_args():
     parser = ArgumentParser()
@@ -14,7 +25,7 @@ def get_args():
     parser.add_argument("-model", help="Name of model", default='default')
 
     # Model hyperparameters
-    parser.add_argument("-numhidden", help="Number of epochs in training", dest='numhidden', type=int, default=400)
+    parser.add_argument("-hsize", help="Number of epochs in training", dest='hsize', type=int, default=400)
 
     # Training hyperparameters
     parser.add_argument("-batchsize", help="Size of batch", type=int, dest='batchsize', default=100)

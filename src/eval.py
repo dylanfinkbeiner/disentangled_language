@@ -4,17 +4,18 @@ import subprocess
 
 import torch
 
-from train import predict_rels
+from train import predict_relations
 
-from data_utils import conllu_to_sents
+from data_utils import conllu_to_sents, sdp_data_loader
 
-
-CORPORA_DIR = '/corpora/'
+CORPORA_DIR = '/corpora/wsj/dependencies'
 DATA_DIR = '../data/'
-GOLD_CONLLU = f'{CORPORA_DIR}/treebank.conllu23'
-PREDICTED_CONLLU = '{DATA_DIR}/predicted.conllu'
+GOLD_CONLLU = os.path.join(CORPORA_DIR, 'treebank.conllu23')
+PREDICTED_CONLLU = os.path.join(DATA_DIR, 'predicted.conllu')
 
 def eval(args, parser, data):
+
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     sents_list = conllu_to_sents(GOLD_CONLLU)
 
@@ -22,17 +23,17 @@ def eval(args, parser, data):
     i2r = vocabs['i2x']['rel']
 
     # Get loader, don't shuffle since we want order to match gold
-    data_loader = sdp_data_loader(data['data_test'], batch_size=1, shuffle=False)
+    data_loader = sdp_data_loader(data['data_test'], batch_size=1, shuffle_idx=False)
 
     parser.eval()
     with open(PREDICTED_CONLLU, 'w') as f:
         with torch.no_grad():
             for s in sents_list:
-                words, pos, sent_len = next(data_loader)
+                words, pos, _, _, sent_len = next(data_loader)
 
-                _, S_rel, head_preds = parser(words, pos, sent_len)
+                _, S_rel, head_preds = parser(words.to(device), pos.to(device), sent_len)
 
-                rel_preds = predict_rels(S_rel, sent_len)
+                rel_preds = predict_relations(S_rel, sent_len)
                 rel_preds = rel_preds.view(-1)
                 rel_preds = [i2r[rel] for rel in rel_preds.numpy()]
 

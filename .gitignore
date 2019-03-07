@@ -7,4 +7,5 @@ __pycache__
 *.tch
 TODO
 /data
+/weights
 conll17_ud_eval.py

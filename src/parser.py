@@ -1,7 +1,8 @@
+import os
 import sys
 import time
 import logging
-from memory_profiler import profile
+#from memory_profiler import profile
 
 import numpy as np
 import torch
@@ -13,8 +14,10 @@ from torch.nn.utils.rnn import pad_packed_sequence, \
 
 import mst
 
+LOG_DIR = '../log/'
+LOG_PATH = os.path.join(LOG_DIR, 'parser.log')
 log = logging.getLogger(__name__)
-file_handler = logging.FileHandler('../log/parser.log')
+file_handler = logging.FileHandler(os.path.join(LOG_DIR, 'parser.log'))
 stream_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
 log.addHandler(file_handler)
@@ -70,6 +73,7 @@ class BiLSTM(nn.Module):
             except that words, pos will be tensors whose size depends on the
             maximum length
         '''
+        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
         h_size = self.hidden_size
 
@@ -78,6 +82,8 @@ class BiLSTM(nn.Module):
 
         # Sort the words, pos, sent_lens
         lens_sorted, indices = torch.sort(torch.LongTensor(sent_lens), descending=True)
+        lens_sorted = lens_sorted.to(device)
+        indices = indices.to(device)
         words = words.index_select(0, indices) # NOTE Keep in mind, this is consuming additional memory!
         pos = pos.index_select(0, indices)
 
@@ -141,6 +147,8 @@ class BiAffineAttention(nn.Module):
 
 
     def forward(self, H, sent_lens):
+        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
         #Recap so far: H is a (b,l,800) tensor; first axis: sentence | second: word | third: lstm output
         H_arc_head = self.h_arc_head(H) # (b, l, d_arc)
         H_arc_dep  = self.h_arc_dep(H) # (b, l, d_arc)
@@ -162,6 +170,8 @@ class BiAffineAttention(nn.Module):
             head_preds = mst_preds(S_arc, sent_lens) # S:(b, l, l) -> [length-b list of np arrays]
             head_preds = pad_sequence([torch.Tensor(s).long() for s in head_preds],
                     batch_first=True, padding_value=0) # (b, l)
+
+        head_preds = head_preds.to(device)
 
         d_rel, num_rel, _ = self.U_rel.size()
 

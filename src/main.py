@@ -3,7 +3,7 @@ import os
 import time
 import logging
 import pickle
-from memory_profiler import profile
+#from memory_profiler import profile
 from math import ceil
 
 import numpy as np
@@ -14,10 +14,10 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 from scipy.spatial.distance import pdist, squareform
 
-from parser import BiaffineParser
-from data_utils import get_dataset_sdp, sdp_data_loader, word_dropout
-from data_utils import get_dataset_ss, ss_data_loader, prepare_batch_ss
 from args import get_args
+from parser import BiaffineParser
+from data_utils import build_dataset_sdp
+from data_utils import build_dataset_ss
 
 import train
 import eval
@@ -26,6 +26,7 @@ WEIGHTS_DIR = '../weights'
 LOG_DIR = '../log'
 DATA_DIR = '../data'
 CORPORA_DIR = '/corpora'
+DEP_DIR = f'{CORPORA_DIR}/wsj/dependencies'
 MODEL_NAME = ''
 CONLLU_FILES = []
 #CONLLU_FILE = 'tenpercentsample.conllu'
@@ -38,6 +39,8 @@ if __name__ == '__main__':
 
     init_data = args.initdata
     init_model = args.initmodel
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    print(device)
 
     # Filenames
     vocabs_path = os.path.join(DATA_DIR, 'vocabs.pkl')
@@ -50,17 +53,19 @@ if __name__ == '__main__':
         init_data = True
 
     if init_data:
-        conllu_files = [f for f in os.listdir(f'{CORPORA_DIR}/wsj')]
+        conllu_files = sorted([os.path.join(DEP_DIR, f) for f in os.listdir(DEP_DIR)])
 
-        data_sdp, x2i, i2x, word_counts = get_dataset_sdp(conllu_files, training=True)
-        data_ss = get_dataset_ss(os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
-
+        data_sdp, x2i, i2x, word_counts = build_dataset_sdp(conllu_files, training=True)
         with open(vocabs_path, 'wb') as f:
             pickle.dump((x2i, i2x), f)
         with open(data_sdp_path, 'wb') as f:
             pickle.dump((data_sdp, word_counts), f)
-        with open(data_ss_path, 'wb') as f:
-            pickle.dump((data_ss), f)
+
+        if args.mode != 0:
+            data_ss = build_dataset_ss(os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
+            with open(data_ss_path, 'wb') as f:
+                pickle.dump((data_ss), f)
+
     else:
         with open(vocabs_path, 'rb') as f:
             x2i, i2x = pickle.load(f)
@@ -75,12 +80,9 @@ if __name__ == '__main__':
             word_vocab_size = len(x2i['word']),
             pos_vocab_size = len(x2i['pos']),
             num_relations = len(x2i['rel']),
-            hidden_size = args.hidden_size,
+            hidden_size = args.hsize,
             padding_idx = x2i['word'][PAD_TOKEN])
     parser.to(device)
-
-    if not os.path.isdir(WEIGHTS_DIR)
-        os.makedirs(WEIGHTS_DIR)
 
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
 
@@ -89,15 +91,16 @@ if __name__ == '__main__':
 
     if not args.eval:
         data = {'data_sdp' : data_sdp,
-                'data_ss' : data_ss,
                 'vocabs' : vocabs,
                 'word_counts' : word_counts}
+        if args.mode != 0:
+            data['data_ss' : data_ss]
 
-        train(args, parser, data, weights_path=weights_path)
+        train.train(args, parser, data, weights_path=weights_path)
 
     else:
-        data = {'data_test', data_sdp['test'],
+        data = {'data_test': data_sdp['test'],
                 'vocabs' : vocabs}
 
         # Evaluate model
-        eval(args, parser, data)
+        eval.eval(args, parser, data)
