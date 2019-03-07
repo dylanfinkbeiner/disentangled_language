@@ -34,13 +34,26 @@ PARANMT_FILE = 'para_tiny.txt'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
 
+log = logging.getLogger(__name__)
+formatter = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
+log.setLevel(logging.DEBUG)
+
+file_handler = logging.FileHandler(os.path.join(LOG_DIR, 'main.log'))
+file_handler.setFormatter(formatter)
+log.addHandler(file_handler)
+
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+log.addHandler(stream_handler)
+
 if __name__ == '__main__':
     args = get_args()
 
     init_data = args.initdata
     init_model = args.initmodel
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    print(device)
+    print(f'Initializing model: {init_model}')
+    print(f'Initializing data: {init_data}')
 
     # Filenames
     vocabs_path = os.path.join(DATA_DIR, 'vocabs.pkl')
@@ -87,6 +100,7 @@ if __name__ == '__main__':
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
 
     if not init_model and os.path.exists(weights_path):
+        log.info(f'Loading state dict for model {weights_path}.')
         parser.load_state_dict(torch.load(weights_path))
 
     if not args.eval:

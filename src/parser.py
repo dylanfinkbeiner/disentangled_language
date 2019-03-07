@@ -81,11 +81,12 @@ class BiLSTM(nn.Module):
         #    self.word_emb.weight.data[,:] = 0.0 # Zero-out "unk" word at test time
 
         # Sort the words, pos, sent_lens
-        lens_sorted, indices = torch.sort(torch.LongTensor(sent_lens), descending=True)
-        lens_sorted = lens_sorted.to(device)
-        indices = indices.to(device)
-        words = words.index_select(0, indices) # NOTE Keep in mind, this is consuming additional memory!
-        pos = pos.index_select(0, indices)
+        lens_sorted = torch.LongTensor(sent_lens).to(device)
+        if(len(sent_lens) > 1):
+            lens_sorted, indices = torch.sort(lens_sorted, descending=True)
+            indices = indices.to(device)
+            words = words.index_select(0, indices) # NOTE Keep in mind, this is consuming additional memory!
+            pos = pos.index_select(0, indices)
 
         w_embs = self.word_emb(words) # (b, l, w_e)
         p_embs = self.pos_emb(pos) # (b, l, p_e)
@@ -100,8 +101,9 @@ class BiLSTM(nn.Module):
         outputs, _ = pad_packed_sequence(outputs, batch_first=True) # (b, l, 2*hidden_size)
 
         # Un-sort
-        indices_inverted = torch.argsort(indices)
-        outputs = outputs.index_select(0, indices_inverted)
+        if(len(sent_lens) > 1):
+            indices_inverted = torch.argsort(indices)
+            outputs = outputs.index_select(0, indices_inverted)
 
         return outputs, (h_n, c_n)
 

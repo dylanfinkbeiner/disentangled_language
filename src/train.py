@@ -1,6 +1,7 @@
 import sys
 import os
 import time
+from time import sleep
 import logging
 import pickle
 #from memory_profiler import profile
@@ -19,10 +20,6 @@ from data_utils import sdp_data_loader, word_dropout, ss_data_loader, prepare_ba
 
 LOG_DIR = '../log'
 DATA_DIR = '../data'
-MODEL_NAME = ''
-CONLLU_FILE = 'treebank.conllu'
-#CONLLU_FILE = 'tenpercentsample.conllu'
-PARANMT_FILE = 'para_tiny.txt'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
 
@@ -30,7 +27,7 @@ log = logging.getLogger(__name__)
 formatter = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
 log.setLevel(logging.DEBUG)
 
-file_handler = logging.FileHandler(os.path.join(LOG_DIR, 'main.log'))
+file_handler = logging.FileHandler(os.path.join(LOG_DIR, 'train.log'))
 file_handler.setFormatter(formatter)
 log.addHandler(file_handler)
 
@@ -43,11 +40,14 @@ def train(args, parser, data, weights_path=None):
     seed = args.seed
     model_name = args.model
     train_mode = args.mode
-    init_model = args.initmodel
     batch_size = args.batchsize
     mega_size = args.M
     h_size = args.hsize
     n_epochs = args.epochs
+
+    log.info(f'Training model named {model_name} for {n_epochs} epochs in training mode {train_mode}.')
+    log.info(f'Weights will be saved to {weights_path}.')
+    sleep(2)
 
     torch.manual_seed(seed)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -90,63 +90,21 @@ def train(args, parser, data, weights_path=None):
     prev_best = 0
     log.info('Starting train loop.')
     state = parser.state_dict() # For weight analysis
-    for e in range(n_epochs):
-        log.info(f'Entering epoch {e}.')
+    try:
+        for e in range(n_epochs):
+            log.info(f'Entering epoch {e+1}/{n_epochs}.')
 
-        parser.train()
-        train_loss = 0
-        num_steps = 0
-        if train_mode == 0:
-            for b in range(n_train_batches):
-                log.info(f'Entering batch {b}.')
-                opt.zero_grad()
-                words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
-                words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
-                
-                S_arc, S_rel, _ = parser(words_d.to(device), pos.to(device), sent_lens)
-
-                loss_h = loss_heads(S_arc, head_targets)
-                loss_r = loss_rels(S_rel, rel_targets)
-                loss = loss_h + loss_r
-
-                train_loss += loss_h.item() + loss_r.item()
-
-                loss.backward()
-                opt.step()
-                num_steps += 1
-
-        elif train_mode == 1:
-            for m in range(n_megabatches):
-                megabatch = []
-                idxs = []
-                idx = 0
-                for _ in range(mega_size):
-                    instances = [train_ss[j] for j in next(train_ss_loader)]
-                    curr_idxs = [i + idx for i in range(len(instances))]
-                    megabatch.extend(instances)
-                    idxs.append(curr_idxs)
-                    idx += len(curr_idxs)
-
-                with torch.no_grad():
-                    s1, s2, negs = get_triplets(megabatch, batch_size, parser)
-
-                # Checking to see weights are changing
-                #log.info('Attention h_rel_head:', state['BiAffineAttention.h_rel_head.0.weight'])
-                #log.info('Word embedding weight:', state['BiLSTM.word_emb.weight'])
-
-                for x in range(len(idxs)):
+            parser.train()
+            train_loss = 0
+            num_steps = 0
+            if train_mode == 0 and False:
+                for b in range(n_train_batches):
+                    log.info(f'Entering batch {b}.')
                     opt.zero_grad()
-
                     words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
                     words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
-
-                    outputs, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
-                    outputs_d, _ = parser.BiLSTM(words_d.to(device), pos.to(device), sent_lens)
-
-                    outputs[:,:,h_size // 2 : h_size] = outputs_d[:,:,h_size // 2 : h_size] # Splice forward hiddens
-                    outputs[:,:,h_size + (h_size // 2):] = outputs_d[:,:,h_size + (h_size // 2):] # Splice backward hiddens
-
-                    S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
+                    
+                    S_arc, S_rel, _ = parser(words_d.to(device), pos.to(device), sent_lens)
 
                     loss_h = loss_heads(S_arc, head_targets)
                     loss_r = loss_rels(S_rel, rel_targets)
@@ -158,77 +116,123 @@ def train(args, parser, data, weights_path=None):
                     opt.step()
                     num_steps += 1
 
-                    log.info('Sentence similarity training step begins.')
-                    opt.zero_grad()
+            elif train_mode == 1:
+                for m in range(n_megabatches):
+                    megabatch = []
+                    idxs = []
+                    idx = 0
+                    for _ in range(mega_size):
+                        instances = [train_ss[j] for j in next(train_ss_loader)]
+                        curr_idxs = [i + idx for i in range(len(instances))]
+                        megabatch.extend(instances)
+                        idxs.append(curr_idxs)
+                        idx += len(curr_idxs)
 
-                    w1, p1, sl1 = prepare_batch_ss([s1[i] for i in idxs[x]])
-                    w2, p2, sl2 = prepare_batch_ss([s2[i] for i in idxs[x]])
-                    wn, pn, sln = prepare_batch_ss([negs[i] for i in idxs[x]])
+                    with torch.no_grad():
+                        s1, s2, negs = get_triplets(megabatch, batch_size, parser)
 
-                    h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1)
-                    h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2)
-                    hn, _ = parser.BiLSTM(wn.to(device), pn.to(device), sln)
+                    # Checking to see weights are changing
+                    #log.info('Attention h_rel_head:', state['BiAffineAttention.h_rel_head.0.weight'])
+                    #log.info('Word embedding weight:', state['BiLSTM.word_emb.weight'])
 
-                    loss = loss_ss(
-                            average_hiddens(h1, sl1), 
-                            average_hiddens(h2, sl2),
-                            average_hiddens(hn, sln))
+                    for x in range(len(idxs)):
+                        opt.zero_grad()
 
-                    loss.backward()
-                    opt.step()
+                        words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
+                        words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
 
-        train_loss /= num_steps # Just dependency parsing loss
+                        outputs, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
+                        outputs_d, _ = parser.BiLSTM(words_d.to(device), pos.to(device), sent_lens)
 
-        torch.save(parser.state_dict(), weights_path)
+                        outputs[:,:,h_size // 2 : h_size] = outputs_d[:,:,h_size // 2 : h_size] # Splice forward hiddens
+                        outputs[:,:,h_size + (h_size // 2):] = outputs_d[:,:,h_size + (h_size // 2):] # Splice backward hiddens
 
-        parser.eval()  # Crucial! Toggles dropout effects
-        dev_loss = 0
-        UAS = 0
-        LAS = 0
-        log.info('Evaluation step begins.')
-        for b in range(n_dev_batches):
-            with torch.no_grad():
-                words, pos, sent_lens, head_targets, rel_targets = next(dev_loader)
-                S_arc, S_rel, head_preds = parser(words.to(device), pos.to(device), sent_lens)
-                rel_preds = predict_relations(S_rel, head_preds)
+                        S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
 
-                loss_h = loss_heads(S_arc, head_targets)
-                loss_r = loss_rels(S_rel, rel_targets)
-                dev_loss += loss_h.item() + loss_r.item()
+                        loss_h = loss_heads(S_arc, head_targets)
+                        loss_r = loss_rels(S_rel, rel_targets)
+                        loss = loss_h + loss_r
 
-                UAS_, LAS_ = attachment_scoring(
-                        head_preds.cpu(),
-                        rel_preds,
-                        head_targets,
-                        rel_targets,
-                        sent_lens)
-                UAS += UAS_
-                LAS += LAS_
+                        train_loss += loss_h.item() + loss_r.item()
 
-        dev_loss /= n_dev_batches
-        UAS /= n_dev_batches
-        LAS /= n_dev_batches
+                        loss.backward()
+                        opt.step()
+                        num_steps += 1
 
-        update = '''Epoch: {:}\t
-                Train Loss: {:.3f}\t
-                Dev Loss: {:.3f}\t
-                UAS: {:.3f}\t
-                LAS: {:.3f} '''.format(e, train_loss, dev_loss, UAS, LAS)
-        log.info(update)
+                        log.info('Sentence similarity training step begins.')
+                        opt.zero_grad()
 
-        # Early stopping heuristic from Jabberwocky paper
-        if LAS > prev_best:
-            earlystop_counter = 0
-            prev_best = LAS
-        else:
-            earlystop_counter += 1
-            if earlystop_counter >= 5:
-                print('''LAS has not improved for 5 consecutive epochs,
-                      stopping after {} epochs'''.format(e))
-                break
+                        w1, p1, sl1 = prepare_batch_ss([s1[i] for i in idxs[x]])
+                        w2, p2, sl2 = prepare_batch_ss([s2[i] for i in idxs[x]])
+                        wn, pn, sln = prepare_batch_ss([negs[i] for i in idxs[x]])
+
+                        h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1)
+                        h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2)
+                        hn, _ = parser.BiLSTM(wn.to(device), pn.to(device), sln)
+
+                        loss = loss_ss(
+                                average_hiddens(h1, sl1), 
+                                average_hiddens(h2, sl2),
+                                average_hiddens(hn, sln))
+
+                        loss.backward()
+                        opt.step()
+
+            train_loss /= (num_steps if num_steps > 0 else -1)# Just dependency parsing loss
+
+            parser.eval()  # Crucial! Toggles dropout effects
+            dev_loss = 0
+            UAS = 0
+            LAS = 0
+            log.info('Evaluation step begins.')
+            for b in range(n_dev_batches):
+                with torch.no_grad():
+                    words, pos, sent_lens, head_targets, rel_targets = next(dev_loader)
+                    S_arc, S_rel, head_preds = parser(words.to(device), pos.to(device), sent_lens)
+                    rel_preds = predict_relations(S_rel, head_preds)
+
+                    loss_h = loss_heads(S_arc, head_targets)
+                    loss_r = loss_rels(S_rel, rel_targets)
+                    dev_loss += loss_h.item() + loss_r.item()
+
+                    UAS_, LAS_ = attachment_scoring(
+                            head_preds.cpu(),
+                            rel_preds,
+                            head_targets,
+                            rel_targets,
+                            sent_lens)
+                    UAS += UAS_
+                    LAS += LAS_
+
+            dev_loss /= n_dev_batches
+            UAS /= n_dev_batches
+            LAS /= n_dev_batches
+
+            update = '''Epoch: {:}\t
+                    Train Loss: {:.3f}\t
+                    Dev Loss: {:.3f}\t
+                    UAS: {:.3f}\t
+                    LAS: {:.3f} '''.format(e, train_loss, dev_loss, UAS, LAS)
+            log.info(update)
+
+            # Early stopping heuristic from Jabberwocky paper
+            if LAS > prev_best:
+                earlystop_counter = 0
+                prev_best = LAS
+            else:
+                earlystop_counter += 1
+                if earlystop_counter >= 5:
+                    print('''LAS has not improved for 5 consecutive epochs,
+                          stopping after {} epochs'''.format(e))
+                    break
+            
+            torch.save(parser.state_dict(), weights_path)
 
     # Save weights
-    torch.save(parser.state_dict(), weights_path)
+    except KeyboardInterrupt:
+        response = input("Keyboard interruption: Would you like to save weights? [y/n]")
+        if response == 'y' or response == 'Y':
+            torch.save(parser.state_dict(), weights_path)
 
 
 def average_hiddens(hiddens, sent_lens):

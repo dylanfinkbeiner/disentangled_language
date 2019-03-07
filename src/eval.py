@@ -29,7 +29,7 @@ def eval(args, parser, data):
     with open(PREDICTED_CONLLU, 'w') as f:
         with torch.no_grad():
             for s in sents_list:
-                words, pos, _, _, sent_len = next(data_loader)
+                words, pos, sent_len, _, _ = next(data_loader)
 
                 _, S_rel, head_preds = parser(words.to(device), pos.to(device), sent_len)
 
@@ -37,7 +37,7 @@ def eval(args, parser, data):
                 rel_preds = rel_preds.view(-1)
                 rel_preds = [i2r[rel] for rel in rel_preds.numpy()]
 
-                s[:,6] = head_preds.numpy()
+                s[:,6] = head_preds.cpu().numpy()
                 s[:,7] = rel_preds
 
                 for line in s:
