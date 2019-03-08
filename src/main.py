@@ -53,7 +53,7 @@ if __name__ == '__main__':
     init_model = args.initmodel
 
     d = datetime.datetime.today()
-    log.info('\nNew session with parser: {d}.\n')
+    log.info(f'New session: {d}.\n')
 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     log.info(f'Using device: {device}')
@@ -63,32 +63,33 @@ if __name__ == '__main__':
     data_sdp_path = os.path.join(DATA_DIR, 'data_sdp.pkl')
     data_ss_path = os.path.join(DATA_DIR, 'data_ss.pkl')
 
-    if not os.path.exists(vocabs_path) \
-            or not os.path.exists(data_sdp_path) \
-            or not os.path.exists(data_ss_path):
-        init_data = True
+    init_sdp = not os.path.exists(vocabs_path) or init_data
+    init_ss = (not os.path.exists(data_ss_path) or init_data) and args.mode > 0
+    load_data = not init_sdp and not init_ss
 
-    if init_data:
-        log.info(f'Initializing data.')
+    if init_sdp:
+        log.info(f'Initializing SDP data (including vocabs).')
         conllu_files = sorted([os.path.join(DEP_DIR, f) for f in os.listdir(DEP_DIR)])
 
-        data_sdp, x2i, i2x, word_counts = build_dataset_sdp(conllu_files, training=True)
+        data_sdp, x2i, i2x, word_counts = build_dataset_sdp(conllu_files)
         with open(vocabs_path, 'wb') as f:
             pickle.dump((x2i, i2x), f)
         with open(data_sdp_path, 'wb') as f:
             pickle.dump((data_sdp, word_counts), f)
-        if args.mode != 0:
-            data_ss = build_dataset_ss(os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
-            with open(data_ss_path, 'wb') as f:
-                pickle.dump((data_ss), f)
 
-    else:
+    if init_ss:
+        log.info(f'Initializing SS data.')
+        data_ss = build_dataset_ss(os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
+        with open(data_ss_path, 'wb') as f:
+            pickle.dump((data_ss), f)
+
+    if load_data:
         log.info(f'Loading pickled data.')
         with open(vocabs_path, 'rb') as f:
             x2i, i2x = pickle.load(f)
         with open(data_sdp_path, 'rb') as f:
             data_sdp, word_counts = pickle.load(f)
-        if args.mode != 0:
+        if args.mode > 0:
             with open(data_ss_path, 'rb') as f:
                 data_ss = pickle.load(f)
 
@@ -114,7 +115,7 @@ if __name__ == '__main__':
         data = {'data_sdp' : data_sdp,
                 'vocabs' : vocabs,
                 'word_counts' : word_counts}
-        if args.mode != 0:
+        if args.mode > 0:
             data['data_ss'] = data_ss
 
         train.train(args, parser, data, weights_path=weights_path)

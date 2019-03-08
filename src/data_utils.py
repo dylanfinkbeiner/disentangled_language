@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 from collections import defaultdict, Counter
+import pickle
 
 #from memory_profiler import profile
 
@@ -24,13 +25,28 @@ CORENLP_URL = 'http://localhost:9000'
 
 
 # Sections 2-21 for training, 22 for dev, 23 for test
-def build_dataset_sdp(conllu_files=[], training=False):
+def build_dataset_sdp(conllu_files=[]):
+    '''
+        inputs:
+            conllu_files - a list of sorted strings, filenames of dependencies
+
+        output:
+            
+    '''
     sents_list = []
+
     for f in conllu_files:
         sents_list.append(conllu_to_sents(f))
 
+    if len(sents_list) != 24:
+        print('Missing a conllu file?')
+        raise Exception
+
+    # Order of sentences, within train/dev/test list shouldn't matter
     for i, f in enumerate(sents_list):
         sents_list[i] = [s[:, CONLLU_MASK] for s in f]
+
+    #Seems fine up to this point
 
     # "Standard" train/dev/split for PTB
     train_list = [s for f in sents_list[2:22] for s in f]
@@ -43,7 +59,7 @@ def build_dataset_sdp(conllu_files=[], training=False):
     #    print('\n')
     #exit()
 
-    train_list, word_counts = filter_and_count(train_list, filter_single=training)
+    train_list, word_counts = filter_and_count(train_list, filter_single=True)
     dev_list, _ = filter_and_count(dev_list, filter_single=False)
     test_list, _ = filter_and_count(test_list, filter_single=False)
 
@@ -266,6 +282,10 @@ def build_dicts(sents_list):
             words.add(line[0].lower())
             pos.add(line[1])
             rel.add(line[3])
+
+    words = sorted(words)
+    pos = sorted(pos)
+    rel = sorted(rel)
 
     w2i = defaultdict(lambda : len(w2i))
     p2i = defaultdict(lambda : len(p2i))
