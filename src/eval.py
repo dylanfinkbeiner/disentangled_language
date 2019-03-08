@@ -37,8 +37,8 @@ def eval(args, parser, data):
                 rel_preds = rel_preds.view(-1)
                 rel_preds = [i2r[rel] for rel in rel_preds.numpy()]
 
-                s[:,6] = head_preds.cpu().numpy()
-                s[:,7] = rel_preds
+                s[:,6] = head_preds.view(-1)[1:].cpu().numpy()
+                s[:,7] = rel_preds[1:]
 
                 for line in s:
                     f.write('\t'.join(line))

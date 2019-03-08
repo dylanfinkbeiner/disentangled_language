@@ -43,7 +43,7 @@ def train(args, parser, data, weights_path=None):
     batch_size = args.batchsize
     mega_size = args.M
     h_size = args.hsize
-    n_epochs = args.epochs
+    n_epochs = args.epochs if train_mode != -1 else 1
 
     log.info(f'Training model \"{model_name}\" for {n_epochs} epochs in training mode {train_mode}.')
     log.info(f'Weights will be saved to {weights_path}.')
@@ -58,7 +58,7 @@ def train(args, parser, data, weights_path=None):
     data_sdp = data['data_sdp']
 
     train_sdp = data_sdp['train']
-    if train_mode != 0:
+    if train_mode > 0:
         train_ss = data['data_ss']
     dev = data_sdp['dev']
 
@@ -71,12 +71,12 @@ def train(args, parser, data, weights_path=None):
     # Set up finished
 
     log.info(f'There are {len(train_sdp)} SDP training examples.')
-    if train_mode != 0:
+    if train_mode > 0:
         log.info(f'There are {len(train_ss)} SS training examples.')
     log.info(f'There are {len(dev)} validation examples.')
 
     train_sdp_loader = sdp_data_loader(train_sdp, batch_size=batch_size, shuffle_idx=True)
-    if train_mode != 0:
+    if train_mode > 0:
         train_ss_loader = ss_data_loader(train_ss, batch_size=batch_size)
     dev_loader = sdp_data_loader(dev, batch_size=batch_size)
 
@@ -97,7 +97,7 @@ def train(args, parser, data, weights_path=None):
             parser.train()
             train_loss = 0
             num_steps = 0
-            if train_mode == 0 and False:
+            if train_mode == 0:
                 for b in range(n_train_batches):
                     log.info(f'Entering batch {b+1}/{n_train_batches}.')
                     opt.zero_grad()
@@ -227,7 +227,9 @@ def train(args, parser, data, weights_path=None):
                     break
             
             torch.save(parser.state_dict(), weights_path)
-            log.info('Weights saved to {weights_path}')
+            if train_mode != -1:
+                torch.save(parser.state_dict(), weights_path)
+                log.info(f'Weights saved to {weights_path}.')
 
     # Save weights
     except KeyboardInterrupt:
