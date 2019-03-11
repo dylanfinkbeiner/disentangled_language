@@ -111,7 +111,7 @@ if __name__ == '__main__':
         log.info(f'Loading state dict from: \"{weights_path}\"')
         parser.load_state_dict(torch.load(weights_path))
     else:
-        log.info(f'Model has initialized parameters.')
+        log.info(f'Model will have randomly initialized parameters.')
 
     if not args.eval:
         data = {'data_sdp' : data_sdp,

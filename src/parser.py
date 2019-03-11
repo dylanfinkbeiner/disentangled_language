@@ -17,7 +17,7 @@ import mst
 LOG_DIR = '../log/'
 LOG_PATH = os.path.join(LOG_DIR, 'parser.log')
 log = logging.getLogger(__name__)
-file_handler = logging.FileHandler(os.path.join(LOG_DIR, 'parser.log'))
+file_handler = logging.FileHandler(LOG_PATH)
 stream_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
 log.addHandler(file_handler)
@@ -80,21 +80,25 @@ class BiLSTM(nn.Module):
 
         h_size = self.hidden_size
 
-        self.word_emb.weight.data[self.unk_idx,:] = 0.0 # Zero-out "unk" word at test time
+        if not self.training:
+            self.word_emb.weight.data[self.unk_idx,:] = 0.0 # Zero-out "unk" word at test time
 
         # Sort the words, pos, sent_lens
         lens_sorted = torch.LongTensor(sent_lens).to(device)
+        words_sorted = words
+        pos_sorted = pos
         if(len(sent_lens) > 1):
             lens_sorted, indices = torch.sort(lens_sorted, descending=True)
             indices = indices.to(device)
-            words = words.index_select(0, indices) # NOTE Keep in mind, this is consuming additional memory!
-            pos = pos.index_select(0, indices)
+            words_sorted = words_sorted.index_select(0, indices) # NOTE Keep in mind, this is consuming additional memory!
+            pos_sorted = pos_sorted.index_select(0, indices)
+            del words
+            del pos
 
-        w_embs = self.word_emb(words) # (b, l, w_e)
-        p_embs = self.pos_emb(pos) # (b, l, p_e)
+        w_embs = self.word_emb(words_sorted) # (b, l, w_e)
+        p_embs = self.pos_emb(pos_sorted) # (b, l, p_e)
 
-        lstm_input = self.embedding_dropout(
-                torch.cat([w_embs, p_embs], -1)) # (b, l, w_e + p_e)
+        lstm_input = self.embedding_dropout(torch.cat([w_embs, p_embs], -1))
 
         packed_input = pack_padded_sequence(
                 lstm_input, lens_sorted, batch_first=True)
@@ -116,7 +120,7 @@ class BiAffineAttention(nn.Module):
             hidden_size=400,
             d_arc=500,
             d_rel=100,
-            num_relations=46,
+            num_relations=None,
             arc_dropout=0.33,
             rel_dropout=0.33):
         super(BiAffineAttention, self).__init__()
@@ -206,7 +210,7 @@ class BiaffineParser(nn.Module):
             lstm_layers=3,
             d_arc=500,
             d_rel=100,
-            num_relations=46,
+            num_relations=None,
             embedding_dropout=0.33,
             lstm_dropout=0.33,
             arc_dropout=0.33,
@@ -224,7 +228,11 @@ class BiaffineParser(nn.Module):
                 lstm_layers=lstm_layers,
                 embedding_dropout=embedding_dropout,
                 lstm_dropout=lstm_dropout,
+<<<<<<< HEAD
                 padding_idx=padding_idx,
+=======
+                padding_idx,
+>>>>>>> 553b5082c248aac8fdec7145a9cc21cb7078e47a
                 unk_idx=unk_idx)
 
         self.BiAffineAttention = BiAffineAttention(
@@ -261,11 +269,14 @@ def mst_preds(S_arc, sent_lens):
     for sent_logits, true_length in zip(batch_logits, sent_lens):
         sent_probs = softmax2d(sent_logits[:true_length, :true_length]) # Select out THE ACTUAL SENTENCE (including ROOT token)
         head_preds = mst.mst(sent_probs) # NOTE Input to mst is softmax of arc scores
-
         heads_batch.append(head_preds)
         
+<<<<<<< HEAD
     # XXX Technically, this could be a (b, l-1, l-1) tensor, right? the root token shouldn't get a head prediction?
+=======
+>>>>>>> 553b5082c248aac8fdec7145a9cc21cb7078e47a
     return heads_batch # (b, l, l)
+
 
 def softmax2d(x): #Just doing softmax of row vectors
     y = x - np.max(x, axis=1, keepdims=True)

@@ -422,15 +422,3 @@ def has_digits(word):
     True if word contains digits.
     """
     return bool(set(string.digits).intersection(word))
-
-
-def get_train_dev_test(data_list):
-    n_samples = len(data_list)
-
-    #XXX Incredibly stupid way of splitting data
-    x = int(.8 * n_samples)
-    y = int(.9 * n_samples)
-
-    return { 'train': data_list[:x], 'dev': data_list[x:y], 'test': data_list[y:] }
-
-# End of https://github.com/EelcovdW/Biaffine-Parser/blob/master/data_utils.py
