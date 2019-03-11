@@ -17,7 +17,10 @@ def get_args():
 
     parser.add_argument("-seed", type=int, dest='seed', default=7)
 
+    # Evaluation options
     parser.add_argument('-e', action="store_true", dest='eval', default=False)
+    parser.add_argument('-d', action="store_true", dest='evaldev', default=False)
+
     parser.add_argument('-initdata', action="store_true", default=False)
     parser.add_argument('-initmodel', action="store_true", default=False)
 

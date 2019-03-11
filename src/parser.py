@@ -38,8 +38,11 @@ class BiLSTM(nn.Module):
             lstm_layers=3,
             lstm_dropout=0.33,
             embedding_dropout=0.33,
-            padding_idx=None):
+            padding_idx=None,
+            unk_idx=None):
         super(BiLSTM, self).__init__()
+
+        self.unk_idx = unk_idx
 
         # Embeddings (words initialized to zero) 
         self.word_emb = nn.Embedding(
@@ -77,8 +80,7 @@ class BiLSTM(nn.Module):
 
         h_size = self.hidden_size
 
-        #if not self.train:
-        #    self.word_emb.weight.data[,:] = 0.0 # Zero-out "unk" word at test time
+        self.word_emb.weight.data[self.unk_idx,:] = 0.0 # Zero-out "unk" word at test time
 
         # Sort the words, pos, sent_lens
         lens_sorted = torch.LongTensor(sent_lens).to(device)
@@ -209,7 +211,8 @@ class BiaffineParser(nn.Module):
             lstm_dropout=0.33,
             arc_dropout=0.33,
             rel_dropout=0.33,
-            padding_idx=None):
+            padding_idx=None,
+            unk_idx=None):
         super(BiaffineParser, self).__init__()
 
         self.BiLSTM = BiLSTM(
@@ -220,7 +223,9 @@ class BiaffineParser(nn.Module):
                 hidden_size=hidden_size,
                 lstm_layers=lstm_layers,
                 embedding_dropout=embedding_dropout,
-                lstm_dropout=lstm_dropout)
+                lstm_dropout=lstm_dropout,
+                padding_idx=padding_idx,
+                unk_idx=unk_idx)
 
         self.BiAffineAttention = BiAffineAttention(
             hidden_size=hidden_size,
@@ -254,28 +259,11 @@ def mst_preds(S_arc, sent_lens):
     batch_logits = S_arc.data.cpu().numpy() # Take to numpy arrays
 
     for sent_logits, true_length in zip(batch_logits, sent_lens):
-        sent_probs = softmax2d(sent_logits[:true_length, :true_length]) # Select out THE ACTUAL SENTENCE
+        sent_probs = softmax2d(sent_logits[:true_length, :true_length]) # Select out THE ACTUAL SENTENCE (including ROOT token)
         head_preds = mst.mst(sent_probs) # NOTE Input to mst is softmax of arc scores
 
         heads_batch.append(head_preds)
         
-        #label_probs = softmax2d(label_logit[np.arange(length), arcs])
-        #labels = np.argmax(label_probs, axis=1) # NOTE Simple argmax to get label predictions
-        #labels[0] = ROOT
-        #tokens = np.arange(1, length)
-        #roots = np.where(labels[tokens] == ROOT)[0] + 1
-        #if len(roots) < 1:
-        #    root_arc = np.where(arcs[tokens] == 0)[0] + 1
-        #    labels[root_arc] = ROOT
-        #elif len(roots) > 1:
-        #    label_probs[roots, ROOT] = 0
-        #    new_labels = \
-        #        np.argmax(label_probs[roots], axis=1)
-        #    root_arc = np.where(arcs[tokens] == 0)[0] + 1
-        #    labels[roots] = new_labels
-        #    labels[root_arc] = ROOT
-        #labels_batch.append(labels)
-
     # XXX Technically, this could be a (b, l-1, l-1) tensor, right? the root token shouldn't get a head prediction?
     return heads_batch # (b, l, l)
 

@@ -46,8 +46,6 @@ def build_dataset_sdp(conllu_files=[]):
     for i, f in enumerate(sents_list):
         sents_list[i] = [s[:, CONLLU_MASK] for s in f]
 
-    #Seems fine up to this point
-
     # "Standard" train/dev/split for PTB
     train_list = [s for f in sents_list[2:22] for s in f]
     dev_list = sents_list[22]
@@ -436,25 +434,3 @@ def get_train_dev_test(data_list):
     return { 'train': data_list[:x], 'dev': data_list[x:y], 'test': data_list[y:] }
 
 # End of https://github.com/EelcovdW/Biaffine-Parser/blob/master/data_utils.py
-
-#def testing():
-#    #sents_list = conllu_to_sents('/Users/dylanfinkbeiner/Desktop/stanford-parser-full-2018-10-17/treebank.conllu')
-#
-#    #dict2, _ =  build_dicts(sents_list)
-#
-#    #numd = numericalize(sents_list, dict2)
-#
-#    _, x2i, i2x, _  = get_dataset_sdp('../data/tenpercentsample.conllu')
-#    f = '../data/para_sample.txt'
-#
-#    sents_before, sents_after = get_dataset_ss(f, x2i)
-#
-#    print(sents_before[0])
-#    print(sents_after[0])
-#    print(sents_before[-1])
-#    print(sents_after[-1])
-#
-#
-#
-#if __name__ == '__main__':
-#    testing()
