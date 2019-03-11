@@ -34,6 +34,7 @@ CONLLU_FILES = []
 PARANMT_FILE = 'para_tiny.txt'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
+UNK_TOKEN = '<unk>'
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
@@ -100,7 +101,8 @@ if __name__ == '__main__':
             pos_vocab_size = len(x2i['pos']),
             num_relations = len(x2i['rel']),
             hidden_size = args.hsize,
-            padding_idx = x2i['word'][PAD_TOKEN])
+            padding_idx = x2i['word'][PAD_TOKEN],
+            unk_idx = x2i['word'][UNK_TOKEN])
     parser.to(device)
 
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
@@ -109,7 +111,7 @@ if __name__ == '__main__':
         log.info(f'Loading state dict from: {weights_path}.')
         parser.load_state_dict(torch.load(weights_path))
     else:
-        log.info(f'Model has initialized parameters.')
+        log.info(f'Model will have randomly initialized parameters.')
 
     if not args.eval:
         data = {'data_sdp' : data_sdp,

@@ -47,7 +47,7 @@ def train(args, parser, data, weights_path=None):
 
     log.info(f'Training model \"{model_name}\" for {n_epochs} epochs in training mode {train_mode}.')
     log.info(f'Weights will be saved to {weights_path}.')
-    sleep(2)
+    sleep(3)
 
     torch.manual_seed(seed)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -234,7 +234,7 @@ def train(args, parser, data, weights_path=None):
     # Save weights
     except KeyboardInterrupt:
         response = input("Keyboard interruption: Would you like to save weights? [y/n]")
-        if response == 'y' or response == 'Y':
+        if response.lower() == 'y':
             torch.save(parser.state_dict(), weights_path)
 
 
@@ -361,14 +361,15 @@ def loss_ss(h1, h2, hn, margin=0.4):
 
 def predict_relations(S_rel, head_preds):
     '''
-    args
-        L::Tensor - label logits with shape (b, l, num_rels)
+        inputs:
+            S_rel - label logits with shape (b, l, num_rels)
 
-    returns
-        rel_preds - shape (b, l)
+        outputs:
+            rel_preds - shape (b, l)
     '''
 
     rel_preds = S_rel.cpu().argmax(2).long()
+    
     # override predictions according to head_preds labeled '0'
 
     
@@ -406,6 +407,7 @@ def attachment_scoring(head_preds, rel_preds, head_targets, rel_targets, sent_le
     correct_heads = head_preds.eq(head_targets).float()
     correct_rels = rel_preds.eq(rel_targets).float()
 
+    # We get per-sentence averages, then average across the batch
     UAS = correct_heads.sum(1, True)
     UAS /= sent_lens
     UAS = UAS.sum() / b
