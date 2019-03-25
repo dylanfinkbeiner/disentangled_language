@@ -78,11 +78,12 @@ def train(args, parser, data, weights_path=None):
     train_sdp_loader = sdp_data_loader(train_sdp, batch_size=batch_size, shuffle_idx=True)
     if train_mode > 0:
         train_ss_loader = ss_data_loader(train_ss, batch_size=batch_size)
-    dev_loader = sdp_data_loader(dev, batch_size=batch_size)
+    dev_batch_size = len(dev)
+    dev_loader = sdp_data_loader(dev, batch_size=dev_batch_size)
 
     n_train_batches = ceil(len(train_sdp) / batch_size)
     n_megabatches = ceil(len(train_sdp) / (mega_size * batch_size))
-    n_dev_batches = ceil(len(dev) / batch_size)
+    n_dev_batches = ceil(len(dev) / dev_batch_size)
 
     opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
 
@@ -99,7 +100,7 @@ def train(args, parser, data, weights_path=None):
             num_steps = 0
             if train_mode == 0:
                 for b in range(n_train_batches):
-                    log.info(f'Entering batch {b+1}/{n_train_batches}.')
+                    log.info(f'Training batch {b+1}/{n_train_batches}.')
                     opt.zero_grad()
                     words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
                     words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
@@ -186,6 +187,7 @@ def train(args, parser, data, weights_path=None):
             LAS = 0
             log.info('Evaluation step begins.')
             for b in range(n_dev_batches):
+                log.info(f'Eval batch {b+1}/{n_dev_batches}.')
                 with torch.no_grad():
                     words, pos, sent_lens, head_targets, rel_targets = next(dev_loader)
                     S_arc, S_rel, head_preds = parser(words.to(device), pos.to(device), sent_lens)
@@ -226,7 +228,6 @@ def train(args, parser, data, weights_path=None):
                           stopping after {} epochs'''.format(e))
                     break
             
-            torch.save(parser.state_dict(), weights_path)
             if train_mode != -1:
                 torch.save(parser.state_dict(), weights_path)
                 log.info(f'Weights saved to {weights_path}.')

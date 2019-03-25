@@ -227,7 +227,11 @@ class BiaffineParser(nn.Module):
                 lstm_layers=lstm_layers,
                 embedding_dropout=embedding_dropout,
                 lstm_dropout=lstm_dropout,
+<<<<<<< HEAD
+                padding_idx=padding_idx,
+=======
                 padding_idx,
+>>>>>>> 553b5082c248aac8fdec7145a9cc21cb7078e47a
                 unk_idx=unk_idx)
 
         self.BiAffineAttention = BiAffineAttention(
@@ -262,10 +266,14 @@ def mst_preds(S_arc, sent_lens):
     batch_logits = S_arc.data.cpu().numpy() # Take to numpy arrays
 
     for sent_logits, true_length in zip(batch_logits, sent_lens):
-        sent_probs = softmax2d(sent_logits[:true_length, :true_length]) # Select out THE ACTUAL SENTENCE
+        sent_probs = softmax2d(sent_logits[:true_length, :true_length]) # Select out THE ACTUAL SENTENCE (including ROOT token)
         head_preds = mst.mst(sent_probs) # NOTE Input to mst is softmax of arc scores
         heads_batch.append(head_preds)
         
+<<<<<<< HEAD
+    # XXX Technically, this could be a (b, l-1, l-1) tensor, right? the root token shouldn't get a head prediction?
+=======
+>>>>>>> 553b5082c248aac8fdec7145a9cc21cb7078e47a
     return heads_batch # (b, l, l)
 
 

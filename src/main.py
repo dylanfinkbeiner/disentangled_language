@@ -108,7 +108,7 @@ if __name__ == '__main__':
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
 
     if not init_model and os.path.exists(weights_path):
-        log.info(f'Loading state dict from: {weights_path}.')
+        log.info(f'Loading state dict from: \"{weights_path}\"')
         parser.load_state_dict(torch.load(weights_path))
     else:
         log.info(f'Model will have randomly initialized parameters.')
@@ -124,6 +124,7 @@ if __name__ == '__main__':
 
     else:
         data = {'data_test': data_sdp['test'],
+                'data_dev': data_sdp['dev'],
                 'vocabs' : vocabs}
 
         # Evaluate model
