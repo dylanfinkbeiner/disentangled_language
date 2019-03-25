@@ -39,14 +39,11 @@ def build_dataset_sdp(conllu_files=[]):
         sents_list.append(conllu_to_sents(f))
 
     if len(sents_list) != 24:
-        print('Missing a conllu file?')
+        print(f'Missing a conllu file? {len(sents_list)} files provided.')
         raise Exception
 
-    # Order of sentences, within train/dev/test list shouldn't matter
     for i, f in enumerate(sents_list):
         sents_list[i] = [s[:, CONLLU_MASK] for s in f]
-
-    #Seems fine up to this point
 
     # "Standard" train/dev/split for PTB
     train_list = [s for f in sents_list[2:22] for s in f]
