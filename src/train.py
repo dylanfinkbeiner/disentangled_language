@@ -47,7 +47,7 @@ def train(args, parser, data, weights_path=None):
 
     log.info(f'Training model \"{model_name}\" for {n_epochs} epochs in training mode {train_mode}.')
     log.info(f'Weights will be saved to {weights_path}.')
-    sleep(3)
+    sleep(5)
 
     torch.manual_seed(seed)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -55,12 +55,12 @@ def train(args, parser, data, weights_path=None):
     x2i = data['vocabs']['x2i']
     i2x = data['vocabs']['i2x']
     word_counts = data['word_counts']
-    data_sdp = data['data_sdp']
+    data_ptb = data['data_ptb']
 
-    train_sdp = data_sdp['train']
+    train_sdp = data_ptb['train']
     if train_mode > 0:
         train_ss = data['data_ss']
-    dev = data_sdp['dev']
+    dev = data_ptb['dev']
 
     w2i = x2i['word']
     p2i = x2i['pos']
@@ -137,6 +137,7 @@ def train(args, parser, data, weights_path=None):
                     #log.info('Word embedding weight:', state['BiLSTM.word_emb.weight'])
 
                     for x in range(len(idxs)):
+                        # Parsing task step
                         opt.zero_grad()
 
                         words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
@@ -157,10 +158,16 @@ def train(args, parser, data, weights_path=None):
                         train_loss += loss_h.item() + loss_r.item()
 
                         loss.backward()
+                        if x % 2 == 0:
+                            print('========================')
+                            for p in list(parser.BiLSTM.parameters()):
+                                print(p.grad.data.norm(2).item())
+                            print('========================')
+
                         opt.step()
                         num_steps += 1
 
-                        log.info('Sentence similarity training step begins.')
+                        # Sentence similarity step begins
                         opt.zero_grad()
 
                         w1, p1, sl1 = prepare_batch_ss([s1[i] for i in idxs[x]])
@@ -177,6 +184,12 @@ def train(args, parser, data, weights_path=None):
                                 average_hiddens(hn, sln))
 
                         loss.backward()
+                        if x % 2 == 0:
+                            print('========================')
+                            for p in list(parser.BiLSTM.parameters()):
+                                print(p.grad.data.norm(2).item())
+                            print('========================')
+
                         opt.step()
 
             train_loss /= (num_steps if num_steps > 0 else -1)# Just dependency parsing loss

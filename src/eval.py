@@ -1,6 +1,7 @@
 import os
 import sys
 import subprocess
+import datetime
 
 import torch
 
@@ -8,15 +9,22 @@ from train import predict_relations
 
 from data_utils import conllu_to_sents, sdp_data_loader
 
-CORPORA_DIR = '/corpora/wsj/dependencies'
+WSJ_DIR = '/corpora/wsj/dependencies'
+BROWN_DIR = '/corpora/brown/dependencies'
 DATA_DIR = '../data/'
-PTB_DEV = os.path.join(CORPORA_DIR, 'treebank.conllu22')
-PTB_TEST = os.path.join(CORPORA_DIR, 'treebank.conllu23')
-BROWN = ''
+PTB_DEV = os.path.join(WSJ_DIR, 'treebank.conllu22')
+PTB_TEST = os.path.join(WSJ_DIR, 'treebank.conllu23')
+BROWN_CP = os.path.join(DATA_DIR, 'brown_cf.conllu')
 GOLD = {
-        0 : PTD_DEV,
+        0 : PTB_DEV,
         1 : PTB_TEST,
-        2 : BROWN
+        2 : BROWN_CP
+        }
+
+NAMES = {
+        0 : 'ptb_dev',
+        1 : 'ptb_test',
+        2 : 'brown_cp'
         }
 
 def eval(args, parser, data):
@@ -24,19 +32,19 @@ def eval(args, parser, data):
 
     mode = args.evalmode
 
-    name = 'DEV' if args.evalmode == 0 else 'TEST'
-    #gold = GOLD_DEV if dev else GOLD_TEST
-    gold = GOLD[args.evalmode]
+    name = NAMES[mode]
+    gold = GOLD[mode]
     sents_list = conllu_to_sents(gold)
 
-    dataset = data['data_dev'] if dev else data['data_test']
+    print(f'In eval mode {mode}. Evaluating on {name} dataset.')
+
+    #dataset = data['data_dev'] if dev else data['data_test']
+    dataset = data[name]
+    data_loader = sdp_data_loader(dataset, batch_size=1, shuffle_idx=False)
     vocabs = data['vocabs']
     i2r = vocabs['i2x']['rel']
 
-    sents_list = conllu_to_sents(gold)
-    data_loader = sdp_data_loader(dataset, batch_size=1, shuffle_idx=False)
-
-    predicted = os.path.join(DATA_DIR, name)
+    predicted = os.path.join(DATA_DIR, name, '_', str(datetime.datetime.now()))
     with open(predicted, 'w') as f:
         parser.eval()
         with torch.no_grad():

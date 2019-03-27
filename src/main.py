@@ -28,6 +28,7 @@ LOG_DIR = '../log'
 DATA_DIR = '../data'
 CORPORA_DIR = '/corpora'
 DEP_DIR = f'{CORPORA_DIR}/wsj/dependencies'
+BROWN_DIR = f'{CORPORA_DIR}/brown/dependencies'
 MODEL_NAME = ''
 CONLLU_FILES = []
 #CONLLU_FILE = 'tenpercentsample.conllu'
@@ -61,7 +62,8 @@ if __name__ == '__main__':
 
     # Filenames
     vocabs_path = os.path.join(DATA_DIR, 'vocabs.pkl')
-    data_sdp_path = os.path.join(DATA_DIR, 'data_sdp.pkl')
+    data_ptb_path = os.path.join(DATA_DIR, 'data_ptb.pkl')
+    data_brown_path = os.path.join(DATA_DIR, 'data_brown.pkl')
     data_ss_path = os.path.join(DATA_DIR, 'data_ss.pkl')
 
     init_sdp = not os.path.exists(vocabs_path) or init_data
@@ -70,17 +72,25 @@ if __name__ == '__main__':
 
     if init_sdp:
         log.info(f'Initializing SDP data (including vocabs).')
-        conllu_files = sorted([os.path.join(DEP_DIR, f) for f in os.listdir(DEP_DIR)])
+        ptb_conllus = sorted(
+                [os.path.join(DEP_DIR, f) for f in os.listdir(DEP_DIR)])
+        brown_conllus = [os.path.join(BROWN_DIR, f) for f in os.listdir(BROWN_DIR)]
 
-        data_sdp, x2i, i2x, word_counts = build_dataset_sdp(conllu_files)
+        data_ptb, x2i, i2x, word_counts = build_ptb_dataset(ptb_conllus)
+
+        data_brown = build_brown_dataset(brown_conllus, x2i=x2i)
+
         with open(vocabs_path, 'wb') as f:
             pickle.dump((x2i, i2x), f)
-        with open(data_sdp_path, 'wb') as f:
-            pickle.dump((data_sdp, word_counts), f)
+        with open(data_ptb_path, 'wb') as f:
+            pickle.dump((data_ptb, word_counts), f)
+        with open(data_brown_path):
+            pickle.dump(data_brown, f)
 
     if init_ss:
         log.info(f'Initializing SS data.')
-        data_ss = build_dataset_ss(os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
+        data_ss = build_dataset_ss(
+                os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
         with open(data_ss_path, 'wb') as f:
             pickle.dump((data_ss), f)
 
@@ -88,11 +98,14 @@ if __name__ == '__main__':
         log.info(f'Loading pickled data.')
         with open(vocabs_path, 'rb') as f:
             x2i, i2x = pickle.load(f)
-        with open(data_sdp_path, 'rb') as f:
-            data_sdp, word_counts = pickle.load(f)
+        with open(data_ptb_path, 'rb') as f:
+            data_ptb, word_counts = pickle.load(f)
         if args.mode > 0:
             with open(data_ss_path, 'rb') as f:
                 data_ss = pickle.load(f)
+        if args.eval:
+            with open(data_brown_path, 'rb') as f:
+                data_brown = pickle.load(f)
 
     vocabs = {'x2i': x2i, 'i2x': i2x}
 
@@ -114,7 +127,7 @@ if __name__ == '__main__':
         log.info(f'Model will have randomly initialized parameters.')
 
     if not args.eval:
-        data = {'data_sdp' : data_sdp,
+        data = {'data_ptb' : data_ptb,
                 'vocabs' : vocabs,
                 'word_counts' : word_counts}
         if args.mode > 0:
@@ -123,8 +136,9 @@ if __name__ == '__main__':
         train.train(args, parser, data, weights_path=weights_path)
 
     else:
-        data = {'data_test': data_sdp['test'],
-                'data_dev': data_sdp['dev'],
+        data = {'ptb_test': data_ptb['test'],
+                'ptb_dev': data_ptb['dev'],
+                'brown_cp' : data_brown['cp'],
                 'vocabs' : vocabs}
 
         # Evaluate model

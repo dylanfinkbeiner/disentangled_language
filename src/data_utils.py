@@ -25,7 +25,7 @@ CORENLP_URL = 'http://localhost:9000'
 
 
 # Sections 2-21 for training, 22 for dev, 23 for test
-def build_dataset_sdp(conllu_files=[]):
+def build_ptd_dataset(conllu_files=[]):
     '''
         inputs:
             conllu_files - a list of sorted strings, filenames of dependencies
@@ -50,12 +50,6 @@ def build_dataset_sdp(conllu_files=[]):
     dev_list = sents_list[22]
     test_list = sents_list[23]
 
-    #sorted_sents = [i for i in sents_list if i.shape[0] <= 5]
-    #for i in sorted_sents[:100]:
-    #    print(i)
-    #    print('\n')
-    #exit()
-
     train_list, word_counts = filter_and_count(train_list, filter_single=True)
     dev_list, _ = filter_and_count(dev_list, filter_single=False)
     test_list, _ = filter_and_count(test_list, filter_single=False)
@@ -74,6 +68,23 @@ def build_dataset_sdp(conllu_files=[]):
     
     return data_sdp, x2i, i2x, word_counts
 
+def build_brown_dataset(conllu_files, x2i=None):
+    data_brown = {}
+
+    for f in conllu_files:
+        name = os.path.splitext(f)[0].lower()
+        data_brown[name] = conllu_to_sents(f)
+
+    # Hideous
+    for name, f in data_brown.iteritems()
+        data_brown[name] = numericalize_sdp(
+                filter_and_count(
+                    [s[:, CONLLU_MASK] for s in f], 
+                    filter_single=False), 
+                x2i)
+
+    return data_brown
+    
 
 def build_dataset_ss(paranmt_file, x2i=None):
     sents_list = para_to_sents(paranmt_file)
