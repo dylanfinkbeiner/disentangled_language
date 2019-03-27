@@ -19,7 +19,7 @@ def get_args():
 
     # Evaluation options
     parser.add_argument('-e', action="store_true", dest='eval', default=False)
-    parser.add_argument('-d', action="store_true", dest='evaldev', default=False)
+    parser.add_argument('-emode', type=int, dest='evalmode', default=0)
 
     parser.add_argument('-initdata', action="store_true", default=False)
     parser.add_argument('-initmodel', action="store_true", default=False)

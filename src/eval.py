@@ -10,16 +10,23 @@ from data_utils import conllu_to_sents, sdp_data_loader
 
 CORPORA_DIR = '/corpora/wsj/dependencies'
 DATA_DIR = '../data/'
-GOLD_DEV = os.path.join(CORPORA_DIR, 'treebank.conllu22')
-GOLD_TEST = os.path.join(CORPORA_DIR, 'treebank.conllu23')
+PTB_DEV = os.path.join(CORPORA_DIR, 'treebank.conllu22')
+PTB_TEST = os.path.join(CORPORA_DIR, 'treebank.conllu23')
+BROWN = ''
+GOLD = {
+        0 : PTD_DEV,
+        1 : PTB_TEST,
+        2 : BROWN
+        }
 
 def eval(args, parser, data):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    dev = args.evaldev
+    mode = args.evalmode
 
-    name = 'DEV' if dev else 'TEST'
-    gold = GOLD_DEV if dev else GOLD_TEST
+    name = 'DEV' if args.evalmode == 0 else 'TEST'
+    #gold = GOLD_DEV if dev else GOLD_TEST
+    gold = GOLD[args.evalmode]
     sents_list = conllu_to_sents(gold)
 
     dataset = data['data_dev'] if dev else data['data_test']
@@ -52,5 +59,5 @@ def eval(args, parser, data):
                 f.write('\n')
 
     # Run official conll17 evaluation script
-    print(f'==== RESULTS FOR {name} SET ====')
+    print(f'==== RESULTS FOR {name} ====')
     os.system(f'./conll17_ud_eval.py -v {gold} {predicted}')
