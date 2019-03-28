@@ -13,8 +13,6 @@ import pickle
 
 from nltk.parse import CoreNLPParser
 
-
-
 UNK_TOKEN = '<unk>'
 ROOT_TOKEN = '<root>'
 PAD_TOKEN = '<pad>'

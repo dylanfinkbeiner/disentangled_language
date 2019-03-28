@@ -33,7 +33,7 @@ DEP_DIR = f'{CORPORA_DIR}/wsj/dependencies'
 BROWN_DIR = '../data/brown'
 MODEL_NAME = ''
 CONLLU_FILES = []
-PARANMT_FILE = 'para_tiny.txt'
+PARANMT_FILE = 'para_100k.txt'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
 UNK_TOKEN = '<unk>'
@@ -92,7 +92,8 @@ if __name__ == '__main__':
     if init_ss:
         log.info(f'Initializing SS data.')
         data_ss = build_dataset_ss(
-                os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
+                os.path.join(DATA_DIR, PARANMT_FILE), x2i)
+                #os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
         with open(data_ss_path, 'wb') as f:
             pickle.dump((data_ss), f)
 

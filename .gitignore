@@ -11,3 +11,4 @@ TODO
 conll17_ud_eval.py
 .nfs*
 *.un~*
+.data/*
