@@ -39,7 +39,7 @@ log.addHandler(stream_handler)
 def train(args, parser, data, weights_path=None):
     seed = args.seed
     model_name = args.model
-    train_mode = args.mode
+    train_mode = args.tmode
     batch_size = args.batchsize
     mega_size = args.M
     h_size = args.hsize

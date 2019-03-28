@@ -17,7 +17,8 @@ from scipy.spatial.distance import pdist, squareform
 
 from args import get_args
 from parser import BiaffineParser
-from data_utils import build_dataset_sdp
+from data_utils import build_ptb_dataset
+from data_utils import build_brown_dataset
 from data_utils import build_dataset_ss
 
 import train
@@ -28,10 +29,10 @@ LOG_DIR = '../log'
 DATA_DIR = '../data'
 CORPORA_DIR = '/corpora'
 DEP_DIR = f'{CORPORA_DIR}/wsj/dependencies'
-BROWN_DIR = f'{CORPORA_DIR}/brown/dependencies'
+#BROWN_DIR = f'{CORPORA_DIR}/brown/dependencies'
+BROWN_DIR = '../data/brown'
 MODEL_NAME = ''
 CONLLU_FILES = []
-#CONLLU_FILE = 'tenpercentsample.conllu'
 PARANMT_FILE = 'para_tiny.txt'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
@@ -53,6 +54,7 @@ if __name__ == '__main__':
     args = get_args()
     init_data = args.initdata
     init_model = args.initmodel
+    tmode = args.tmode
 
     d = datetime.datetime.today()
     log.info(f'New session: {d}.\n')
@@ -66,8 +68,8 @@ if __name__ == '__main__':
     data_brown_path = os.path.join(DATA_DIR, 'data_brown.pkl')
     data_ss_path = os.path.join(DATA_DIR, 'data_ss.pkl')
 
-    init_sdp = not os.path.exists(vocabs_path) or init_data
-    init_ss = (not os.path.exists(data_ss_path) or init_data) and args.mode > 0
+    init_sdp = not os.path.exists(vocabs_path) or not os.path.exists(data_ptb_path) or not os.path.exists(data_brown_path) or init_data
+    init_ss = (not os.path.exists(data_ss_path) or init_data) and tmode > 0
     load_data = not init_sdp and not init_ss
 
     if init_sdp:
@@ -84,7 +86,7 @@ if __name__ == '__main__':
             pickle.dump((x2i, i2x), f)
         with open(data_ptb_path, 'wb') as f:
             pickle.dump((data_ptb, word_counts), f)
-        with open(data_brown_path):
+        with open(data_brown_path, 'wb') as f:
             pickle.dump(data_brown, f)
 
     if init_ss:
@@ -96,11 +98,9 @@ if __name__ == '__main__':
 
     if load_data:
         log.info(f'Loading pickled data.')
-        with open(vocabs_path, 'rb') as f:
-            x2i, i2x = pickle.load(f)
         with open(data_ptb_path, 'rb') as f:
             data_ptb, word_counts = pickle.load(f)
-        if args.mode > 0:
+        if tmode > 0:
             with open(data_ss_path, 'rb') as f:
                 data_ss = pickle.load(f)
         if args.eval:
@@ -130,15 +130,17 @@ if __name__ == '__main__':
         data = {'data_ptb' : data_ptb,
                 'vocabs' : vocabs,
                 'word_counts' : word_counts}
-        if args.mode > 0:
+        if tmode > 0:
             data['data_ss'] = data_ss
 
         train.train(args, parser, data, weights_path=weights_path)
 
     else:
+        for k in data_brown.keys():
+            print(k)
         data = {'ptb_test': data_ptb['test'],
                 'ptb_dev': data_ptb['dev'],
-                'brown_cp' : data_brown['cp'],
+                'brown_cf' : data_brown['cf'],
                 'vocabs' : vocabs}
 
         # Evaluate model

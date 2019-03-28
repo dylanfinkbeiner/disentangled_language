@@ -1,3 +1,9 @@
+import os
+import sys
+import string
+import random
+from random import shuffle
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -5,15 +11,8 @@ from torch.utils.data import Dataset
 from collections import defaultdict, Counter
 import pickle
 
-#from memory_profiler import profile
-
-import string
-import random
-from random import shuffle
-
 from nltk.parse import CoreNLPParser
 
-import sys
 
 
 UNK_TOKEN = '<unk>'
@@ -25,7 +24,7 @@ CORENLP_URL = 'http://localhost:9000'
 
 
 # Sections 2-21 for training, 22 for dev, 23 for test
-def build_ptd_dataset(conllu_files=[]):
+def build_ptb_dataset(conllu_files=[]):
     '''
         inputs:
             conllu_files - a list of sorted strings, filenames of dependencies
@@ -72,16 +71,13 @@ def build_brown_dataset(conllu_files, x2i=None):
     data_brown = {}
 
     for f in conllu_files:
-        name = os.path.splitext(f)[0].lower()
+        name = os.path.splitext(f)[0].split('/')[-1].lower()
         data_brown[name] = conllu_to_sents(f)
 
     # Hideous
-    for name, f in data_brown.iteritems()
-        data_brown[name] = numericalize_sdp(
-                filter_and_count(
-                    [s[:, CONLLU_MASK] for s in f], 
-                    filter_single=False), 
-                x2i)
+    for name, f in data_brown.items():
+        filtered, _ = filter_and_count([s[:, CONLLU_MASK] for s in f], filter_single=False)
+        data_brown[name] = numericalize_sdp(filtered, x2i)
 
     return data_brown
     

@@ -37,6 +37,6 @@ def get_args():
     parser.add_argument("-margin", help="Margin in objective function", type=float, default=0.4)
 
     # Train mode
-    parser.add_argument("-mode", help="Training mode.", type=int, default=0)
+    parser.add_argument("-tmode", help="Training mode.", type=int, default=0)
 
     return parser.parse_args()

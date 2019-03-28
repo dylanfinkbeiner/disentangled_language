@@ -10,21 +10,22 @@ from train import predict_relations
 from data_utils import conllu_to_sents, sdp_data_loader
 
 WSJ_DIR = '/corpora/wsj/dependencies'
-BROWN_DIR = '/corpora/brown/dependencies'
+#BROWN_DIR = '/corpora/brown/dependencies'
+BROWN_DIR = '../data/brown'
 DATA_DIR = '../data/'
 PTB_DEV = os.path.join(WSJ_DIR, 'treebank.conllu22')
 PTB_TEST = os.path.join(WSJ_DIR, 'treebank.conllu23')
-BROWN_CP = os.path.join(DATA_DIR, 'brown_cf.conllu')
+BROWN_CF = os.path.join(BROWN_DIR, 'cf.conllu')
 GOLD = {
         0 : PTB_DEV,
         1 : PTB_TEST,
-        2 : BROWN_CP
+        2 : BROWN_CF
         }
 
 NAMES = {
         0 : 'ptb_dev',
         1 : 'ptb_test',
-        2 : 'brown_cp'
+        2 : 'brown_cf'
         }
 
 def eval(args, parser, data):
@@ -44,7 +45,8 @@ def eval(args, parser, data):
     vocabs = data['vocabs']
     i2r = vocabs['i2x']['rel']
 
-    predicted = os.path.join(DATA_DIR, name, '_', str(datetime.datetime.now()))
+    timestamp = str(datetime.datetime.now())
+    predicted = os.path.join(DATA_DIR, name)
     with open(predicted, 'w') as f:
         parser.eval()
         with torch.no_grad():
