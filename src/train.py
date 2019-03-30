@@ -79,7 +79,8 @@ def train(args, parser, data, weights_path=None):
     if train_mode > 0:
         train_ss_loader = ss_data_loader(train_ss, batch_size=batch_size)
     dev_batch_size = len(dev)
-    dev_loader = sdp_data_loader(dev, batch_size=dev_batch_size)
+    #dev_loader = sdp_data_loader(dev, batch_size=dev_batch_size)
+    dev_loader = sdp_data_loader(dev, batch_size=batch_size)
 
     n_train_batches = ceil(len(train_sdp) / batch_size)
     n_megabatches = ceil(len(train_sdp) / (mega_size * batch_size))

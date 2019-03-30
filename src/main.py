@@ -68,8 +68,10 @@ if __name__ == '__main__':
     data_brown_path = os.path.join(DATA_DIR, 'data_brown.pkl')
     data_ss_path = os.path.join(DATA_DIR, 'data_ss.pkl')
 
-    init_sdp = not os.path.exists(vocabs_path) or not os.path.exists(data_ptb_path) or not os.path.exists(data_brown_path) or init_data
-    init_ss = (not os.path.exists(data_ss_path) or init_data) and tmode > 0
+    #init_sdp = not os.path.exists(vocabs_path) or not os.path.exists(data_ptb_path) or not os.path.exists(data_brown_path) or init_data
+    init_sdp = False
+    #init_ss = (not os.path.exists(data_ss_path) or init_data) and tmode > 0
+    init_ss = True
     load_data = not init_sdp and not init_ss
 
     if init_sdp:
@@ -89,14 +91,20 @@ if __name__ == '__main__':
         with open(data_brown_path, 'wb') as f:
             pickle.dump(data_brown, f)
 
+    with open(vocabs_path, 'rb') as f:
+        x2i, i2x = pickle.load(f)
+
     if init_ss:
         log.info(f'Initializing SS data.')
         data_ss = build_dataset_ss(
                 os.path.join(DATA_DIR, PARANMT_FILE), x2i)
                 #os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
         with open(data_ss_path, 'wb') as f:
-            pickle.dump((data_ss), f)
+            pickle.dump(data_ss, f)
 
+    print("donezo, lorenzo")
+    exit()
+    
     if load_data:
         log.info(f'Loading pickled data.')
         with open(data_ptb_path, 'rb') as f:
