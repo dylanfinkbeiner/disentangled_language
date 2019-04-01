@@ -68,8 +68,6 @@ def train(args, parser, data, weights_path=None):
 
     i2w = i2x['word']
 
-    # Set up finished
-
     log.info(f'There are {len(train_sdp)} SDP training examples.')
     if train_mode > 0:
         log.info(f'There are {len(train_ss)} SS training examples.')
@@ -216,7 +214,8 @@ def train(args, parser, data, weights_path=None):
                             rel_preds,
                             head_targets,
                             rel_targets,
-                            sent_lens)
+                            sent_lens,
+                            root_included=True)
                     UAS += UAS_
                     LAS += LAS_
 
@@ -391,7 +390,7 @@ def predict_relations(S_rel, head_preds):
     return rel_preds
 
 
-def attachment_scoring(head_preds, rel_preds, head_targets, rel_targets, sent_lens):
+def attachment_scoring(head_preds, rel_preds, head_targets, rel_targets, sent_lens, root_included=False):
     '''
         input:
             head_preds::Tensor - Has shape (b, l), -1 padded
@@ -424,11 +423,13 @@ def attachment_scoring(head_preds, rel_preds, head_targets, rel_targets, sent_le
 
     # We get per-sentence averages, then average across the batch
     UAS = correct_heads.sum(1, True)
-    UAS /= sent_lens
+    UAS = UAS - 1 if root_included else UAS
+    UAS /= (sent_lens -1 if root_included else sent_lens)
     UAS = UAS.sum() / b
 
     LAS = (correct_heads * correct_rels).sum(1, True)
-    LAS /= sent_lens
+    LAS = LAS - 1 if root_included else LAS
+    LAS /= (sent_lens -1 if root_included else sent_lens)
     LAS = LAS.sum() / b
 
     return UAS, LAS

@@ -102,9 +102,6 @@ if __name__ == '__main__':
         with open(data_ss_path, 'wb') as f:
             pickle.dump(data_ss, f)
 
-    print("donezo, lorenzo")
-    exit()
-    
     if load_data:
         log.info(f'Loading pickled data.')
         with open(data_ptb_path, 'rb') as f:
@@ -145,8 +142,6 @@ if __name__ == '__main__':
         train.train(args, parser, data, weights_path=weights_path)
 
     else:
-        for k in data_brown.keys():
-            print(k)
         data = {'ptb_test': data_ptb['test'],
                 'ptb_dev': data_ptb['dev'],
                 'brown_cf' : data_brown['cf'],
@@ -154,3 +149,4 @@ if __name__ == '__main__':
 
         # Evaluate model
         eval.eval(args, parser, data)
+
