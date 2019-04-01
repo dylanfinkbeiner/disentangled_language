@@ -11,12 +11,11 @@ from torch.utils.data import Dataset
 from collections import defaultdict, Counter
 import pickle
 
-import conll17_ud_eval
-from conll17_ud_eval import evaluate_wrapper, 
-
 import argparse
 
 from nltk.parse import CoreNLPParser
+
+from train import attachment_scoring
 
 UNK_TOKEN = '<unk>'
 ROOT_TOKEN = '<root>'
@@ -138,44 +137,47 @@ def get_paired_idx(idx, cutoffs):
 
 
 def get_scores(batch, paired):
-    parser = argparse.ArgumentParser()
-    parser.add_argument("gold_file", type=str)
-    parser.add_argument("system_file", type=str)
-    parser.add_argument("--weights", "-w", type=argparse.FileType("r"), default=None,
-                        metavar="deprel_weights_file")
-    parser.add_argument("--verbose", "-v", default=0, action="count")
+    '''
+        inputs:
+            batch -
+            paired -
 
-    arg_list = [f1, f2]
-    args = parser.parse_args(arg_list)
+        outputs:
+            scores - a (b,1) tensor of 'scores' for the paired sentences, weights to be used in loss function
+    '''
 
-    evaluation = evaluate_wrapper(args)
+    _, scores = attachment_scoring(batch['head_targets'], batch['rel_targets'], 
+            paired['head_targets'], paired['rel_targets'], 
+            batch['sent_lens'], 
+            root_included=True,
+            keep_dim=True)
+
+    return scores # (b, 1)
 
 
-    evaluation = evaluate(gold_ud, system_ud) 
-    LAS = evaluation['LAS']
-
-
-def sdp_data_loader(data, batch_size=1, shuffle_idx=False, otherflag=False):
+def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
     idx = list(range(len(data)))
     data_sorted = sorted(data, key = lambda s : s.shape[0]) #XXX seems like I might as well sort in build_dataset???
 
-    if otherflag:
+    if custom_task:
         cutoffs = get_cutoffs(data_sorted)
     
     while True:
         if shuffle_idx:
             shuffle(idx) # In-place shuffle
 
-        if otherflag:
+        if custom_task:
             paired_idx = get_paired_idx(idx, cutoffs)
 
         for chunk, chunk_p in (idx_chunks(idx, batch_size), idx_chunks(paired_idx, batch_size)):
             batch = [data_sorted[i] for i in chunk]
-            if otherflag:
+            if custom_task:
                 paired = [data_sorted[i] for i in chunk_p]
-                yield (prepare_batch_sdp(batch),
-                        prepare_batch_sdp(paired),
-                        get_scores(batch, paired))
+                prepared = prepare_batch_sdp(batch)
+                prepared_paired = prepare_batch_sdp(paired)
+                yield (prepared,
+                        prepared_paired, 
+                        get_scores(prepared, prepared_paired))
             else yield prepare_batch_sdp(batch)
 
 
@@ -262,7 +264,11 @@ def prepare_batch_sdp(batch):
             heads[i,j] = int(s[j,2])
             rels[i,j] =  int(s[j,3])
 
-    return words, pos, sent_lens, heads, rels
+    return {'words': words, 
+            'pos' : pos, 
+            'sent_lens' : sent_lens, 
+            'heads' : heads, 
+            'rels' : rels}
 
 
 def prepare_batch_ss(batch):

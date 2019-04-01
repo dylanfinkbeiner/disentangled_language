@@ -73,7 +73,10 @@ def train(args, parser, data, weights_path=None):
         log.info(f'There are {len(train_ss)} SS training examples.')
     log.info(f'There are {len(dev)} validation examples.')
 
-    train_sdp_loader = sdp_data_loader(train_sdp, batch_size=batch_size, shuffle_idx=True)
+    if train_mode < 1:
+        train_sdp_loader = sdp_data_loader(train_sdp, batch_size=batch_size, shuffle_idx=True, custom_task=False)
+    else:
+        train_sdp_loader = sdp_data_loader(train_sdp, batch_size=batch_size, shuffle_idx=True, custom_task=True)
     if train_mode > 0:
         train_ss_loader = ss_data_loader(train_ss, batch_size=batch_size)
     dev_batch_size = len(dev)
@@ -101,10 +104,13 @@ def train(args, parser, data, weights_path=None):
                 for b in range(n_train_batches):
                     log.info(f'Training batch {b+1}/{n_train_batches}.')
                     opt.zero_grad()
-                    words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
-                    words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
+                    batch = next(train_sdp_loader)
+                    head_targets = batch['head_targets']
+                    rel_targets = batch['rel_targets']
+                    sent_lens = batch['sent_lens']
+                    words_d = word_dropout(batch['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
                     
-                    S_arc, S_rel, _ = parser(words_d.to(device), pos.to(device), sent_lens)
+                    S_arc, S_rel, _ = parser(words_d.to(device), batch['pos'].to(device), sent_lens)
 
                     loss_h = loss_heads(S_arc, head_targets)
                     loss_r = loss_rels(S_rel, rel_targets)
@@ -131,30 +137,53 @@ def train(args, parser, data, weights_path=None):
                     with torch.no_grad():
                         s1, s2, negs = get_triplets(megabatch, batch_size, parser)
 
-                    # Checking to see weights are changing
-                    #log.info('Attention h_rel_head:', state['BiAffineAttention.h_rel_head.0.weight'])
-                    #log.info('Word embedding weight:', state['BiLSTM.word_emb.weight'])
-
                     for x in range(len(idxs)):
                         # Parsing task step
+
                         opt.zero_grad()
+                        if train_mode < 1:
+                            batch = next(train_sdp_loader)
+                            head_targets = batch['head_targets']
+                            rel_targets = batch['rel_targets']
+                            sent_lens = batch['sent_lens']
+                            words_d = word_dropout(batch['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
 
-                        words, pos, sent_lens, head_targets, rel_targets = next(train_sdp_loader)
-                        words_d = word_dropout(words, w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
+                            outputs, _ = parser.BiLSTM(batch['words'].to(device), batch['pos'].to(device), sent_lens)
+                            outputs_d, _ = parser.BiLSTM(words_d.to(device), batch['pos'].to(device), sent_lens)
 
-                        outputs, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
-                        outputs_d, _ = parser.BiLSTM(words_d.to(device), pos.to(device), sent_lens)
+                            outputs[:,:,h_size // 2 : h_size] = outputs_d[:,:,h_size // 2 : h_size] # Splice forward hiddens
+                            outputs[:,:,h_size + (h_size // 2):] = outputs_d[:,:,h_size + (h_size // 2):] # Splice backward hiddens
 
-                        outputs[:,:,h_size // 2 : h_size] = outputs_d[:,:,h_size // 2 : h_size] # Splice forward hiddens
-                        outputs[:,:,h_size + (h_size // 2):] = outputs_d[:,:,h_size + (h_size // 2):] # Splice backward hiddens
+                            S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
 
-                        S_arc, S_rel, _ = parser.BiAffineAttention(outputs.to(device), sent_lens)
+                            loss_h = loss_heads(S_arc, head_targets)
+                            loss_r = loss_rels(S_rel, rel_targets)
+                            loss = loss_h + loss_r
 
-                        loss_h = loss_heads(S_arc, head_targets)
-                        loss_r = loss_rels(S_rel, rel_targets)
-                        loss = loss_h + loss_r
+                            train_loss += loss_h.item() + loss_r.item()
+                            num_steps += 1
 
-                        train_loss += loss_h.item() + loss_r.item()
+                        else:
+                            batch, paired, scores = next(train_sdp_loader)
+                            words_d_batch = word_dropout(batch['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=batch['sent_lens'])
+                            words_d_paired = word_dropout(paired['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=paired['sent_lens'])
+                            S_arc_batch = parser(words_d_batch.to(device), batch['pos'].to(device), batch['sent_lens'])
+                            S_rel_batch = parser(words_d_batch.to(device), batch['pos'].to(device), batch['sent_lens'])
+                            S_arc_paired = parser(words_d_paired.to(device), paired['pos'].to(device), paired['sent_lens'])
+                            S_rel_paired = parser(words_d_paired.to(device), paired['pos'].to(device), paired['sent_lens'])
+
+                            loss_h_batch = loss_heads(S_arc,_batch batch['head_targets'])
+                            loss_r_batch = loss_rels(S_rel_batch, batch['rel_targets'])
+                            loss_batch = loss_h_batch + loss_r_batch
+                            loss_h_paired = loss_heads(S_arc_paired, paired['head_targets'])
+                            loss_r_paired = loss_rels(S_rel_paired, paired['rel_targets'])
+                            loss_paired = loss_h_paired + loss_r_paired
+
+                            loss = loss_batch + loss_paired + loss_syntactic_representation(, scores)
+
+                            train_loss +=  loss_h_batch.item() + loss_r_batch.item() + loss_h_paired.item() + loss_r_paired.item()
+                            num_steps += 2
+                            
 
                         loss.backward()
                         if x % 2 == 0:
@@ -164,7 +193,6 @@ def train(args, parser, data, weights_path=None):
                             print('========================')
 
                         opt.step()
-                        num_steps += 1
 
                         # Sentence similarity step begins
                         opt.zero_grad()
@@ -201,8 +229,15 @@ def train(args, parser, data, weights_path=None):
             for b in range(n_dev_batches):
                 log.info(f'Eval batch {b+1}/{n_dev_batches}.')
                 with torch.no_grad():
-                    words, pos, sent_lens, head_targets, rel_targets = next(dev_loader)
-                    S_arc, S_rel, head_preds = parser(words.to(device), pos.to(device), sent_lens)
+                    #words, pos, sent_lens, head_targets, rel_targets = next(dev_loader)
+                    batch = next(dev_loader)
+                    head_targets = batch['head_targets']
+                    rel_targets = batch['rel_targets']
+                    sent_lens = batch['sent_lens']
+
+                    S_arc, S_rel, head_preds = parser(batch['words'].to(device), 
+                            batch['pos'].to(device), 
+                            sent_lens)
                     rel_preds = predict_relations(S_rel, head_preds)
 
                     loss_h = loss_heads(S_arc, head_targets)
@@ -384,17 +419,14 @@ def predict_relations(S_rel, head_preds):
 
     rel_preds = S_rel.cpu().argmax(2).long()
     
-    # override predictions according to head_preds labeled '0'
-
-    
     return rel_preds
 
 
-def attachment_scoring(head_preds, rel_preds, head_targets, rel_targets, sent_lens, root_included=False):
+def attachment_scoring(head_preds, rel_preds, head_targets, rel_targets, sent_lens, root_included=False, keep_dim=False):
     '''
         input:
             head_preds::Tensor - Has shape (b, l), -1 padded
-            rel_preds::Tensor -  Has shape (b, l, num_rel), -1 padded
+            rel_preds::Tensor -  Has shape (b, l), -1 padded
             head_targets::Tensor - (-1)-padded (b, l) tensor of ints
             rel_targets::Tensor - (-1)-padded (b, l) tensor of ints
 
@@ -422,14 +454,16 @@ def attachment_scoring(head_preds, rel_preds, head_targets, rel_targets, sent_le
     correct_rels = rel_preds.eq(rel_targets).float()
 
     # We get per-sentence averages, then average across the batch
-    UAS = correct_heads.sum(1, True)
+    UAS = correct_heads.sum(1, True) # (b,l) -> (b,1)
     UAS = UAS - 1 if root_included else UAS
     UAS /= (sent_lens -1 if root_included else sent_lens)
-    UAS = UAS.sum() / b
+    if not keep_dim:
+        UAS = UAS.sum() / b
 
     LAS = (correct_heads * correct_rels).sum(1, True)
     LAS = LAS - 1 if root_included else LAS
     LAS /= (sent_lens -1 if root_included else sent_lens)
-    LAS = LAS.sum() / b
+    if not keep_dim:
+        LAS = LAS.sum() / b
 
     return UAS, LAS
