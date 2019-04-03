@@ -165,12 +165,15 @@ def train(args, parser, data, weights_path=None):
 
                         else:
                             batch, paired, scores = next(train_sdp_loader)
+
                             words_d_batch = word_dropout(batch['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=batch['sent_lens'])
                             words_d_paired = word_dropout(paired['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=paired['sent_lens'])
-                            S_arc_batch = parser(words_d_batch.to(device), batch['pos'].to(device), batch['sent_lens'])
-                            S_rel_batch = parser(words_d_batch.to(device), batch['pos'].to(device), batch['sent_lens'])
-                            S_arc_paired = parser(words_d_paired.to(device), paired['pos'].to(device), paired['sent_lens'])
-                            S_rel_paired = parser(words_d_paired.to(device), paired['pos'].to(device), paired['sent_lens'])
+
+                            outputs_batch, _ = parser.BiLSTM(batch['words'].to(device), batch['pos'].to(device), batch['sent_lens'])
+                            outputs_paired, _ = parser.BiLSTM(paired['words'].to(device), paired['pos'].to(device), paired['sent_lens'])
+
+                            S_arc_batch, S_rel_batch = parser.BiAffineAttention(outputs_batch.to(device), batch['sent_lens'])
+                            S_arc_paired, S_rel_paired = parser.BiAffineAttention(outputs_paired.to(device), paired['sent_lens'])
 
                             loss_h_batch = loss_heads(S_arc,_batch batch['head_targets'])
                             loss_r_batch = loss_rels(S_rel_batch, batch['rel_targets'])
@@ -179,7 +182,7 @@ def train(args, parser, data, weights_path=None):
                             loss_r_paired = loss_rels(S_rel_paired, paired['rel_targets'])
                             loss_paired = loss_h_paired + loss_r_paired
 
-                            loss = loss_batch + loss_paired + loss_syntactic_representation(, scores)
+                            loss = loss_batch + loss_paired + loss_syntactic_representation(outputs_batch, outputs_paired, scores)
 
                             train_loss +=  loss_h_batch.item() + loss_r_batch.item() + loss_h_paired.item() + loss_r_paired.item()
                             num_steps += 2
@@ -407,6 +410,8 @@ def loss_ss(h1, h2, hn, margin=0.4):
 
     return losses.sum()
 
+def loss_syntactic_representation(outputs_batch, outputs_paired, scores):
+    ok
 
 def predict_relations(S_rel, head_preds):
     '''

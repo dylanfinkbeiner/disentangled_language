@@ -56,6 +56,9 @@ if __name__ == '__main__':
     init_model = args.initmodel
     tmode = args.tmode
 
+    #if not args.semsize + args.semsize == args.hsize:
+    #   raise Exception
+
     d = datetime.datetime.today()
     log.info(f'New session: {d}.\n')
 
