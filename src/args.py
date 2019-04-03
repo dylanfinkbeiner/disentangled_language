@@ -61,6 +61,7 @@ def get_args():
 
     return parser.parse_args(remaining_argv)
 
+
 if __name__ == '__main__':
     args = get_args()
     print('Epochs: ', args.epochs)
