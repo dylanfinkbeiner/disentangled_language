@@ -6,36 +6,38 @@ from configparser import ConfigParser
 LOG_DIR = '../log'
 DATA_DIR = '../data'
 WEIGHTS_DIR = '../weights'
+CONFIG_DIR = '../config'
 if not os.path.isdir(LOG_DIR):
     os.mkdir(LOG_DIR)
 if not os.path.isdir(DATA_DIR):
     os.mkdir(DATA_DIR)
 if not os.path.isdir(WEIGHTS_DIR):
     os.mkdir(WEIGHTS_DIR)
+if not os.path.isdir(CONFIG_DIR):
+    os.mkdir(CONFIG_DIR)
 
 def get_args():
     config_parser = ArgumentParser(add_help=False)
-    config_parser.add_argument('-c', '--config', help='Provide filename of a configuration file')
+    config_parser.add_argument('-c', '--config_file', help='Provide filename of a configuration file')
 
     # Parsing known args allows the same command line string to provide config filename as well as rest of args
     args, remaining_argv = config_parser.parse_known_args()
 
     defaults = {}
 
-    if args.config:
+    if args.config_file:
         config = ConfigParser()
-        config.read([args.config])
+        config.read([os.path.join(CONFIG_DIR, args.config_file + '.cfg')])
         defaults.update(dict(config.items('Defaults')))
 
-    #parser = ArgumentParser(parents=[config_parser])
     parser = ArgumentParser()
 
     parser.add_argument('model', help='Name of model', default='default_model')
     parser.add_argument('--seed', type=int, dest='seed', default=7)
 
     # Evaluation options
-    parser.add_argument('-e', '--eval', action='store_true', dest='eval', default=False)
-    parser.add_argument('-emode', help='Evaluation mode setting.', type=int, dest='evalmode', default=0)
+    parser.add_argument('-e', action='store_true', dest='eval', default=False)
+    parser.add_argument('-em', help='Evaluation mode setting.', type=int, dest='evalmode', default=0)
 
     parser.add_argument('-initdata', action='store_true', default=False)
     parser.add_argument('-initmodel', action='store_true', default=False)
@@ -56,10 +58,33 @@ def get_args():
     # Train mode
     parser.add_argument('-tm', '--trainingmode', help='Training mode setting.', type=int, default=0)
 
+    # Save configuration?
+    parser.add_argument('-sc', help='Name of new file to save configuration to.', default='')
+
+
     # Overrides argument-level defaults
     parser.set_defaults(**defaults)
 
-    return parser.parse_args(remaining_argv)
+    args = parser.parse_args(remaining_argv)
+
+    if args.sc:
+        new_file_path = os.path.join(CONFIG_DIR, args.sc + '.cfg')
+        if os.path.exists(new_file_path):
+            reply = input('Config file already exists. Overwrite? [y/n] ')
+            if reply != 'y' :
+                exit()
+        args_dict = dict(vars(args))
+        args_dict.pop('model')
+        args_dict.pop('trainingmode')
+        args_dict.pop('eval')
+        args_dict.pop('evalmode')
+        new_defaults = {'Defaults' : args_dict}
+        new_config = ConfigParser()
+        new_config.read_dict(new_defaults)
+        with open(new_file_path, 'w') as f:
+            new_config.write(f)
+
+    return args
 
 
 if __name__ == '__main__':
