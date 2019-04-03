@@ -32,7 +32,7 @@ def get_args():
 
     # Training hyperparameters
     parser.add_argument("-batchsize", help="Size of batch", type=int, dest='batchsize', default=100)
-    parser.add_argument("-M", help="Number of batches in a megabatch", type=int, dest='M', default=1)
+    parser.add_argument("-M", help="Number of batches in a megabatch", type=int, dest='M', default=10)
     parser.add_argument("-epochs", help="Number of epochs in training", type=int, default=5)
     parser.add_argument("-margin", help="Margin in objective function", type=float, default=0.4)
 

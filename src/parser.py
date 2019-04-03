@@ -90,7 +90,7 @@ class BiLSTM(nn.Module):
         if(len(sent_lens) > 1):
             lens_sorted, indices = torch.sort(lens_sorted, descending=True)
             indices = indices.to(device)
-            words_sorted = words_sorted.index_select(0, indices) # NOTE Keep in mind, this is consuming additional memory!
+            words_sorted = words_sorted.index_select(0, indices)
             pos_sorted = pos_sorted.index_select(0, indices)
             del words
             del pos

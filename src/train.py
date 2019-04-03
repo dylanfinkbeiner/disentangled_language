@@ -60,6 +60,7 @@ def train(args, parser, data, weights_path=None):
     train_sdp = data_ptb['train']
     if train_mode > 0:
         train_ss = data['data_ss']
+        train_ss = train_ss[:1000] #XXX WHOA! THIS IS STUPID!
     dev = data_ptb['dev']
 
     w2i = x2i['word']
@@ -82,7 +83,8 @@ def train(args, parser, data, weights_path=None):
     dev_loader = sdp_data_loader(dev, batch_size=dev_batch_size)
 
     n_train_batches = ceil(len(train_sdp) / batch_size)
-    n_megabatches = ceil(len(train_sdp) / (mega_size * batch_size))
+    #n_megabatches = ceil(len(train_sdp) / (mega_size * batch_size))
+    n_megabatches = ceil(len(train_ss) / (mega_size * batch_size))
     n_dev_batches = ceil(len(dev) / dev_batch_size)
 
     opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
@@ -91,6 +93,7 @@ def train(args, parser, data, weights_path=None):
     prev_best = 0
     log.info('Starting train loop.')
     state = parser.state_dict() # For weight analysis
+
     try:
         for e in range(n_epochs):
             log.info(f'Entering epoch {e+1}/{n_epochs}.')
@@ -117,7 +120,7 @@ def train(args, parser, data, weights_path=None):
                     opt.step()
                     num_steps += 1
 
-            elif train_mode == 1:
+            elif train_mode == 2:
                 for m in range(n_megabatches):
                     megabatch = []
                     idxs = []
@@ -130,13 +133,16 @@ def train(args, parser, data, weights_path=None):
                         idx += len(curr_idxs)
 
                     with torch.no_grad():
-                        s1, s2, negs = get_triplets(megabatch, batch_size, parser)
+                        s1, s2, negs = get_triplets(megabatch, batch_size, parser, device)
 
-                    # Checking to see weights are changing
-                    #log.info('Attention h_rel_head:', state['BiAffineAttention.h_rel_head.0.weight'])
-                    #log.info('Word embedding weight:', state['BiLSTM.word_emb.weight'])
-
+                    grad_print = len(idxs) / 2
+                    print('Allocated: ', torch.cuda.memory_allocated(device))
+                    print('Cached: ', torch.cuda.memory_cached(device))
+                    breakpoint()
                     for x in range(len(idxs)):
+                        print(f'Epoch {e+1}/{n_epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}')
+                        print('Allocated: ', torch.cuda.memory_allocated(device))
+                        print('Cached: ', torch.cuda.memory_cached(device))
                         # Parsing task step
                         opt.zero_grad()
 
@@ -158,8 +164,10 @@ def train(args, parser, data, weights_path=None):
                         train_loss += loss_h.item() + loss_r.item()
 
                         loss.backward()
-                        if x % 2 == 0:
+                        if x % grad_print == 0:
                             print('========================')
+                            print(f'Epoch {e+1}/{n_epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}')
+                            print('Gradients after PARSING step:')
                             for p in list(parser.BiLSTM.parameters()):
                                 print(p.grad.data.norm(2).item())
                             print('========================')
@@ -179,36 +187,57 @@ def train(args, parser, data, weights_path=None):
                         hn, _ = parser.BiLSTM(wn.to(device), pn.to(device), sln)
 
                         loss = loss_ss(
-                                average_hiddens(h1, sl1), 
-                                average_hiddens(h2, sl2),
-                                average_hiddens(hn, sln))
+                                average_hiddens(h1, sl1, device), 
+                                average_hiddens(h2, sl2, device),
+                                average_hiddens(hn, sln, device))
 
                         loss.backward()
-                        if x % 2 == 0:
+                        if x % grad_print == 0:
                             print('========================')
+                            print(f'Epoch {e+1}/{n_epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}')
+                            print('Gradients after SENTENCE SIMILARITY step:')
                             for p in list(parser.BiLSTM.parameters()):
                                 print(p.grad.data.norm(2).item())
                             print('========================')
 
+                        print('Allocated: ', torch.cuda.memory_allocated(device))
+                        print('Cached: ', torch.cuda.memory_cached(device))
+                        print('End of minibatch')
                         opt.step()
 
             train_loss /= (num_steps if num_steps > 0 else -1)# Just dependency parsing loss
 
+            
             parser.eval()  # Crucial! Toggles dropout effects
             dev_loss = 0
             UAS = 0
             LAS = 0
             log.info('Evaluation step begins.')
+            print('Allocated: ', torch.cuda.memory_allocated(device))
+            print('Cached: ', torch.cuda.memory_cached(device))
+            breakpoint()
             for b in range(n_dev_batches):
                 log.info(f'Eval batch {b+1}/{n_dev_batches}.')
                 with torch.no_grad():
                     words, pos, sent_lens, head_targets, rel_targets = next(dev_loader)
+                    print('Allocated: ', torch.cuda.memory_allocated(device))
+                    print('Cached: ', torch.cuda.memory_cached(device))
+                    breakpoint()
                     S_arc, S_rel, head_preds = parser(words.to(device), pos.to(device), sent_lens)
+                    print('Allocated: ', torch.cuda.memory_allocated(device))
+                    print('Cached: ', torch.cuda.memory_cached(device))
+                    breakpoint()
                     rel_preds = predict_relations(S_rel, head_preds)
+                    print('Allocated: ', torch.cuda.memory_allocated(device))
+                    print('Cached: ', torch.cuda.memory_cached(device))
+                    breakpoint()
 
                     loss_h = loss_heads(S_arc, head_targets)
                     loss_r = loss_rels(S_rel, rel_targets)
                     dev_loss += loss_h.item() + loss_r.item()
+                    print('Allocated: ', torch.cuda.memory_allocated(device))
+                    print('Cached: ', torch.cuda.memory_cached(device))
+                    breakpoint()
 
                     UAS_, LAS_ = attachment_scoring(
                             head_preds.cpu(),
@@ -218,6 +247,9 @@ def train(args, parser, data, weights_path=None):
                             sent_lens)
                     UAS += UAS_
                     LAS += LAS_
+                    print('Allocated: ', torch.cuda.memory_allocated(device))
+                    print('Cached: ', torch.cuda.memory_cached(device))
+                    breakpoint()
 
             dev_loss /= n_dev_batches
             UAS /= n_dev_batches
@@ -252,7 +284,7 @@ def train(args, parser, data, weights_path=None):
             torch.save(parser.state_dict(), weights_path)
 
 
-def average_hiddens(hiddens, sent_lens):
+def average_hiddens(hiddens, sent_lens, device):
     '''
         inputs:
             hiddens - tensor w/ shape (b, l, 2*d) where d is LSTM hidden size
@@ -265,14 +297,14 @@ def average_hiddens(hiddens, sent_lens):
     #NOTE WE ARE ASSUMING PAD VALUES ARE 0 IN THIS SUM (NEED TO DOUBLE CHECK)
     averaged_hiddens = hiddens.sum(dim=1)
 
-    sent_lens = torch.Tensor(sent_lens).view(-1, 1).float()  # Column vector
+    sent_lens = torch.Tensor(sent_lens).view(-1, 1).float().to(device)  # Column vector
 
     averaged_hiddens /= sent_lens
 
     return averaged_hiddens
 
 
-def get_triplets(megabatch, minibatch_size, parser):
+def get_triplets(megabatch, minibatch_size, parser, device):
     '''
         inputs:
             megabatch - an unprepared megabatch (M many batches) of sentences
@@ -296,8 +328,8 @@ def get_triplets(megabatch, minibatch_size, parser):
     for m in minibatches:
         words, pos, sent_lens = prepare_batch_ss(m)
 
-        m_reps, _ = parser.BiLSTM(words, pos, sent_lens)
-        megabatch_of_reps.append(average_hiddens(m_reps, sent_lens))
+        m_reps, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
+        megabatch_of_reps.append(average_hiddens(m_reps, sent_lens, device))
 
     megabatch_of_reps = torch.cat(megabatch_of_reps)
 

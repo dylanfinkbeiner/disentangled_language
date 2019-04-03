@@ -34,6 +34,7 @@ BROWN_DIR = '../data/brown'
 MODEL_NAME = ''
 CONLLU_FILES = []
 PARANMT_FILE = 'para_100k.txt'
+#PARANMT_FILE = 'para_tiny.txt'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
 UNK_TOKEN = '<unk>'
@@ -68,8 +69,10 @@ if __name__ == '__main__':
     data_brown_path = os.path.join(DATA_DIR, 'data_brown.pkl')
     data_ss_path = os.path.join(DATA_DIR, 'data_ss.pkl')
 
-    init_sdp = not os.path.exists(vocabs_path) or not os.path.exists(data_ptb_path) or not os.path.exists(data_brown_path) or init_data
-    init_ss = (not os.path.exists(data_ss_path) or init_data) and tmode > 0
+    #init_sdp = not os.path.exists(vocabs_path) or not os.path.exists(data_ptb_path) or not os.path.exists(data_brown_path) or init_data
+    init_sdp = False
+    #init_ss = (not os.path.exists(data_ss_path) or init_data) and tmode > 0
+    init_ss = False
     load_data = not init_sdp and not init_ss
 
     if init_sdp:
@@ -88,6 +91,9 @@ if __name__ == '__main__':
             pickle.dump((data_ptb, word_counts), f)
         with open(data_brown_path, 'wb') as f:
             pickle.dump(data_brown, f)
+
+    with open(vocabs_path, 'rb') as f:
+        x2i, i2x = pickle.load(f)
 
     if init_ss:
         log.info(f'Initializing SS data.')

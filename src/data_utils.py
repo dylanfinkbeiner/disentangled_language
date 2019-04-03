@@ -18,7 +18,7 @@ ROOT_TOKEN = '<root>'
 PAD_TOKEN = '<pad>'
 
 CONLLU_MASK = [1, 4, 6, 7]  # [word, pos, head, rel]
-CORENLP_URL = 'http://localhost:9000'
+CORENLP_URL = 'http://localhost:9001'
 
 
 # Sections 2-21 for training, 22 for dev, 23 for test
@@ -103,7 +103,7 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False):
             yield prepare_batch_sdp(batch)
 
 
-def ss_data_loader(data, b_size):
+def ss_data_loader(data, batch_size=None):
     '''
         inputs:
             data - the full Python list of pairs of numericalized sentences (np arrays)
@@ -112,11 +112,13 @@ def ss_data_loader(data, b_size):
         yields:
             chunk - list of indices representing a minibatch
     '''
+    if batch_size == None:
+        raise Exception
 
     idx = list(range(len(data)))
     while True:
         shuffle(idx)
-        for chunk in idx_chunks(idx, b_size):
+        for chunk in idx_chunks(idx, batch_size):
             yield chunk
 
 
