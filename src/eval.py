@@ -39,7 +39,6 @@ def eval(args, parser, data):
 
     print(f'In eval mode {mode}. Evaluating on {name} dataset.')
 
-    #dataset = data['data_dev'] if dev else data['data_test']
     dataset = data[name]
     data_loader = sdp_data_loader(dataset, batch_size=1, shuffle_idx=False)
     vocabs = data['vocabs']

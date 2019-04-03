@@ -11,7 +11,11 @@ from torch.utils.data import Dataset
 from collections import defaultdict, Counter
 import pickle
 
+import argparse
+
 from nltk.parse import CoreNLPParser
+
+from train import attachment_scoring
 
 UNK_TOKEN = '<unk>'
 ROOT_TOKEN = '<root>'
@@ -88,26 +92,100 @@ def build_dataset_ss(paranmt_file, x2i=None):
     return sents_list
 
 
-def sdp_data_loader(data, batch_size=1, shuffle_idx=False):
-
-    '''NOTE We pass the entirety of data_list as input to this function,
-    which seems to not really make use of the space-efficient pattern of
-    a generator. Should consider some kind of refactor here if time allows it.
+def get_cutoffs(data_sorted):
     '''
+        inputs:
+            data_sorted - list of np arrays (conllu-formatted sentences)
+
+        returns:
+            a dictionary, keys are sentence lengths, values are lists with 2 elements,
+            the first index in data_sorted of a sentence of that length and the 
+            (non-inclusive) final index
+    '''
+
+    l2c = defaultdict(list)
+    l_prev = data_sorted[0].shape[0]
+    length2cutoffs[l_prev].append(0)
+
+    for i, s in enumerate(data_sorted[1:]):
+        l = s.shape[0]
+        if l > l_prev:
+            l2c[l_prev].append(i+1)
+            l2c[l].append(i+1)
+        l_prev = l
+    l2c[l_max].append(len(data_sorted))
+
+    i2c = dict()
+
+    for c in length2cutoffs.values():
+        for i in range(c[0], c[1]):
+            i2c[i] = c
+
+    return i2c
+
+
+def get_paired_idx(idx, cutoffs):
+    paired_idx = []
+    # XXX This for loop is the main concern for me runtime-wise, since it must be
+    # executed once every epoch, or potentially more often depending on how many
+    # sentence similarity data samples there are
+    for i in idx:
+        c = cutoffs[i]
+        paired_idx.append(random.randrange(c[0], c[1]))
+
+    return paired_idx
+
+
+def get_scores(batch, paired):
+    '''
+        inputs:
+            batch -
+            paired -
+
+        outputs:
+            scores - a (b,1) tensor of 'scores' for the paired sentences, weights to be used in loss function
+    '''
+
+    _, scores = attachment_scoring(batch['head_targets'], batch['rel_targets'], 
+            paired['head_targets'], paired['rel_targets'], 
+            batch['sent_lens'], 
+            root_included=True,
+            keep_dim=True)
+
+    return scores # (b, 1)
+
+
+def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
     idx = list(range(len(data)))
+    data_sorted = sorted(data, key = lambda s : s.shape[0]) #XXX seems like I might as well sort in build_dataset???
+
+    if custom_task:
+        cutoffs = get_cutoffs(data_sorted)
+    
     while True:
         if shuffle_idx:
             shuffle(idx) # In-place shuffle
-        for chunk in idx_chunks(idx, batch_size):
-            batch = [data[i] for i in chunk]
-            yield prepare_batch_sdp(batch)
+
+        if custom_task:
+            paired_idx = get_paired_idx(idx, cutoffs)
+
+        for chunk, chunk_p in (idx_chunks(idx, batch_size), idx_chunks(paired_idx, batch_size)):
+            batch = [data_sorted[i] for i in chunk]
+            if custom_task:
+                paired = [data_sorted[i] for i in chunk_p]
+                prepared = prepare_batch_sdp(batch)
+                prepared_paired = prepare_batch_sdp(paired)
+                yield (prepared,
+                        prepared_paired, 
+                        get_scores(prepared, prepared_paired))
+            else yield prepare_batch_sdp(batch)
 
 
-def ss_data_loader(data, batch_size=None):
+def ss_data_loader(data, batch_size):
     '''
         inputs:
             data - the full Python list of pairs of numericalized sentences (np arrays)
-            b_size - batch size
+            batch_size - batch size
 
         yields:
             chunk - list of indices representing a minibatch
@@ -188,7 +266,11 @@ def prepare_batch_sdp(batch):
             heads[i,j] = int(s[j,2])
             rels[i,j] =  int(s[j,3])
 
-    return words, pos, sent_lens, heads, rels
+    return {'words': words, 
+            'pos' : pos, 
+            'sent_lens' : sent_lens, 
+            'heads' : heads, 
+            'rels' : rels}
 
 
 def prepare_batch_ss(batch):

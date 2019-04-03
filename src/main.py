@@ -57,6 +57,9 @@ if __name__ == '__main__':
     init_model = args.initmodel
     tmode = args.tmode
 
+    #if not args.semsize + args.semsize == args.hsize:
+    #   raise Exception
+
     d = datetime.datetime.today()
     log.info(f'New session: {d}.\n')
 
@@ -101,7 +104,7 @@ if __name__ == '__main__':
                 os.path.join(DATA_DIR, PARANMT_FILE), x2i)
                 #os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
         with open(data_ss_path, 'wb') as f:
-            pickle.dump((data_ss), f)
+            pickle.dump(data_ss, f)
 
     if load_data:
         log.info(f'Loading pickled data.')
@@ -143,8 +146,6 @@ if __name__ == '__main__':
         train.train(args, parser, data, weights_path=weights_path)
 
     else:
-        for k in data_brown.keys():
-            print(k)
         data = {'ptb_test': data_ptb['test'],
                 'ptb_dev': data_ptb['dev'],
                 'brown_cf' : data_brown['cf'],
@@ -152,3 +153,4 @@ if __name__ == '__main__':
 
         # Evaluate model
         eval.eval(args, parser, data)
+
