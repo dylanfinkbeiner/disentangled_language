@@ -1,15 +1,21 @@
-sentence.conllu
-debug.txt
-*.log
 __pycache__
+
+TODO
+
+# Folders
+/data
+/weights
+/config
+
+# File types
+.nfs*
+*.un~*
+*.config
+*.log
 *.pkl
 *.conllu
 *.tch
-TODO
-/data
-/weights
-conll17_ud_eval.py
-.nfs*
-*.un~*
-.data/*
-*.config
+
+# Misc
+sentence.conllu
+debug.txt
