@@ -504,6 +504,8 @@ def main():
                 "{:10.2f}".format(100 * evaluation[metric].aligned_accuracy) if evaluation[metric].aligned_accuracy is not None else ""
             ))
 
+    return evaluation
+
 if __name__ == "__main__":
     main()
 
