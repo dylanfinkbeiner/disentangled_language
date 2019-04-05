@@ -65,12 +65,10 @@ def eval(args, parser, data, exp_path_base=None):
     i2r = vocabs['i2x']['rel']
 
     for name, gold, sents_list in zip(names, golds, sents):
-        print('shit')
         dataset = data[name]
         data_loader = sdp_data_loader(dataset, batch_size=1, shuffle_idx=False)
         predicted = os.path.join(DATA_DIR, name)
         with open(predicted, 'w') as f:
-            print('dicks')
             parser.eval()
             with torch.no_grad():
                 for s in sents_list:
@@ -91,25 +89,28 @@ def eval(args, parser, data, exp_path_base=None):
 
                     f.write('\n')
 
-        gold_ud = load_conllu(gold)
-        predicted_ud = load_conllu(predicted)
+        with open(gold, 'r') as f:
+            gold_ud = load_conllu(f)
+        with open(predicted, 'r') as f:
+            predicted_ud = load_conllu(f)
         evaluation = evaluate(gold_ud, predicted_ud)
 
         with open(exp_path, 'a') as f:
-            info = ("Results for {name}:\n LAS : {:10.2f} | UAS : {:10.2f} \n".format(
-                100 * evaluation['UAS'].accuracy,
-                100 * evaluation['LAS'].accuracy,
+            info = ("Results for {}:\n LAS : {:10.2f} | UAS : {:10.2f} \n".format(
+                name,
+                100 * evaluation['UAS'].aligned_accuracy,
+                100 * evaluation['LAS'].aligned_accuracy,
             ))
             f.write(info)
 
-        print_results(evaluation)
+        print_results(evaluation, name)
 
 
-def print_results(evaluation):
-    print('cocks')
+def print_results(evaluation, name):
+    print(f'--------')
+    print("---------------Results for {name} dataset------------------")
+
     metrics = ["Tokens", "Sentences", "Words", "UPOS", "XPOS", "Feats", "AllTags", "Lemmas", "UAS", "LAS"]
-    if args.weights is not None:
-        metrics.append("WeightedLAS")
 
     print("Metrics    | Precision |    Recall |  F1 Score | AligndAcc")
     print("-----------+-----------+-----------+-----------+-----------")
@@ -121,6 +122,7 @@ def print_results(evaluation):
             100 * evaluation[metric].f1,
             "{:10.2f}".format(100 * evaluation[metric].aligned_accuracy) if evaluation[metric].aligned_accuracy is not None else ""
         ))
+    print("-----------+-----------+-----------+-----------+-----------")
 
 if __name__ == '__main__':
     eval(None, None, None, exp_path_base='')

@@ -6,6 +6,7 @@ TODO
 /data
 /weights
 /config
+/experiments
 
 # File types
 .nfs*

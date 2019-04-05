@@ -82,7 +82,7 @@ if __name__ == '__main__':
     if not os.path.isdir(day_dir):
         os.mkdir(day_dir)
 
-    exp_path_base = os.path.join(day_dir, f'{d:%H:%M}')
+    exp_path_base = os.path.join(day_dir, f'{d:%H%M}')
 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     log.info(f'Using device: {device}')
