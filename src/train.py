@@ -82,12 +82,13 @@ def train(args, parser, data, weights_path=None):
     if train_mode > 0:
         train_ss_loader = ss_data_loader(train_ss, batch_size=batch_size)
     dev_batch_size = batch_size
-    dev_loader = sdp_data_loader(dev, batch_size=dev_batch_size)
+    dev_loader = sdp_data_loader(dev, batch_size=dev_batch_size, shuffle_idx=False, custom_task=False)
 
     n_train_batches = ceil(len(train_sdp) / batch_size)
-    #n_megabatches = ceil(len(train_sdp) / (mega_size * batch_size))
-    n_megabatches = ceil(len(train_ss) / (mega_size * batch_size))
     n_dev_batches = ceil(len(dev) / dev_batch_size)
+    #n_megabatches = ceil(len(train_sdp) / (mega_size * batch_size))
+    if train_mode > 0:
+        n_megabatches = ceil(len(train_ss) / (mega_size * batch_size))
 
     opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
 
@@ -242,7 +243,7 @@ def train(args, parser, data, weights_path=None):
             log.info('Evaluation step begins.')
             print('Allocated: ', torch.cuda.memory_allocated(device))
             print('Cached: ', torch.cuda.memory_cached(device))
-            breakpoint()
+            #breakpoint()
             for b in range(n_dev_batches):
                 log.info(f'Eval batch {b+1}/{n_dev_batches}.')
                 with torch.no_grad():
@@ -262,12 +263,12 @@ def train(args, parser, data, weights_path=None):
                     dev_loss += loss_h.item() + loss_r.item()
 
                     UAS_, LAS_ = attachment_scoring(
-                            head_preds.cpu(),
-                            rel_preds,
-                            head_targets,
-                            rel_targets,
-                            sent_lens,
-                            root_included=True)
+                            head_preds=head_preds.cpu(),
+                            rel_preds=rel_preds,
+                            head_targets=head_targets,
+                            rel_targets=rel_targets,
+                            sent_lens=sent_lens,
+                            root_included=False)
                     UAS += UAS_
                     LAS += LAS_
 

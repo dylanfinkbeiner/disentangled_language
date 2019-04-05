@@ -275,8 +275,8 @@ def prepare_batch_sdp(batch):
     return {'words': words, 
             'pos' : pos, 
             'sent_lens' : sent_lens, 
-            'heads' : heads, 
-            'rels' : rels}
+            'head_targets' : heads, 
+            'rel_targets' : rels}
 
 
 def prepare_batch_ss(batch):

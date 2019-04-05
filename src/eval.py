@@ -44,7 +44,6 @@ def eval(args, parser, data):
     vocabs = data['vocabs']
     i2r = vocabs['i2x']['rel']
 
-    timestamp = str(datetime.datetime.now())
     predicted = os.path.join(DATA_DIR, name)
     with open(predicted, 'w') as f:
         parser.eval()
