@@ -54,7 +54,7 @@ def get_args():
     parser.add_argument('--margin', help='Margin in semantic similarity objective function.', type=float, default=0.4)
 
     # Train mode
-    parser.add_argument('-tm', '--trainingmode', help='Training mode setting.', type=int, default=0)
+    parser.add_argument('-tm', '--trainingmode', help='Training mode setting.', type=int, default=-1)
 
     # Overrides argument-level defaults
     parser.set_defaults(**defaults)

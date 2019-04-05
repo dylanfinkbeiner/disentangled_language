@@ -40,7 +40,7 @@ def eval(args, parser, data):
     print(f'In eval mode {mode}. Evaluating on {name} dataset.')
 
     dataset = data[name]
-    data_loader = sdp_data_loader(dataset, batch_size=1, shuffle_idx=False)
+    data_loader = sdp_data_loader(dataset, batch_size=1, shuffle_idx=False, custom_task=False)
     vocabs = data['vocabs']
     i2r = vocabs['i2x']['rel']
 
@@ -50,11 +50,12 @@ def eval(args, parser, data):
         parser.eval()
         with torch.no_grad():
             for s in sents_list:
-                words, pos, sent_len, _, _ = next(data_loader)
+                batch = next(data_loader)
+                sent_len = batch['sent_lens']
 
-                _, S_rel, head_preds = parser(words.to(device), pos.to(device), sent_len)
+                _, S_rel, head_preds = parser(batch['words'].to(device), batch['pos'].to(device), sent_len)
 
-                rel_preds = predict_relations(S_rel, sent_len)
+                rel_preds = predict_relations(S_rel)
                 rel_preds = rel_preds.view(-1)
                 rel_preds = [i2r[rel] for rel in rel_preds.numpy()]
 
