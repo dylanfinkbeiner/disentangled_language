@@ -47,12 +47,14 @@ def eval(args, parser, data, exp_path_base=None):
     # Evaluate on all datasets
     if not eval_flags:
         names = list(NAMES.values())
-        gold = list(GOLD.values())
+        golds = list(GOLD.values())
+        sents = [conllu_to_sents(g) for g in golds]
 
     else:
         for flag in eval_flags:
             names.append(NAMES[flag])
-            golds.append(GOLD[flag])
+            gold = GOLD[flag]
+            golds.append(gold)
             sents.append(conllu_to_sents(gold))
 
     print(f'Evaluating on datasets: {names}')
@@ -63,10 +65,12 @@ def eval(args, parser, data, exp_path_base=None):
     i2r = vocabs['i2x']['rel']
 
     for name, gold, sents_list in zip(names, golds, sents):
+        print('shit')
         dataset = data[name]
         data_loader = sdp_data_loader(dataset, batch_size=1, shuffle_idx=False)
         predicted = os.path.join(DATA_DIR, name)
         with open(predicted, 'w') as f:
+            print('dicks')
             parser.eval()
             with torch.no_grad():
                 for s in sents_list:
@@ -74,7 +78,7 @@ def eval(args, parser, data, exp_path_base=None):
                     sent_len = batch['sent_lens']
 
                     _, S_rel, head_preds = parser(batch['words'].to(device), batch['pos'].to(device), sent_len)
-                    rel_preds = predict_relations(S_rel, sent_len)
+                    rel_preds = predict_relations(S_rel)
                     rel_preds = rel_preds.view(-1)
                     rel_preds = [i2r[rel] for rel in rel_preds.numpy()]
 
@@ -102,6 +106,7 @@ def eval(args, parser, data, exp_path_base=None):
 
 
 def print_results(evaluation):
+    print('cocks')
     metrics = ["Tokens", "Sentences", "Words", "UPOS", "XPOS", "Feats", "AllTags", "Lemmas", "UAS", "LAS"]
     if args.weights is not None:
         metrics.append("WeightedLAS")
