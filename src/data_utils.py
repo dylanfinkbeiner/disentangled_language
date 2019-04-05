@@ -169,7 +169,7 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
         if custom_task:
             paired_idx = get_paired_idx(idx, cutoffs)
 
-        for chunk, chunk_p in (idx_chunks(idx, batch_size), idx_chunks(paired_idx, batch_size)):
+        for chunk, chunk_p in zip(idx_chunks(idx, batch_size), idx_chunks(paired_idx, batch_size)):
             batch = [data_sorted[i] for i in chunk]
             if custom_task:
                 paired = [data_sorted[i] for i in chunk_p]

@@ -16,7 +16,8 @@ import mst
 
 LOG_DIR = '../log/'
 LOG_PATH = os.path.join(LOG_DIR, 'parser.log')
-log = logging.getLogger(__name__)
+
+log = logging.getLogger('__parser__')
 file_handler = logging.FileHandler(LOG_PATH)
 stream_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(name)s:%(levelname)s:%(message)s')

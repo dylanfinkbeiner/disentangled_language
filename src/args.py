@@ -7,6 +7,8 @@ LOG_DIR = '../log'
 DATA_DIR = '../data'
 WEIGHTS_DIR = '../weights'
 CONFIG_DIR = '../config'
+EXPERIMENTS_DIR = '../experiments'
+
 if not os.path.isdir(LOG_DIR):
     os.mkdir(LOG_DIR)
 if not os.path.isdir(DATA_DIR):
@@ -15,6 +17,9 @@ if not os.path.isdir(WEIGHTS_DIR):
     os.mkdir(WEIGHTS_DIR)
 if not os.path.isdir(CONFIG_DIR):
     os.mkdir(CONFIG_DIR)
+if not os.path.isdir(EXPERIMENTS_DIR):
+    os.mkdir(EXPERIMENTS_DIR)
+
 
 def get_args():
     config_parser = ArgumentParser(add_help=False)
@@ -37,7 +42,7 @@ def get_args():
 
     # Evaluation options
     parser.add_argument('-e', action='store_true', dest='eval', default=False)
-    parser.add_argument('-em', help='Evaluation mode setting.', type=int, dest='evalmode', default=0)
+    parser.add_argument('-ef', help='Flags to determine which datasets to evaluate on.', nargs='*', type=int)
 
     parser.add_argument('-initdata', action='store_true', default=False)
     parser.add_argument('-initmodel', action='store_true', default=False)
@@ -61,12 +66,12 @@ def get_args():
     # Save configuration?
     parser.add_argument('-sc', help='Name of new file to save configuration to.', default='')
 
-
-    # Overrides argument-level defaults
+    # Warning: overrides argument-level defaults
     parser.set_defaults(**defaults)
 
     args = parser.parse_args(remaining_argv)
 
+    # Save configuration
     if args.sc:
         new_file_path = os.path.join(CONFIG_DIR, args.sc + '.cfg')
         if os.path.exists(new_file_path):
@@ -90,4 +95,4 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
     print('Epochs: ', args.epochs)
-    print("model ", args.model)
+    print("model ", args.ef)

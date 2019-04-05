@@ -27,6 +27,8 @@ import eval
 WEIGHTS_DIR = '../weights'
 LOG_DIR = '../log'
 DATA_DIR = '../data'
+CORPORA_DIR = '../experiments'
+
 CORPORA_DIR = '/corpora'
 DEP_DIR = f'{CORPORA_DIR}/wsj/dependencies'
 #BROWN_DIR = f'{CORPORA_DIR}/brown/dependencies'
@@ -52,16 +54,35 @@ stream_handler.setFormatter(formatter)
 log.addHandler(stream_handler)
 
 if __name__ == '__main__':
+    d = datetime.datetime.now()
+    log.info(f'New session: {d}\n')
+
     args = get_args()
     init_data = args.initdata
     init_model = args.initmodel
-    tmode = args.tmode
+    train_mode = args.trainingmode
 
-    #if not args.semsize + args.semsize == args.hsize:
-    #   raise Exception
+    if not args.semsize + args.synsize == args.hsize:
+        print(f'Error: {args.semsize} semantic units, \
+                {args.synsize} syntactic units, {args.hsize} hidden units')
+        raise Exception
 
-    d = datetime.datetime.today()
-    log.info(f'New session: {d}.\n')
+    # Build experiment file structure
+    exp_dir = os.path.join(EXPERIMENTS_DIR, args.model)
+    if not os.path.isdir(exp_dir):
+            os.mkdir(exp_dir)
+            os.mkdir(os.path.join(exp_dir, 'training'))
+            os.mkdir(os.path.join(exp_dir, 'evaluation'))
+
+    exp_type = 'evaluation' if args.eval else 'training'
+
+    #day = '_'.join(d.month, d.day, d.year)
+    day = f'{d:%m_%d_%Y}'
+    day_dir = os.path.join(exp_dir, exp_type, day)
+    if not os.path.isdir(day_dir):
+        os.mkdir(day_dir)
+
+    exp_path_base = os.path.join(day_dir, f'{d:%H:%M}')
 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     log.info(f'Using device: {device}')
@@ -72,9 +93,8 @@ if __name__ == '__main__':
     data_brown_path = os.path.join(DATA_DIR, 'data_brown.pkl')
     data_ss_path = os.path.join(DATA_DIR, 'data_ss.pkl')
 
-    #init_sdp = not os.path.exists(vocabs_path) or not os.path.exists(data_ptb_path) or not os.path.exists(data_brown_path) or init_data
-    init_sdp = False
-    #init_ss = (not os.path.exists(data_ss_path) or init_data) and tmode > 0
+    init_sdp = not os.path.exists(vocabs_path) or not os.path.exists(data_ptb_path) or not os.path.exists(data_brown_path) or init_data
+    #init_ss = (not os.path.exists(data_ss_path) or init_data) and train_mode > 0
     init_ss = False
     load_data = not init_sdp and not init_ss
 
@@ -110,7 +130,7 @@ if __name__ == '__main__':
         log.info(f'Loading pickled data.')
         with open(data_ptb_path, 'rb') as f:
             data_ptb, word_counts = pickle.load(f)
-        if tmode > 0:
+        if train_mode > 0:
             with open(data_ss_path, 'rb') as f:
                 data_ss = pickle.load(f)
         if args.eval:
@@ -140,10 +160,10 @@ if __name__ == '__main__':
         data = {'data_ptb' : data_ptb,
                 'vocabs' : vocabs,
                 'word_counts' : word_counts}
-        if tmode > 0:
+        if train_mode > 0:
             data['data_ss'] = data_ss
 
-        train.train(args, parser, data, weights_path=weights_path)
+        train.train(args, parser, data, weights_path=weights_path, exp_path=exp_path_base)
 
     else:
         data = {'ptb_test': data_ptb['test'],
@@ -152,5 +172,5 @@ if __name__ == '__main__':
                 'vocabs' : vocabs}
 
         # Evaluate model
-        eval.eval(args, parser, data)
+        eval.eval(args, parser, data, exp_path=exp_path_base)
 

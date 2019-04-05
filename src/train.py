@@ -23,7 +23,7 @@ DATA_DIR = '../data'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
 
-log = logging.getLogger(__name__)
+log = logging.getLogger('__train__')
 formatter = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
 log.setLevel(logging.DEBUG)
 
@@ -36,7 +36,7 @@ stream_handler.setFormatter(formatter)
 log.addHandler(stream_handler)
 
 
-def train(args, parser, data, weights_path=None):
+def train(args, parser, data, weights_path=None, exp_path_base=None):
     seed = args.seed
     model_name = args.model
     train_mode = args.tmode
@@ -44,6 +44,15 @@ def train(args, parser, data, weights_path=None):
     mega_size = args.M
     h_size = args.hsize
     n_epochs = args.epochs if train_mode != -1 else 1
+
+    if not exp_path_base:
+        print('Base of path to experiment documentation file missing.')
+        raise Exception
+
+    exp_path = '_'.join([exp_path_base, train_mode])
+    exp_file = open(exp_path, 'a')
+    exp_file.write('Training experiment for model : {model}')
+    exp_file
 
     log.info(f'Training model \"{model_name}\" for {n_epochs} epochs in training mode {train_mode}.')
     log.info(f'Weights will be saved to {weights_path}.')
@@ -94,8 +103,8 @@ def train(args, parser, data, weights_path=None):
     earlystop_counter = 0
     prev_best = 0
     log.info('Starting train loop.')
+    exp_file.write('Training results:')
     state = parser.state_dict() # For weight analysis
-
     try:
         for e in range(n_epochs):
             log.info(f'Entering epoch {e+1}/{n_epochs}.')
@@ -227,9 +236,6 @@ def train(args, parser, data, weights_path=None):
                                 print(p.grad.data.norm(2).item())
                             print('========================')
 
-                        print('Allocated: ', torch.cuda.memory_allocated(device))
-                        print('Cached: ', torch.cuda.memory_cached(device))
-                        print('End of minibatch')
                         opt.step()
 
             train_loss /= (num_steps if num_steps > 0 else -1)# Just dependency parsing loss
@@ -281,6 +287,7 @@ def train(args, parser, data, weights_path=None):
                     UAS: {:.3f}\t
                     LAS: {:.3f} '''.format(e, train_loss, dev_loss, UAS, LAS)
             log.info(update)
+            exp_file.write(update)
 
             # Early stopping heuristic from Jabberwocky paper
             if LAS > prev_best:
@@ -302,7 +309,9 @@ def train(args, parser, data, weights_path=None):
         response = input("Keyboard interruption: Would you like to save weights? [y/n]")
         if response.lower() == 'y':
             torch.save(parser.state_dict(), weights_path)
+            exp_file.close()
 
+    exp_file.close()
 
 def average_hiddens(hiddens, sent_lens, device):
     '''
