@@ -15,7 +15,7 @@ import argparse
 
 from nltk.parse import CoreNLPParser
 
-from train import attachment_scoring
+from utils import attachment_scoring
 
 UNK_TOKEN = '<unk>'
 ROOT_TOKEN = '<root>'
@@ -35,6 +35,10 @@ def build_ptb_dataset(conllu_files=[]):
             
     '''
     sents_list = []
+
+    if not conllu_files:
+        print(f'Empty list of filenames passed.')
+        raise Exception
 
     for f in conllu_files:
         sents_list.append(conllu_to_sents(f))
@@ -178,7 +182,10 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
                 yield (prepared,
                         prepared_paired, 
                         get_scores(prepared, prepared_paired))
-            else yield prepare_batch_sdp(batch)
+        else:
+            for chunk in idx_chunks(idx, batch_size):
+                batch = [data[i] for i in chunk]
+                yield prepare_batch_sdp(batch)
 
 
 def ss_data_loader(data, batch_size):

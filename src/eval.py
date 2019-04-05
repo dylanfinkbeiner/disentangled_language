@@ -75,7 +75,6 @@ def eval(args, parser, data, exp_path_base=None):
                     sent_len = batch['sent_lens']
 
                     _, S_rel, head_preds = parser(batch['words'].to(device), batch['pos'].to(device), sent_len)
-
                     rel_preds = predict_relations(S_rel, sent_len)
                     rel_preds = rel_preds.view(-1)
                     rel_preds = [i2r[rel] for rel in rel_preds.numpy()]
