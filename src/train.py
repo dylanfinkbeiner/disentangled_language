@@ -53,7 +53,6 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     exp_path = '_'.join([exp_path_base, train_mode])
     exp_file = open(exp_path, 'a')
     exp_file.write('Training experiment for model : {model}')
-    exp_file
 
     log.info(f'Training model \"{model_name}\" for {n_epochs} epochs in training mode {train_mode}.')
     log.info(f'Weights will be saved to {weights_path}.')
