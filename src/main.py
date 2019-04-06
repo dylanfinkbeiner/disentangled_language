@@ -27,7 +27,7 @@ import eval
 WEIGHTS_DIR = '../weights'
 LOG_DIR = '../log'
 DATA_DIR = '../data'
-CORPORA_DIR = '../experiments'
+EXPERIMENTS_DIR = '../experiments'
 
 CORPORA_DIR = '/corpora'
 DEP_DIR = f'{CORPORA_DIR}/wsj/dependencies'
@@ -82,7 +82,7 @@ if __name__ == '__main__':
     if not os.path.isdir(day_dir):
         os.mkdir(day_dir)
 
-    exp_path_base = os.path.join(day_dir, f'{d:%H:%M}')
+    exp_path_base = os.path.join(day_dir, f'{d:%H%M}')
 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     log.info(f'Using device: {device}')
@@ -130,7 +130,7 @@ if __name__ == '__main__':
                 #os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
         with open(data_ss_path, 'wb') as f:
             pickle.dump(data_ss, f)
-    elif tmode > 0:
+    elif train_mode > 0:
         log.info(f'Loading pickled sentence similarity data.')
         with open(data_ss_path, 'rb') as f:
             data_ss = pickle.load(f)
@@ -161,7 +161,7 @@ if __name__ == '__main__':
         if train_mode > 0:
             data['data_ss'] = data_ss
 
-        train.train(args, parser, data, weights_path=weights_path, exp_path=exp_path_base)
+        train.train(args, parser, data, weights_path=weights_path, exp_path_base=exp_path_base)
 
     else:
         data = {'ptb_test': data_ptb['test'],
@@ -170,5 +170,5 @@ if __name__ == '__main__':
                 'vocabs' : vocabs}
 
         # Evaluate model
-        eval.eval(args, parser, data, exp_path=exp_path_base)
+        eval.eval(args, parser, data, exp_path_base=exp_path_base)
 

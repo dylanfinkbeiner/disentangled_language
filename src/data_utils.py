@@ -173,9 +173,8 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
         if custom_task:
             paired_idx = get_paired_idx(idx, cutoffs)
 
-        for chunk, chunk_p in zip(idx_chunks(idx, batch_size), idx_chunks(paired_idx, batch_size)):
-            batch = [data_sorted[i] for i in chunk]
-            if custom_task:
+            for chunk, chunk_p in zip(idx_chunks(idx, batch_size), idx_chunks(paired_idx, batch_size)):
+                batch = [data_sorted[i] for i in chunk]
                 paired = [data_sorted[i] for i in chunk_p]
                 prepared = prepare_batch_sdp(batch)
                 prepared_paired = prepare_batch_sdp(paired)
@@ -276,8 +275,8 @@ def prepare_batch_sdp(batch):
     return {'words': words, 
             'pos' : pos, 
             'sent_lens' : sent_lens, 
-            'heads' : heads, 
-            'rels' : rels}
+            'head_targets' : heads, 
+            'rel_targets' : rels}
 
 
 def prepare_batch_ss(batch):

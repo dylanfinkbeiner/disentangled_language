@@ -1,6 +1,12 @@
 import torch
 
-def attachment_scoring(head_preds, rel_preds, head_targets, rel_targets, sent_lens, root_included=False, keep_dim=False):
+def attachment_scoring(head_preds=None, 
+        rel_preds=None, 
+        head_targets=None, 
+        rel_targets=None, 
+        sent_lens=None, 
+        root_included=False, 
+        keep_dim=False):
     '''
         input:
             head_preds::Tensor - Has shape (b, l), -1 padded
@@ -13,6 +19,7 @@ def attachment_scoring(head_preds, rel_preds, head_targets, rel_targets, sent_le
             UAS - average number of correct head predictions
             LAS - average number of correct relation predictions
     '''
+
     sent_lens = torch.Tensor(sent_lens).view(-1, 1)
     b, l = head_preds.shape
 

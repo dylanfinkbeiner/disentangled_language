@@ -42,7 +42,7 @@ def get_args():
 
     # Evaluation options
     parser.add_argument('-e', action='store_true', dest='eval', default=False)
-    parser.add_argument('-ef', help='Flags to determine which datasets to evaluate on.', nargs='*', type=int)
+    parser.add_argument('-ef', help='Flags to determine which datasets to evaluate on.', nargs='*', dest='evalflags', type=int)
 
     parser.add_argument('-initdata', action='store_true', default=False)
     parser.add_argument('-initmodel', action='store_true', default=False)

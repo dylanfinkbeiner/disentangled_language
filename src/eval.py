@@ -47,12 +47,14 @@ def eval(args, parser, data, exp_path_base=None):
     # Evaluate on all datasets
     if not eval_flags:
         names = list(NAMES.values())
-        gold = list(GOLD.values())
+        golds = list(GOLD.values())
+        sents = [conllu_to_sents(g) for g in golds]
 
     else:
         for flag in eval_flags:
             names.append(NAMES[flag])
-            golds.append(GOLD[flag])
+            gold = GOLD[flag]
+            golds.append(gold)
             sents.append(conllu_to_sents(gold))
 
     print(f'Evaluating on datasets: {names}')
@@ -65,7 +67,6 @@ def eval(args, parser, data, exp_path_base=None):
     for name, gold, sents_list in zip(names, golds, sents):
         dataset = data[name]
         data_loader = sdp_data_loader(dataset, batch_size=1, shuffle_idx=False)
-
         predicted = os.path.join(DATA_DIR, name)
         with open(predicted, 'w') as f:
             parser.eval()
@@ -75,7 +76,7 @@ def eval(args, parser, data, exp_path_base=None):
                     sent_len = batch['sent_lens']
 
                     _, S_rel, head_preds = parser(batch['words'].to(device), batch['pos'].to(device), sent_len)
-                    rel_preds = predict_relations(S_rel, sent_len)
+                    rel_preds = predict_relations(S_rel)
                     rel_preds = rel_preds.view(-1)
                     rel_preds = [i2r[rel] for rel in rel_preds.numpy()]
 
@@ -88,24 +89,28 @@ def eval(args, parser, data, exp_path_base=None):
 
                     f.write('\n')
 
-        gold_ud = load_conllu(gold)
-        predicted_ud = load_conllu(predicted)
+        with open(gold, 'r') as f:
+            gold_ud = load_conllu(f)
+        with open(predicted, 'r') as f:
+            predicted_ud = load_conllu(f)
         evaluation = evaluate(gold_ud, predicted_ud)
 
         with open(exp_path, 'a') as f:
-            info = ("Results for {name}:\n LAS : {:10.2f} | UAS : {:10.2f} \n".format(
-                100 * evaluation['UAS'].accuracy,
-                100 * evaluation['LAS'].accuracy,
+            info = ("Results for {}:\n LAS : {:10.2f} | UAS : {:10.2f} \n".format(
+                name,
+                100 * evaluation['UAS'].aligned_accuracy,
+                100 * evaluation['LAS'].aligned_accuracy,
             ))
             f.write(info)
 
-        print_results(evaluation)
+        print_results(evaluation, name)
 
 
-def print_results(evaluation):
+def print_results(evaluation, name):
+    print(f'--------')
+    print("---------------Results for {name} dataset------------------")
+
     metrics = ["Tokens", "Sentences", "Words", "UPOS", "XPOS", "Feats", "AllTags", "Lemmas", "UAS", "LAS"]
-    if args.weights is not None:
-        metrics.append("WeightedLAS")
 
     print("Metrics    | Precision |    Recall |  F1 Score | AligndAcc")
     print("-----------+-----------+-----------+-----------+-----------")
@@ -117,6 +122,7 @@ def print_results(evaluation):
             100 * evaluation[metric].f1,
             "{:10.2f}".format(100 * evaluation[metric].aligned_accuracy) if evaluation[metric].aligned_accuracy is not None else ""
         ))
+    print("-----------+-----------+-----------+-----------+-----------")
 
 if __name__ == '__main__':
     eval(None, None, None, exp_path_base='')
