@@ -444,7 +444,7 @@ def loss_sem_rep(h1, h2, hn, margin=0.4):
     return losses.sum()
 
 
-def loss_syn_rep(outputs_batch, outputs_paired, scores, syn_size=syn_size, h_size=h_size):
+def loss_syn_rep(outputs_batch, outputs_paired, scores, syn_size=None, h_size=None):
     '''
         inputs:
             outputs_batch - (b, 2*h_size) tensor
