@@ -65,27 +65,27 @@ def build_ptb_dataset(conllu_files=[]):
     dev_list = numericalize_sdp(dev_list, x2i)
     test_list = numericalize_sdp(test_list, x2i)
 
-    data_sdp = {
+    data = {
             'train': train_list,
             'dev': dev_list,
             'test': test_list
             }
     
-    return data_sdp, x2i, i2x, word_counts
+    return data, x2i, i2x, word_counts
 
-def build_brown_dataset(conllu_files, x2i=None):
-    data_brown = {}
+def build_sdp_dataset(conllu_files, x2i=None):
+    data = {}
 
     for f in conllu_files:
         name = os.path.splitext(f)[0].split('/')[-1].lower()
-        data_brown[name] = conllu_to_sents(f)
+        data[name] = conllu_to_sents(f)
 
     # Hideous
-    for name, f in data_brown.items():
+    for name, f in data.items():
         filtered, _ = filter_and_count([s[:, CONLLU_MASK] for s in f], filter_single=False)
-        data_brown[name] = numericalize_sdp(filtered, x2i)
+        data[name] = numericalize_sdp(filtered, x2i)
 
-    return data_brown
+    return data
     
 
 def build_dataset_ss(paranmt_file, x2i=None):

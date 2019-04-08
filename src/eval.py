@@ -16,9 +16,11 @@ WSJ_DIR = '/corpora/wsj/dependencies'
 #BROWN_DIR = '/corpora/brown/dependencies'
 BROWN_DIR = '../data/brown'
 DATA_DIR = '../data/'
+
 PTB_DEV = os.path.join(WSJ_DIR, 'treebank.conllu22')
 PTB_TEST = os.path.join(WSJ_DIR, 'treebank.conllu23')
 BROWN_CF = os.path.join(BROWN_DIR, 'cf.conllu')
+
 GOLD = {
         0 : PTB_DEV,
         1 : PTB_TEST,
@@ -38,31 +40,36 @@ def eval(args, parser, data, exp_path_base=None):
         print('Base of path to experiment documentation file missing.')
         raise Exception
 
-    eval_flags = args.evalflags
+    vocabs = data['vocabs']
+    i2r = vocabs['i2x']['rel']
 
     names = []
     golds = []
     sents = []
 
-    # Evaluate on all datasets
-    if not eval_flags:
-        names = list(NAMES.values())
-        golds = list(GOLD.values())
-        sents = [conllu_to_sents(g) for g in golds]
+    if args.e != None:
+        eval_flags = args.e
+        # Evaluate on all datasets
+        if not eval_flags:
+            eval_flags = list(range(len(GOLD)))
 
-    else:
         for flag in eval_flags:
             names.append(NAMES[flag])
             gold = GOLD[flag]
             golds.append(gold)
             sents.append(conllu_to_sents(gold))
+     else:
+         eval_file = args.ef
+         name = os.path.splitext(eval_file)[0].split('/')[-1].lower()
+         path = os.path.join(DATA_DIR, eval_file)
+         names = [name]
+         golds = [path]
+         sents = [conllu_to_sents(path)]
+         data[name] = build_sdp_dataset([path], x2i)[name]
 
     print(f'Evaluating on datasets: {names}')
 
     exp_path = '_'.join([exp_path_base] + names)
-    
-    vocabs = data['vocabs']
-    i2r = vocabs['i2x']['rel']
 
     for name, gold, sents_list in zip(names, golds, sents):
         dataset = data[name]
