@@ -49,7 +49,7 @@ def get_args():
 
     # Model hyperparameters
     parser.add_argument('-H', '--hsize', help='Size of LSTM hidden state.', dest='hsize', type=int, default=400)
-    parser.add_argument('--semsize', help='Number of units of hidden state dedicated to semantic content.', dest='semsize', type=int, default=200)
+    #parser.add_argument('--semsize', help='Number of units of hidden state dedicated to semantic content.', dest='semsize', type=int, default=200)
     parser.add_argument('--synsize', help='Number of units of hidden state dedicated to syntactic content.', dest='synsize', type=int, default=200)
 
     # Training hyperparameters

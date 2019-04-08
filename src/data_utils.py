@@ -150,9 +150,12 @@ def get_scores(batch, paired):
             scores - a (b,1) tensor of 'scores' for the paired sentences, weights to be used in loss function
     '''
 
-    _, scores = attachment_scoring(batch['head_targets'], batch['rel_targets'], 
-            paired['head_targets'], paired['rel_targets'], 
-            batch['sent_lens'], 
+    _, scores = attachment_scoring(
+            head_preds=batch['head_targets'], 
+            rel_preds=batch['rel_targets'], 
+            head_targets=paired['head_targets'], 
+            rel_targets=paired['rel_targets'], 
+            sent_lens=batch['sent_lens'], 
             root_included=True,
             keep_dim=True)
 
@@ -246,8 +249,8 @@ def prepare_batch_sdp(batch):
             words - 
             pos -
             sent_lens - list of lengths (INCLUDES ROOT TOKEN)
-            heads -
-            rels -
+            head_targets -
+            rel_targets -
     '''
 
     batch_size = len(batch)
@@ -257,8 +260,8 @@ def prepare_batch_sdp(batch):
 
     words = torch.zeros((batch_size, length_longest)).long()
     pos = torch.zeros((batch_size, length_longest)).long()
-    heads = torch.Tensor(batch_size, length_longest).fill_(-1).long()
-    rels = torch.Tensor(batch_size, length_longest).fill_(-1).long()
+    head_targets = torch.Tensor(batch_size, length_longest).fill_(-1).long()
+    rel_targets = torch.Tensor(batch_size, length_longest).fill_(-1).long()
 
     for i, s in enumerate(batch_sorted):
         for j, _ in enumerate(s):
@@ -269,14 +272,14 @@ def prepare_batch_sdp(batch):
             '''
             words[i,j] = int(s[j,0])
             pos[i,j] = int(s[j,1])
-            heads[i,j] = int(s[j,2])
-            rels[i,j] =  int(s[j,3])
+            head_targets[i,j] = int(s[j,2])
+            rel_targets[i,j] =  int(s[j,3])
 
     return {'words': words, 
             'pos' : pos, 
             'sent_lens' : sent_lens, 
-            'head_targets' : heads, 
-            'rel_targets' : rels}
+            'head_targets' : head_targets, 
+            'rel_targets' : rel_targets}
 
 
 def prepare_batch_ss(batch):
