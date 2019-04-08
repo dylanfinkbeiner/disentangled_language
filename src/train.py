@@ -44,6 +44,8 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     batch_size = args.batchsize
     mega_size = args.M
     h_size = args.hsize
+    syn_size = args.synsize
+    sem_size = h_size - syn_size
     n_epochs = args.epochs if train_mode != -1 else 1
 
     if not exp_path_base:
@@ -53,7 +55,6 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     exp_path = '_'.join([exp_path_base, str(train_mode)])
     exp_file = open(exp_path, 'a')
     exp_file.write('Training experiment for model : {model}')
-    exp_file
 
     log.info(f'Training model \"{model_name}\" for {n_epochs} epochs in training mode {train_mode}.')
     log.info(f'Weights will be saved to {weights_path}.')
@@ -70,7 +71,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     train_sdp = data_ptb['train']
     if train_mode > 0:
         train_ss = data['data_ss']
-        train_ss = train_ss[:1000] #XXX WHOA! THIS IS STUPID!
+        train_ss = train_ss[:1000] #XXX THIS IS STUPID! (but good for testing)
     dev = data_ptb['dev']
 
     w2i = x2i['word']
@@ -178,15 +179,17 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
                         elif train_mode == 2:
                             batch, paired, scores = next(train_sdp_loader)
+                            batch_lens = batch['sent_lens']
+                            paired_lens = paired['sent_lens']
 
-                            words_d_batch = word_dropout(batch['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=batch['sent_lens'])
-                            words_d_paired = word_dropout(paired['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=paired['sent_lens'])
+                            words_d_batch = word_dropout(batch['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=batch_lens)
+                            words_d_paired = word_dropout(paired['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=paired_lens)
 
-                            outputs_batch, _ = parser.BiLSTM(batch['words'].to(device), batch['pos'].to(device), batch['sent_lens'])
-                            outputs_paired, _ = parser.BiLSTM(paired['words'].to(device), paired['pos'].to(device), paired['sent_lens'])
+                            outputs_batch, _ = parser.BiLSTM(words_d_batch.to(device), batch['pos'].to(device), batch_lens)
+                            outputs_paired, _ = parser.BiLSTM(words_d_paired, paired['pos'].to(device), paired_lens)
 
-                            S_arc_batch, S_rel_batch, _ = parser.BiAffineAttention(outputs_batch.to(device), batch['sent_lens'])
-                            S_arc_paired, S_rel_paired, _ = parser.BiAffineAttention(outputs_paired.to(device), paired['sent_lens'])
+                            S_arc_batch, S_rel_batch, _ = parser.BiAffineAttention(outputs_batch.to(device), batch_lens)
+                            S_arc_paired, S_rel_paired, _ = parser.BiAffineAttention(outputs_paired.to(device), paired_lens)
 
                             loss_h_batch = loss_heads(S_arc_batch, batch['head_targets'])
                             loss_r_batch = loss_rels(S_rel_batch, batch['rel_targets'])
@@ -195,7 +198,14 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             loss_r_paired = loss_rels(S_rel_paired, paired['rel_targets'])
                             loss_paired = loss_h_paired + loss_r_paired
 
-                            loss = loss_batch + loss_paired + loss_syntactic_representation(outputs_batch, outputs_paired, scores)
+                            loss_syn_rep = loss_syn_rep(
+                                    average_hiddens(outputs_batch, batch_lens), 
+                                    average_hiddens(outputs_paired, paired_lens), 
+                                    scores, 
+                                    syn_size=syn_size,
+                                    h_size=h_size)
+
+                            loss = loss_batch + loss_paired + loss_syn_rep
 
                             train_loss +=  loss_h_batch.item() + loss_r_batch.item() + loss_h_paired.item() + loss_r_paired.item()
                             num_steps += 2
@@ -223,7 +233,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                         h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2)
                         hn, _ = parser.BiLSTM(wn.to(device), pn.to(device), sln)
 
-                        loss = loss_ss(
+                        loss = loss_sem_rep(
                                 average_hiddens(h1, sl1, device), 
                                 average_hiddens(h2, sl2, device),
                                 average_hiddens(hn, sln, device))
@@ -247,9 +257,6 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
             UAS = 0
             LAS = 0
             log.info('Evaluation step begins.')
-            print('Allocated: ', torch.cuda.memory_allocated(device))
-            print('Cached: ', torch.cuda.memory_cached(device))
-            #breakpoint()
             for b in range(n_dev_batches):
                 log.info(f'Eval batch {b+1}/{n_dev_batches}.')
                 with torch.no_grad():
@@ -259,7 +266,8 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     rel_targets = batch['rel_targets']
                     sent_lens = batch['sent_lens']
 
-                    S_arc, S_rel, head_preds = parser(batch['words'].to(device), 
+                    S_arc, S_rel, head_preds = parser(
+                            batch['words'].to(device), 
                             batch['pos'].to(device), 
                             sent_lens)
                     rel_preds = predict_relations(S_rel)
@@ -274,7 +282,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             head_targets=head_targets,
                             rel_targets=rel_targets,
                             sent_lens=sent_lens,
-                            root_included=False)
+                            include_root=True)
                     UAS += UAS_
                     LAS += LAS_
 
@@ -314,20 +322,21 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
     exp_file.close()
 
+
 def average_hiddens(hiddens, sent_lens, device):
     '''
         inputs:
-            hiddens - tensor w/ shape (b, l, 2*d) where d is LSTM hidden size
+            hiddens - tensor w/ shape (b, l, 2*h_size)
             sent_lens - list of sentence lengths
 
         outputs:
-            averaged_hiddens - 
+            averaged_hiddens -  # (b, 2*h_size) tensor
     '''
 
     #NOTE WE ARE ASSUMING PAD VALUES ARE 0 IN THIS SUM (NEED TO DOUBLE CHECK)
-    averaged_hiddens = hiddens.sum(dim=1)
+    averaged_hiddens = hiddens.sum(dim=1) # (b,l,2*h_size) -> (b,2*h_size)
 
-    sent_lens = torch.Tensor(sent_lens).view(-1, 1).float().to(device)  # Column vector
+    sent_lens = torch.Tensor(sent_lens).view(-1, 1).float().to(device) # (b, 1)
 
     averaged_hiddens /= sent_lens
 
@@ -426,7 +435,7 @@ def loss_rels(S_rel, rel_targets, pad_idx=-1):
     return F.cross_entropy(S_rel.permute(0,2,1).cpu(), rel_targets, ignore_index=pad_idx)
 
 
-def loss_ss(h1, h2, hn, margin=0.4):
+def loss_sem_rep(h1, h2, hn, margin=0.4):
     para_attract = F.cosine_similarity(h1, h2) # (b,2*d), (b,2*d) -> (b)
     neg_repel = F.cosine_similarity(h1, hn)
 
@@ -434,13 +443,34 @@ def loss_ss(h1, h2, hn, margin=0.4):
 
     return losses.sum()
 
-def loss_syntactic_representation(outputs_batch, outputs_paired, scores):
-    # Should try to push together syntactic representations
-    para_attract = F.cosine_similarity(outputs_batch[], outputs_paired[]) # (b,2*d), (b,2*d) -> (b)
 
-    losses = F.relu(margin - para_attract + neg_repel) # (b)
+def loss_syn_rep(outputs_batch, outputs_paired, scores, syn_size=syn_size, h_size=h_size):
+    '''
+        inputs:
+            outputs_batch - (b, 2*h_size) tensor
+            outputs_paired - (b, 2*h_size) tensor
+            scores - weights per sentence pair of batch, their LAS "similarity"
+            syn_size - size, in units, of syntactic representation component of hidden state
+
+        outputs:
+            losses, where loss for sentence pair (x,y) is 1-cos(x,y) * score(x,y)
+    '''
+    # All should be (b, l , syn_size) tensors
+    f_batch = outputs_batch[:,0:syn_size]
+    b_batch = outputs_batch[:,h_size:h_size + syn_size]
+    f_paired = outputs_paired[:,0:syn_size]
+    b_paired = outputs_paired[:,h_size:h_size + syn_size]
+
+    # (b)
+    f_loss = 1 - F.cosine_similarity(f_batch, f_paired, dim=-1)
+    b_loss = 1 - F.cosine_similarity(b_batch, b_paired, dim=-1)
+
+    losses = f_loss + b_loss
+
+    losses *= scores.view(-1)
 
     return losses.sum()
+    
 
 def predict_relations(S_rel):
     '''
