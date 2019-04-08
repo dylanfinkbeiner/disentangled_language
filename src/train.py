@@ -52,7 +52,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
         print('Base of path to experiment documentation file missing.')
         raise Exception
 
-    exp_path = '_'.join([exp_path_base, train_mode])
+    exp_path = '_'.join([exp_path_base, str(train_mode)])
     exp_file = open(exp_path, 'a')
     exp_file.write('Training experiment for model : {model}')
 
@@ -444,7 +444,7 @@ def loss_sem_rep(h1, h2, hn, margin=0.4):
     return losses.sum()
 
 
-def loss_syn_rep(outputs_batch, outputs_paired, scores, syn_size=syn_size, h_size=h_size):
+def loss_syn_rep(outputs_batch, outputs_paired, scores, syn_size=None, h_size=None):
     '''
         inputs:
             outputs_batch - (b, 2*h_size) tensor

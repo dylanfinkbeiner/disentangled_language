@@ -109,7 +109,8 @@ def get_cutoffs(data_sorted):
 
     l2c = defaultdict(list)
     l_prev = data_sorted[0].shape[0]
-    length2cutoffs[l_prev].append(0)
+    l_max = data_sorted[-1].shape[0]
+    l2c[l_prev].append(0)
 
     for i, s in enumerate(data_sorted[1:]):
         l = s.shape[0]
@@ -121,7 +122,7 @@ def get_cutoffs(data_sorted):
 
     i2c = dict()
 
-    for c in length2cutoffs.values():
+    for c in l2c.values():
         for i in range(c[0], c[1]):
             i2c[i] = c
 
