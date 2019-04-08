@@ -50,7 +50,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
         print('Base of path to experiment documentation file missing.')
         raise Exception
 
-    exp_path = '_'.join([exp_path_base, train_mode])
+    exp_path = '_'.join([exp_path_base, str(train_mode)])
     exp_file = open(exp_path, 'a')
     exp_file.write('Training experiment for model : {model}')
     exp_file
@@ -135,7 +135,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     opt.step()
                     num_steps += 1
 
-            elif train_mode == 1:
+            elif train_mode >= 1:
                 for m in range(n_megabatches):
                     megabatch = []
                     idxs = []
@@ -154,7 +154,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                         print(f'Epoch {e+1}/{n_epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}')
 
                         opt.zero_grad()
-                        if train_mode < 1:
+                        if train_mode == 1:
                             batch = next(train_sdp_loader)
                             head_targets = batch['head_targets']
                             rel_targets = batch['rel_targets']
@@ -176,7 +176,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             train_loss += loss_h.item() + loss_r.item()
                             num_steps += 1
 
-                        else:
+                        elif train_mode == 2:
                             batch, paired, scores = next(train_sdp_loader)
 
                             words_d_batch = word_dropout(batch['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=batch['sent_lens'])
@@ -185,8 +185,8 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             outputs_batch, _ = parser.BiLSTM(batch['words'].to(device), batch['pos'].to(device), batch['sent_lens'])
                             outputs_paired, _ = parser.BiLSTM(paired['words'].to(device), paired['pos'].to(device), paired['sent_lens'])
 
-                            S_arc_batch, S_rel_batch = parser.BiAffineAttention(outputs_batch.to(device), batch['sent_lens'])
-                            S_arc_paired, S_rel_paired = parser.BiAffineAttention(outputs_paired.to(device), paired['sent_lens'])
+                            S_arc_batch, S_rel_batch, _ = parser.BiAffineAttention(outputs_batch.to(device), batch['sent_lens'])
+                            S_arc_paired, S_rel_paired, _ = parser.BiAffineAttention(outputs_paired.to(device), paired['sent_lens'])
 
                             loss_h_batch = loss_heads(S_arc_batch, batch['head_targets'])
                             loss_r_batch = loss_rels(S_rel_batch, batch['rel_targets'])
@@ -435,7 +435,12 @@ def loss_ss(h1, h2, hn, margin=0.4):
     return losses.sum()
 
 def loss_syntactic_representation(outputs_batch, outputs_paired, scores):
-    ok
+    # Should try to push together syntactic representations
+    para_attract = F.cosine_similarity(outputs_batch[], outputs_paired[]) # (b,2*d), (b,2*d) -> (b)
+
+    losses = F.relu(margin - para_attract + neg_repel) # (b)
+
+    return losses.sum()
 
 def predict_relations(S_rel):
     '''
