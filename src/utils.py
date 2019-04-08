@@ -1,6 +1,7 @@
 import torch
 
-def attachment_scoring(head_preds=None, 
+def attachment_scoring(
+        head_preds=None, 
         rel_preds=None, 
         head_targets=None, 
         rel_targets=None, 
@@ -15,14 +16,13 @@ def attachment_scoring(head_preds=None,
             rel_targets - (-1)-padded (b, l) tensor of ints
             keep_dim - do not average across batch
 
-
         returns:
             UAS - average number of correct head predictions
             LAS - average number of correct relation predictions
     '''
 
     #sent_lens = torch.Tensor(sent_lens).view(-1, 1)
-    total = torch.Tensor(sent_lens).sum()
+    total_words = torch.Tensor(sent_lens).sum()
     b, l = head_preds.shape
 
     # This way we can be sure padding values do not contribute to score when we do .eq() calls
@@ -42,19 +42,23 @@ def attachment_scoring(head_preds=None,
 
     # We get per-sentence averages, then average across the batch (OLD COMMENT)
     #UAS = correct_heads.sum(1, True) # (b,l) -> (b,1)
-    UAS = correct_heads.sum() # (b,l) -> (1)
-    UAS = UAS if include_root else UAS - 1
+    UAS_correct = correct_heads.sum() # (b,l) -> (1)
+    UAS_correct = UAS_correct if include_root else UAS_correct - 1
     #UAS /= (sent_lens-1 if include_root else sent_lens)
-    UAS /= (total if include_root else total - 1)
-    if not keep_dim:
-        UAS = UAS.sum() / b
+    UAS = UAS_correct / (total_words if include_root else total_words - 1)
+    #if not keep_dim:
+    #    UAS = UAS.sum() / b
 
     #LAS = (correct_heads * correct_rels).sum(1, True)
-    LAS = (correct_heads * correct_rels).sum()
-    LAS = LAS if include_root else LAS - 1
+    LAS_correct = (correct_heads * correct_rels).sum()
+    LAS_correct = LAS_correct if include_root else LAS_correct - 1
     #LAS /= (sent_lens - 1 if include_root else sent_lens)
-    LAS /= (total if include_root else total - 1)
-    if not keep_dim:
-        LAS = LAS.sum() / b
+    LAS = LAS_correct / (total_words if include_root else total_words - 1)
+    #if not keep_dim:
+    #    LAS = LAS.sum() / b
 
-    return UAS, LAS
+    return {'UAS': UAS,
+            'LAS': LAS, 
+            'total_words' : total, 
+            'UAS_correct' : UAS_correct,
+            'LAS_correct' : LAS_correct}

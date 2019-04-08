@@ -256,6 +256,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
             dev_loss = 0
             UAS = 0
             LAS = 0
+            total = 0
             log.info('Evaluation step begins.')
             for b in range(n_dev_batches):
                 log.info(f'Eval batch {b+1}/{n_dev_batches}.')
@@ -276,7 +277,8 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     loss_r = loss_rels(S_rel, rel_targets)
                     dev_loss += loss_h.item() + loss_r.item()
 
-                    UAS_, LAS_ = attachment_scoring(
+                    #UAS_, LAS_ = attachment_scoring(
+                    _, _, total_, UAS_, LAS_ = attachment_scoring(
                             head_preds=head_preds.cpu(),
                             rel_preds=rel_preds,
                             head_targets=head_targets,
@@ -285,15 +287,18 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             include_root=True)
                     UAS += UAS_
                     LAS += LAS_
+                    total += total_
 
             dev_loss /= n_dev_batches
-            UAS /= n_dev_batches
-            LAS /= n_dev_batches
+            #UAS /= n_dev_batches
+            #LAS /= n_dev_batches
+            UAS /= total
+            LAS /= total
 
-            update = '''Epoch: {:}\t
-                    Train Loss: {:.3f}\t
-                    Dev Loss: {:.3f}\t
-                    UAS: {:.3f}\t
+            update = '''Epoch: {:}
+                    Train Loss: {:.3f}
+                    Dev Loss: {:.3f}
+                    UAS: {:.3f}
                     LAS: {:.3f} '''.format(e, train_loss, dev_loss, UAS, LAS)
             log.info(update)
             exp_file.write(update)
