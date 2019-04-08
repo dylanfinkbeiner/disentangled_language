@@ -18,7 +18,7 @@ from scipy.spatial.distance import pdist, squareform
 from args import get_args
 from parser import BiaffineParser
 from data_utils import build_ptb_dataset
-from data_utils import build_brown_dataset
+from data_utils import build_sdp_dataset
 from data_utils import build_dataset_ss
 
 import train
@@ -61,6 +61,7 @@ if __name__ == '__main__':
     init_data = args.initdata
     init_model = args.initmodel
     train_mode = args.trainingmode
+    evaluating = args.e or args.ef
 
     #if not args.semsize + args.synsize == args.hsize:
     #    print(f'Error: {args.semsize} semantic units, \
@@ -74,7 +75,7 @@ if __name__ == '__main__':
             os.mkdir(os.path.join(exp_dir, 'training'))
             os.mkdir(os.path.join(exp_dir, 'evaluation'))
 
-    exp_type = 'evaluation' if args.eval else 'training'
+    exp_type = 'evaluation' if evaluating else 'training'
 
     #day = '_'.join(d.month, d.day, d.year)
     day = f'{d:%m_%d_%Y}'
@@ -105,7 +106,7 @@ if __name__ == '__main__':
 
         data_ptb, x2i, i2x, word_counts = build_ptb_dataset(ptb_conllus)
 
-        data_brown = build_brown_dataset(brown_conllus, x2i=x2i)
+        data_brown = build_sdp_dataset(brown_conllus, x2i=x2i)
 
         with open(vocabs_path, 'wb') as f:
             pickle.dump((x2i, i2x), f)
@@ -119,7 +120,7 @@ if __name__ == '__main__':
             data_ptb, word_counts = pickle.load(f)
         with open(vocabs_path, 'rb') as f:
             x2i, i2x = pickle.load(f)
-        if args.eval:
+        if evaluating:
             with open(data_brown_path, 'rb') as f:
                 data_brown = pickle.load(f)
 
@@ -154,7 +155,7 @@ if __name__ == '__main__':
     else:
         log.info(f'Model will have randomly initialized parameters.')
 
-    if not args.eval:
+    if not evaluating:
         data = {'data_ptb' : data_ptb,
                 'vocabs' : vocabs,
                 'word_counts' : word_counts}
