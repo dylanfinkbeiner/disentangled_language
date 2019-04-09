@@ -59,6 +59,6 @@ def attachment_scoring(
 
     return {'UAS': UAS,
             'LAS': LAS, 
-            'total_words' : total, 
+            'total_words' : total_words, 
             'UAS_correct' : UAS_correct,
             'LAS_correct' : LAS_correct}

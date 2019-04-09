@@ -81,8 +81,9 @@ def build_sdp_dataset(conllu_files, x2i=None):
         data[name] = conllu_to_sents(f)
 
     # Hideous
-    for name, f in data.items():
-        filtered, _ = filter_and_count([s[:, CONLLU_MASK] for s in f], filter_single=False)
+    for name, sents in data.items():
+        breakpoint()
+        filtered, _ = filter_and_count([s[:, CONLLU_MASK] for s in sents], filter_single=False)
         data[name] = numericalize_sdp(filtered, x2i)
 
     return data
@@ -151,16 +152,16 @@ def get_scores(batch, paired):
             scores - a (b,1) tensor of 'scores' for the paired sentences, weights to be used in loss function
     '''
 
-    _, scores = attachment_scoring(
+    results = attachment_scoring(
             head_preds=batch['head_targets'], 
             rel_preds=batch['rel_targets'], 
             head_targets=paired['head_targets'], 
             rel_targets=paired['rel_targets'], 
             sent_lens=batch['sent_lens'], 
-            root_included=True,
+            include_root=True,
             keep_dim=True)
 
-    return scores # (b, 1)
+    return results['LAS'] # (b, 1)
 
 
 def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
@@ -327,6 +328,9 @@ def conllu_to_sents(f: str):
 
     with open(f, 'r') as conllu_file:
         lines = conllu_file.readlines()
+
+    while(lines[0] == '\n'):
+        lines.pop(0)
 
     split_points = [idx for idx, line in enumerate(lines) if line == '\n']
 

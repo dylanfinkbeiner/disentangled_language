@@ -10,9 +10,11 @@ from conll17_ud_eval import evaluate, load_conllu
 
 from train import predict_relations
 
-from data_utils import conllu_to_sents, sdp_data_loader
+from data_utils import conllu_to_sents, sdp_data_loader, build_sdp_dataset
 
-WSJ_DIR = '/corpora/wsj/dependencies'
+#CORPORA_DIR = '/corpora'
+CORPORA_DIR = '/home/AD/dfinkbei/corpora'
+WSJ_DIR = os.path.join(CORPORA_DIR, 'wsj/dependencies')
 #BROWN_DIR = '/corpora/brown/dependencies'
 BROWN_DIR = '../data/brown'
 DATA_DIR = '../data/'
@@ -47,7 +49,7 @@ def eval(args, parser, data, exp_path_base=None):
     golds = []
     sents = []
 
-    if args.e != None:
+    if not args.ef:
         eval_flags = args.e
         # Evaluate on all datasets
         if not eval_flags:
@@ -58,14 +60,14 @@ def eval(args, parser, data, exp_path_base=None):
             gold = GOLD[flag]
             golds.append(gold)
             sents.append(conllu_to_sents(gold))
-     else:
-         eval_file = args.ef
-         name = os.path.splitext(eval_file)[0].split('/')[-1].lower()
-         path = os.path.join(DATA_DIR, eval_file)
-         names = [name]
-         golds = [path]
-         sents = [conllu_to_sents(path)]
-         data[name] = build_sdp_dataset([path], x2i)[name]
+    else:
+        eval_file = args.ef
+        name = os.path.splitext(eval_file)[0].split('/')[-1].lower()
+        path = os.path.join(DATA_DIR, eval_file)
+        names = [name]
+        golds = [path]
+        sents = [conllu_to_sents(path)]
+        data[name] = build_sdp_dataset([path], vocabs['x2i'])[name]
 
     print(f'Evaluating on datasets: {names}')
 

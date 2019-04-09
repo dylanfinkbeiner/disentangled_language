@@ -43,8 +43,8 @@ def get_args():
     # Evaluation options
     #parser.add_argument('-e', action='store_true', dest='eval', default=False)
     evalgroup = parser.add_mutually_exclusive_group()
-    evalgroup.add_argument('-e', help='Evaluate, and provide flags for datasets to evaluate on.', nargs='*', type=int, default=None)
-    evalgroup.add_argument('-ef', help='Evaluate, and provide filename to evaluate on.', default=None)
+    evalgroup.add_argument('-e', help='Evaluate, and provide flags for datasets to evaluate on.', nargs='*', type=int)
+    evalgroup.add_argument('-ef', help='Evaluate, and provide filename to evaluate on.')
 
     parser.add_argument('-initdata', action='store_true', default=False)
     parser.add_argument('-initmodel', action='store_true', default=False)

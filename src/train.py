@@ -71,7 +71,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     train_sdp = data_ptb['train']
     if train_mode > 0:
         train_ss = data['data_ss']
-        train_ss = train_ss[:1000] #XXX THIS IS STUPID! (but good for testing)
+        train_ss = train_ss[:len(train_sdp)] #XXX THIS IS STUPID! (but good for testing)
     dev = data_ptb['dev']
 
     w2i = x2i['word']
@@ -107,6 +107,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     log.info('Starting train loop.')
     exp_file.write('Training results:')
     state = parser.state_dict() # For weight analysis
+    grad_print = 1
     try:
         for e in range(n_epochs):
             log.info(f'Entering epoch {e+1}/{n_epochs}.')
@@ -186,7 +187,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             words_d_paired = word_dropout(paired['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=paired_lens)
 
                             outputs_batch, _ = parser.BiLSTM(words_d_batch.to(device), batch['pos'].to(device), batch_lens)
-                            outputs_paired, _ = parser.BiLSTM(words_d_paired, paired['pos'].to(device), paired_lens)
+                            outputs_paired, _ = parser.BiLSTM(words_d_paired.to(device), paired['pos'].to(device), paired_lens)
 
                             S_arc_batch, S_rel_batch, _ = parser.BiAffineAttention(outputs_batch.to(device), batch_lens)
                             S_arc_paired, S_rel_paired, _ = parser.BiAffineAttention(outputs_paired.to(device), paired_lens)
@@ -198,14 +199,14 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             loss_r_paired = loss_rels(S_rel_paired, paired['rel_targets'])
                             loss_paired = loss_h_paired + loss_r_paired
 
-                            loss_syn_rep = loss_syn_rep(
-                                    average_hiddens(outputs_batch, batch_lens), 
-                                    average_hiddens(outputs_paired, paired_lens), 
-                                    scores, 
+                            loss_rep = loss_syn_rep(
+                                    average_hiddens(outputs_batch, batch_lens, device), 
+                                    average_hiddens(outputs_paired, paired_lens, device), 
+                                    scores.to(device), 
                                     syn_size=syn_size,
                                     h_size=h_size)
 
-                            loss = loss_batch + loss_paired + loss_syn_rep
+                            loss = loss_batch.to(device) + loss_paired.to(device) + loss_rep
 
                             train_loss +=  loss_h_batch.item() + loss_r_batch.item() + loss_h_paired.item() + loss_r_paired.item()
                             num_steps += 2
@@ -278,16 +279,16 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     dev_loss += loss_h.item() + loss_r.item()
 
                     #UAS_, LAS_ = attachment_scoring(
-                    _, _, total_, UAS_, LAS_ = attachment_scoring(
+                    results = attachment_scoring(
                             head_preds=head_preds.cpu(),
                             rel_preds=rel_preds,
                             head_targets=head_targets,
                             rel_targets=rel_targets,
                             sent_lens=sent_lens,
                             include_root=True)
-                    UAS += UAS_
-                    LAS += LAS_
-                    total += total_
+                    UAS += results['UAS_correct']
+                    LAS += results['LAS_correct']
+                    total += results['total_words']
 
             dev_loss /= n_dev_batches
             #UAS /= n_dev_batches
