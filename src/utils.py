@@ -22,7 +22,7 @@ def attachment_scoring(
     '''
 
     #sent_lens = torch.Tensor(sent_lens).view(-1, 1)
-    total_words = torch.Tensor(sent_lens).sum()
+    total_words = sent_lens.sum().float()
     b, l = head_preds.shape
 
     # This way we can be sure padding values do not contribute to score when we do .eq() calls

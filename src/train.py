@@ -54,7 +54,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
     exp_path = '_'.join([exp_path_base, str(train_mode)])
     exp_file = open(exp_path, 'a')
-    exp_file.write(f'Training experiment for model : {model}')
+    exp_file.write(f'Training experiment for model : {model_name}')
 
     log.info(f'Training model \"{model_name}\" for {n_epochs} epochs in training mode {train_mode}.')
     log.info(f'Weights will be saved to {weights_path}.')
@@ -107,7 +107,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     log.info('Starting train loop.')
     exp_file.write('Training results:')
     state = parser.state_dict() # For weight analysis
-    grad_print = 1
+    grad_print = 10
     try:
         for e in range(n_epochs):
             log.info(f'Entering epoch {e+1}/{n_epochs}.')
@@ -160,7 +160,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             batch = next(train_sdp_loader)
                             head_targets = batch['head_targets']
                             rel_targets = batch['rel_targets']
-                            sent_lens = batch['sent_lens']
+                            sent_lens = batch['sent_lens'].to(device)
                             words_d = word_dropout(batch['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
 
                             outputs, _ = parser.BiLSTM(batch['words'].to(device), batch['pos'].to(device), sent_lens)
@@ -180,8 +180,8 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
                         elif train_mode == 2:
                             batch, paired, scores = next(train_sdp_loader)
-                            batch_lens = batch['sent_lens']
-                            paired_lens = paired['sent_lens']
+                            batch_lens = batch['sent_lens'].to(device)
+                            paired_lens = paired['sent_lens'].to(device)
 
                             words_d_batch = word_dropout(batch['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=batch_lens)
                             words_d_paired = word_dropout(paired['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=paired_lens)
@@ -200,8 +200,8 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             loss_paired = loss_h_paired + loss_r_paired
 
                             loss_rep = loss_syn_rep(
-                                    average_hiddens(outputs_batch, batch_lens.to(device)),
-                                    average_hiddens(outputs_paired, paired_lens.to(device)), 
+                                    average_hiddens(outputs_batch, batch_lens),
+                                    average_hiddens(outputs_paired, paired_lens),
                                     scores.to(device), 
                                     syn_size=syn_size,
                                     h_size=h_size)
@@ -209,17 +209,17 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             loss = loss_batch.to(device) + loss_paired.to(device) + loss_rep
 
                             train_loss += loss.item()
-                            num_steps += 2
+                            num_steps += 1
                             
 
                         loss.backward()
                         if x % grad_print == 0:
-                            print('========================')
-                            print(f'Epoch {e+1}/{n_epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}')
-                            print('Gradients after PARSING step:')
-                            for p in list(parser.BiLSTM.parameters()):
-                                print(p.grad.data.norm(2).item())
-                            print('========================')
+                            gradient_update = '\n'.join([ '========================',
+                            f'Epoch {e+1}/{n_epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}',
+                            'Gradients after SENTENCE SIMILARITY step:'] +
+                            [str(p.grad.data.norm(2).item()) for p in list(parser.BiLSTM.parameters())])
+                            log.info(gradient_update)
+                            exp_file.write(gradient_update)
 
                         opt.step()
 
@@ -230,12 +230,12 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                         w2, p2, sl2 = prepare_batch_ss([s2[i] for i in idxs[x]])
                         wn, pn, sln = prepare_batch_ss([negs[i] for i in idxs[x]])
 
-                        h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1)
-                        h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2)
-                        hn, _ = parser.BiLSTM(wn.to(device), pn.to(device), sln)
+                        h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1.to(device))
+                        h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2.to(device))
+                        hn, _ = parser.BiLSTM(wn.to(device), pn.to(device), sln.to(device))
 
                         loss = loss_sem_rep(
-                                average_hiddens(h1, sl1.to(device))
+                                average_hiddens(h1, sl1.to(device)),
                                 average_hiddens(h2, sl2.to(device)),
                                 average_hiddens(hn, sln.to(device)),
                                 syn_size=syn_size,
@@ -243,12 +243,12 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
                         loss.backward()
                         if x % grad_print == 0:
-                            print('========================')
-                            print(f'Epoch {e+1}/{n_epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}')
-                            print('Gradients after SENTENCE SIMILARITY step:')
-                            for p in list(parser.BiLSTM.parameters()):
-                                print(p.grad.data.norm(2).item())
-                            print('========================')
+                            gradient_update = '\n'.join([ '========================',
+                            f'Epoch {e+1}/{n_epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}',
+                            'Gradients after SENTENCE SIMILARITY step:'] +
+                            [str(p.grad.data.norm(2).item()) for p in list(parser.BiLSTM.parameters())])
+                            log.info(gradient_update)
+                            exp_file.write(gradient_update)
 
                         opt.step()
 
@@ -267,7 +267,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     batch = next(dev_loader)
                     head_targets = batch['head_targets']
                     rel_targets = batch['rel_targets']
-                    sent_lens = batch['sent_lens']
+                    sent_lens = batch['sent_lens'].to(device)
 
                     S_arc, S_rel, head_preds = parser(
                             batch['words'].to(device), 
@@ -325,7 +325,8 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
         response = input("Keyboard interruption: Would you like to save weights? [y/n]")
         if response.lower() == 'y':
             torch.save(parser.state_dict(), weights_path)
-            exp_file.close()
+        exp_file.write(f'\n\nExperiment halted by keyboard interrupt. Weights saved : {response.lower()}')
+        exp_file.close()
 
     exp_file.close()
 
@@ -333,17 +334,18 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 def average_hiddens(hiddens, sent_lens):
     '''
         inputs:
-            hiddens - tensor w/ shape (b, l, 2*h_size)
-            sent_lens - list of sentence lengths
+            hiddens - tensor w/ shape (b, l, d)
+            sent_lens - 1-D (b) tensor of sentence lengths
 
         outputs:
-            averaged_hiddens -  # (b, 2*h_size) tensor
+            averaged_hiddens -  (b, d) tensor
     '''
 
     #NOTE WE ARE ASSUMING PAD VALUES ARE 0 IN THIS SUM (NEED TO DOUBLE CHECK)
     averaged_hiddens = hiddens.sum(dim=1) # (b,l,2*h_size) -> (b,2*h_size)
 
-    sent_lens = torch.Tensor(sent_lens).view(-1, 1).float() # (b, 1)
+    d = sent_lens.device
+    sent_lens = sent_lens.view(-1, 1).float() # (b, 1)
 
     averaged_hiddens /= sent_lens
 
@@ -373,9 +375,10 @@ def get_triplets(megabatch, minibatch_size, parser, device):
     megabatch_of_reps = [] # (megabatch_size, )
     for m in minibatches:
         words, pos, sent_lens = prepare_batch_ss(m)
+        sent_lens = sent_lens.to(device)
 
         m_reps, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
-        megabatch_of_reps.append(average_hiddens(m_reps, sent_lens, device))
+        megabatch_of_reps.append(average_hiddens(m_reps, sent_lens))
 
     megabatch_of_reps = torch.cat(megabatch_of_reps)
 
@@ -492,7 +495,7 @@ def loss_syn_rep(outputs_batch, outputs_paired, scores, syn_size=None, h_size=No
     #f_loss = 1 - F.cosine_similarity(f_batch, f_paired, dim=-1)
     #b_loss = 1 - F.cosine_similarity(b_batch, b_paired, dim=-1)
 
-    losses = 1 - F.cosine_similarity(syn_batch, syn_paired, dim=-1) 
+    losses = 1 - F.cosine_similarity(syn_batch, syn_paired, dim=-1)
 
     #losses = f_loss + b_loss
 

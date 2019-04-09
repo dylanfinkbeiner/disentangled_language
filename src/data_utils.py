@@ -257,7 +257,7 @@ def prepare_batch_sdp(batch):
 
     batch_size = len(batch)
     batch_sorted = sorted(batch, key = lambda s: s.shape[0], reverse=True)
-    sent_lens = [s.shape[0] for s in batch_sorted] # Keep in mind, these lengths include ROOT token in each sentence
+    sent_lens = torch.LongTensor([s.shape[0] for s in batch_sorted]) # Keep in mind, these lengths include ROOT token in each sentence
     length_longest = sent_lens[0]
 
     words = torch.zeros((batch_size, length_longest)).long()
@@ -297,7 +297,7 @@ def prepare_batch_ss(batch):
 
     batch_size = len(batch)
 
-    sent_lens = [s.shape[0] for s in batch]
+    sent_lens = torch.LongTensor([s.shape[0] for s in batch])
     length_longest = max(sent_lens)
 
     words = torch.zeros((batch_size, length_longest)).long()
