@@ -64,11 +64,6 @@ if __name__ == '__main__':
     train_mode = args.trainingmode
     evaluating = args.e != None or args.ef != None
 
-    #if not args.semsize + args.synsize == args.hsize:
-    #    print(f'Error: {args.semsize} semantic units, \
-    #            {args.synsize} syntactic units, {args.hsize} hidden units')
-    #    raise Exception
-
     # Build experiment file structure
     exp_dir = os.path.join(EXPERIMENTS_DIR, args.model)
     if not os.path.isdir(exp_dir):
