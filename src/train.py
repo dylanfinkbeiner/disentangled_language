@@ -54,7 +54,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
     exp_path = '_'.join([exp_path_base, str(train_mode)])
     exp_file = open(exp_path, 'a')
-    exp_file.write('Training experiment for model : {model}')
+    exp_file.write(f'Training experiment for model : {model}')
 
     log.info(f'Training model \"{model_name}\" for {n_epochs} epochs in training mode {train_mode}.')
     log.info(f'Weights will be saved to {weights_path}.')
@@ -234,9 +234,11 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                         hn, _ = parser.BiLSTM(wn.to(device), pn.to(device), sln)
 
                         loss = loss_sem_rep(
-                                average_hiddens(h1, sl1, device), 
-                                average_hiddens(h2, sl2, device),
-                                average_hiddens(hn, sln, device))
+                                average_hiddens(h1, sl1.to(device))
+                                average_hiddens(h2, sl2.to(device)),
+                                average_hiddens(hn, sln.to(device)),
+                                syn_size=syn_size,
+                                h_size=h_size)
 
                         loss.backward()
                         if x % grad_print == 0:
@@ -323,7 +325,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     exp_file.close()
 
 
-def average_hiddens(hiddens, sent_lens, device):
+def average_hiddens(hiddens, sent_lens):
     '''
         inputs:
             hiddens - tensor w/ shape (b, l, 2*h_size)
@@ -336,7 +338,7 @@ def average_hiddens(hiddens, sent_lens, device):
     #NOTE WE ARE ASSUMING PAD VALUES ARE 0 IN THIS SUM (NEED TO DOUBLE CHECK)
     averaged_hiddens = hiddens.sum(dim=1) # (b,l,2*h_size) -> (b,2*h_size)
 
-    sent_lens = torch.Tensor(sent_lens).view(-1, 1).float().to(device) # (b, 1)
+    sent_lens = torch.Tensor(sent_lens).view(-1, 1).float() # (b, 1)
 
     averaged_hiddens /= sent_lens
 
@@ -435,9 +437,12 @@ def loss_rels(S_rel, rel_targets, pad_idx=-1):
     return F.cross_entropy(S_rel.permute(0,2,1).cpu(), rel_targets, ignore_index=pad_idx)
 
 
-def loss_sem_rep(h1, h2, hn, margin=0.4):
-    para_attract = F.cosine_similarity(h1, h2) # (b,2*d), (b,2*d) -> (b)
-    neg_repel = F.cosine_similarity(h1, hn)
+def loss_sem_rep(h1, h2, hn, margin=0.4, syn_size=None, h_size=None):
+    f_para_attract = F.cosine_similarity(h1[:,syn_size:h_size], h2[:,syn_size:h_size]) # (b,2*d), (b,2*d) -> (b)
+    b_para_attract = F.cosine_similarity(h1[:,h_size+syn_size:], h2[:,h_size+syn_size:]) # (b,2*d), (b,2*d) -> (b)
+
+    f_neg_repel = F.cosine_similarity(h1[:,syn_size:h_size], hn[:,syn_size:h_size])
+    b_neg_repel = F.cosine_similarity(h1[:,h_size+syn_size:], hn[:,h_size+syn_size:])
 
     losses = F.relu(margin - para_attract + neg_repel) # (b)
 
@@ -457,9 +462,9 @@ def loss_syn_rep(outputs_batch, outputs_paired, scores, syn_size=None, h_size=No
     '''
     # All should be (b, l , syn_size) tensors
     f_batch = outputs_batch[:,0:syn_size]
-    b_batch = outputs_batch[:,h_size:h_size + syn_size]
+    b_batch = outputs_batch[:,h_size:h_size+syn_size]
     f_paired = outputs_paired[:,0:syn_size]
-    b_paired = outputs_paired[:,h_size:h_size + syn_size]
+    b_paired = outputs_paired[:,h_size:h_size+syn_size]
 
     # (b)
     f_loss = 1 - F.cosine_similarity(f_batch, f_paired, dim=-1)
