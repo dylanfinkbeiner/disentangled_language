@@ -114,8 +114,7 @@ def eval(args, parser, data, exp_path_base=None):
 
 
 def print_results(evaluation, name):
-    print(f'--------')
-    print("---------------Results for {name} dataset------------------")
+    print(f"---------------Results for {name} dataset------------------")
 
     metrics = ["Tokens", "Sentences", "Words", "UPOS", "XPOS", "Feats", "AllTags", "Lemmas", "UAS", "LAS"]
 
