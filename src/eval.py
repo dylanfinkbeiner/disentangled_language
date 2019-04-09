@@ -11,6 +11,7 @@ from conll17_ud_eval import evaluate, load_conllu
 from train import predict_relations
 
 from data_utils import conllu_to_sents, sdp_data_loader, build_sdp_dataset
+from utils import predict_relations
 
 #CORPORA_DIR = '/corpora'
 CORPORA_DIR = '/home/AD/dfinkbei/corpora'

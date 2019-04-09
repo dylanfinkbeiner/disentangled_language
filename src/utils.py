@@ -1,4 +1,6 @@
 import torch
+import numpy as np
+from scipy.spatial.distance import pdist, squareform
 
 def attachment_scoring(
         head_preds=None, 
@@ -62,3 +64,109 @@ def attachment_scoring(
             'total_words' : total_words, 
             'UAS_correct' : UAS_correct,
             'LAS_correct' : LAS_correct}
+
+
+def average_hiddens(hiddens, sent_lens):
+    '''
+        inputs:
+            hiddens - tensor w/ shape (b, l, d)
+            sent_lens - 1-D (b) tensor of sentence lengths
+
+        outputs:
+            averaged_hiddens -  (b, d) tensor
+    '''
+
+    #NOTE WE ARE ASSUMING PAD VALUES ARE 0 IN THIS SUM (NEED TO DOUBLE CHECK)
+    averaged_hiddens = hiddens.sum(dim=1) # (b,l,2*h_size) -> (b,2*h_size)
+
+    d = sent_lens.device
+    sent_lens = sent_lens.view(-1, 1).float() # (b, 1)
+
+    averaged_hiddens /= sent_lens
+
+    return averaged_hiddens
+
+
+def get_triplets(megabatch, minibatch_size, parser, device):
+    '''
+        inputs:
+            megabatch - an unprepared megabatch (M many batches) of sentences
+            batch_size - size of a minibatch
+
+        outputs:
+            s1 - list of orig. sentence instances
+            s2 - list of paraphrase instances
+            negs - list of neg sample instances
+    '''
+    s1 = []
+    s2 = []
+    
+    for mini in megabatch:
+        s1.append(mini[0]) # Does this allocate new memory?
+        s2.append(mini[1])
+
+    minibatches = [s1[i:i + minibatch_size] for i in range(0, len(s1), minibatch_size)]
+
+    megabatch_of_reps = [] # (megabatch_size, )
+    for m in minibatches:
+        words, pos, sent_lens = prepare_batch_ss(m)
+        sent_lens = sent_lens.to(device)
+
+        m_reps, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
+        megabatch_of_reps.append(average_hiddens(m_reps, sent_lens))
+
+    megabatch_of_reps = torch.cat(megabatch_of_reps)
+
+    negs = get_negative_samps(megabatch, megabatch_of_reps)
+
+    return s1, s2, negs
+
+
+def get_negative_samps(megabatch, megabatch_of_reps):
+    '''
+        inputs:
+            megabatch - a megabatch (list) of sentences
+            megabatch_of_reps - a tensor of sentence representations
+
+        outputs:
+            neg_samps - a list matching length of input megabatch consisting
+                        of sentences
+    '''
+    negs = []
+
+    reps = []
+    sents = []
+    for i in range(len(megabatch)):
+        (s1, _) = megabatch[i]
+        reps.append(megabatch_of_reps[i].cpu().numpy())
+        sents.append(s1)
+
+    arr = pdist(reps, 'cosine')
+    arr = squareform(arr)
+
+    for i in range(len(arr)):
+        arr[i,i] = 0
+
+    arr = np.argmax(arr, axis=1)
+
+    for i in range(len(megabatch)):
+        t = None
+        t = sents[arr[i]]
+
+        negs.append(t)
+
+    return negs
+
+
+def predict_relations(S_rel):
+    '''
+        inputs:
+            S_rel - label logits with shape (b, l, num_rels)
+
+        outputs:
+            rel_preds - shape (b, l)
+    '''
+
+    rel_preds = S_rel.cpu().argmax(2).long()
+    
+    return rel_preds
