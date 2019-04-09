@@ -97,4 +97,5 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
     print('Epochs: ', args.epochs)
-    print("model ", args.ef)
+    print("ef ", args.ef)
+    print("e ", args.e)

@@ -62,7 +62,7 @@ if __name__ == '__main__':
     init_data = args.initdata
     init_model = args.initmodel
     train_mode = args.trainingmode
-    evaluating = args.e or args.ef
+    evaluating = args.e != None or args.ef != None
 
     #if not args.semsize + args.synsize == args.hsize:
     #    print(f'Error: {args.semsize} semantic units, \

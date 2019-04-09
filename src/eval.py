@@ -83,7 +83,7 @@ def eval(args, parser, data, exp_path_base=None):
             with torch.no_grad():
                 for s in sents_list:
                     batch = next(data_loader)
-                    sent_len = batch['sent_lens']
+                    sent_len = batch['sent_lens'].to(device)
 
                     _, S_rel, head_preds = parser(batch['words'].to(device), batch['pos'].to(device), sent_len)
                     rel_preds = predict_relations(S_rel)
