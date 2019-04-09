@@ -132,5 +132,3 @@ def print_results(evaluation, name):
         ))
     print("-----------+-----------+-----------+-----------+-----------")
 
-if __name__ == '__main__':
-    eval(None, None, None, exp_path_base='')

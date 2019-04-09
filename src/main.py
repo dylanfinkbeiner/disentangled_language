@@ -97,7 +97,7 @@ if __name__ == '__main__':
 
     init_sdp = not os.path.exists(vocabs_path) or not os.path.exists(data_ptb_path) or not os.path.exists(data_brown_path) or init_data
     #init_ss = (not os.path.exists(data_ss_path) or init_data) and train_mode > 0
-    init_ss = False
+    init_ss = False # NOTE must stay this way until we get CoreNLP working on pitts
 
     if init_sdp:
         log.info(f'Initializing syntactic dependency parsing data (including vocabs).')
