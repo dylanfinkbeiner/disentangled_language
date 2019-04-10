@@ -1,28 +1,24 @@
-import sys
-import os
-import time
-import logging
-import pickle
-#from memory_profiler import profile
-from math import ceil
 import datetime
+import logging
+from math import ceil
+import os
+import pickle
+import time
 
 import numpy as np
+from scipy.spatial.distance import pdist, squareform
 import torch
 import torch.nn as nn
 from torch.optim import Adam
 from torch.autograd import Variable
 import torch.nn.functional as F
-from scipy.spatial.distance import pdist, squareform
 
 from args import get_args
-from parser import BiaffineParser
-from data_utils import build_ptb_dataset
-from data_utils import build_sdp_dataset
-from data_utils import build_dataset_ss
-
+from data_utils import build_ptb_dataset, build_sdp_dataset, build_dataset_ss
 import train
 import eval
+from parser import BiaffineParser
+
 
 WEIGHTS_DIR = '../weights'
 LOG_DIR = '../log'
@@ -73,7 +69,6 @@ if __name__ == '__main__':
 
     exp_type = 'evaluation' if evaluating else 'training'
 
-    #day = '_'.join(d.month, d.day, d.year)
     day = f'{d:%m_%d_%Y}'
     day_dir = os.path.join(exp_dir, exp_type, day)
     if not os.path.isdir(day_dir):
@@ -90,7 +85,9 @@ if __name__ == '__main__':
     data_brown_path = os.path.join(DATA_DIR, 'data_brown.pkl')
     data_ss_path = os.path.join(DATA_DIR, 'data_ss.pkl')
 
-    init_sdp = not os.path.exists(vocabs_path) or not os.path.exists(data_ptb_path) or not os.path.exists(data_brown_path) or init_data
+    init_sdp = (not os.path.exists(vocabs_path)
+            or not os.path.exists(data_ptb_path) 
+            or not os.path.exists(data_brown_path) or init_data)
     #init_ss = (not os.path.exists(data_ss_path) or init_data) and train_mode > 0
     init_ss = False # NOTE must stay this way until we get CoreNLP working on pitts
 

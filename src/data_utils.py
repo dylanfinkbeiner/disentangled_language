@@ -1,21 +1,13 @@
-import os
-import sys
-import string
 import random
 from random import shuffle
+import string
 
-import numpy as np
-import torch
-import torch.nn as nn
-from torch.utils.data import Dataset
 from collections import defaultdict, Counter
-import pickle
-
-import argparse
-
+import numpy as np
 from nltk.parse import CoreNLPParser
+import torch
 
-from utils import attachment_scoring
+import utils
 
 UNK_TOKEN = '<unk>'
 ROOT_TOKEN = '<root>'
@@ -25,14 +17,13 @@ CONLLU_MASK = [1, 4, 6, 7]  # [word, pos, head, rel]
 CORENLP_URL = 'http://localhost:9001'
 
 
-# Sections 2-21 for training, 22 for dev, 23 for test
 def build_ptb_dataset(conllu_files=[]):
     '''
         inputs:
             conllu_files - a list of sorted strings, filenames of dependencies
 
         output:
-            
+            conllu_files - a list
     '''
     sents_list = []
 
@@ -60,36 +51,33 @@ def build_ptb_dataset(conllu_files=[]):
     test_list, _ = filter_and_count(test_list, filter_single=False)
 
     x2i, i2x = build_dicts(train_list)
-    
+
     train_list = numericalize_sdp(train_list, x2i)
     dev_list = numericalize_sdp(dev_list, x2i)
     test_list = numericalize_sdp(test_list, x2i)
 
-    data = {
-            'train': train_list,
+    data = {'train': train_list,
             'dev': dev_list,
-            'test': test_list
-            }
-    
+            'test': test_list}
+
     return data, x2i, i2x, word_counts
 
-def build_sdp_dataset(conllu_files, x2i=None):
+
+def build_sdp_dataset(conllu_files: list, x2i=None):
     data = {}
 
     for f in conllu_files:
         name = os.path.splitext(f)[0].split('/')[-1].lower()
         data[name] = conllu_to_sents(f)
 
-    # Hideous
     for name, sents in data.items():
-        breakpoint()
         filtered, _ = filter_and_count([s[:, CONLLU_MASK] for s in sents], filter_single=False)
         data[name] = numericalize_sdp(filtered, x2i)
 
     return data
     
 
-def build_dataset_ss(paranmt_file, x2i=None):
+def build_dataset_ss(paranmt_file: str, x2i=None):
     sents_list = para_to_sents(paranmt_file)
 
     sents_list = numericalize_ss(sents_list, x2i)
@@ -97,44 +85,47 @@ def build_dataset_ss(paranmt_file, x2i=None):
     return sents_list
 
 
-def get_cutoffs(data_sorted):
+def get_cutoffs(data_sorted: list) -> dict:
     '''
         inputs:
             data_sorted - list of np arrays (conllu-formatted sentences)
 
         returns:
-            a dictionary, keys are sentence lengths, values are lists with 2 elements,
+            a dictionary i2c, keys are indices in sorted data, values are lists with 2 elements,
             the first index in data_sorted of a sentence of that length and the 
             (non-inclusive) final index
     '''
-
+    i2c = dict()
     l2c = defaultdict(list)
+
     l_prev = data_sorted[0].shape[0]
     l_max = data_sorted[-1].shape[0]
     l2c[l_prev].append(0)
-
-    for i, s in enumerate(data_sorted[1:]):
+    for i, s in enumerate(data_sorted[1:], start=1):
         l = s.shape[0]
         if l > l_prev:
-            l2c[l_prev].append(i+1)
-            l2c[l].append(i+1)
+            l2c[l_prev].append(i)
+            l2c[l].append(i)
         l_prev = l
     l2c[l_max].append(len(data_sorted))
 
-    i2c = dict()
+    for cutoffs in l2c.values():
+        for i in range(cutoffs[0], cutoffs[1]):
+            i2c[i] = cutoffs
 
-    for c in l2c.values():
-        for i in range(c[0], c[1]):
-            i2c[i] = c
+    if len(i2c) != len(data_sorted):
+        print(f'i2c : {len(i2c)} != data_sorted : {len(data_sorted)}')
+        raise Exception
 
     return i2c
 
 
 def get_paired_idx(idx, cutoffs):
     paired_idx = []
-    # XXX This for loop is the main concern for me runtime-wise, since it must be
-    # executed once every epoch, or potentially more often depending on how many
-    # sentence similarity data samples there are
+    ''' XXX This for loop is the main concern for me runtime-wise, since it must be
+     executed once every epoch, or potentially more often depending on how many
+     sentence similarity data samples there are
+    '''
     for i in idx:
         c = cutoffs[i]
         paired_idx.append(random.randrange(c[0], c[1]))
@@ -166,7 +157,7 @@ def get_scores(batch, paired):
 
 def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
     idx = list(range(len(data)))
-    data_sorted = sorted(data, key = lambda s : s.shape[0]) #XXX seems like I might as well sort in build_dataset???
+    data_sorted = sorted(data, key = lambda s : s.shape[0])
 
     if custom_task:
         cutoffs = get_cutoffs(data_sorted)
@@ -192,7 +183,7 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
                 yield prepare_batch_sdp(batch)
 
 
-def ss_data_loader(data, batch_size):
+def ss_data_loader(data, batch_size=None):
     '''
         inputs:
             data - the full Python list of pairs of numericalized sentences (np arrays)
@@ -201,9 +192,6 @@ def ss_data_loader(data, batch_size):
         yields:
             chunk - list of indices representing a minibatch
     '''
-    if batch_size == None:
-        raise Exception
-
     idx = list(range(len(data)))
     while True:
         shuffle(idx)
@@ -214,32 +202,6 @@ def ss_data_loader(data, batch_size):
 def idx_chunks(idx, chunk_size):
     for i in range(0, len(idx), chunk_size):
         yield idx[i:i+chunk_size]
-
-
-def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=40):
-    '''
-        inputs:
-            words - LongTensor, shape (b,l)
-            w2i - word to index dict
-            i2w - index to word dict
-            counts - Counter object associating words to counts in corpus
-            lens - lens of sentences (should be b of them)
-            alpha - hyperparameter for dropout
-
-        outputs:
-            dropped - new LongTensor, shape (b,l)
-    '''
-    dropped = torch.LongTensor(words)
-
-    for i, s in enumerate(words):
-        for j in range(1, lens[i]): # Skip root token
-            p = -1
-            c = counts[ i2w[s[j].item()] ]
-            p = alpha / (c + alpha) # Dropout probability
-            if random.random() <= p:
-                dropped[i,j] = int(w2i[UNK_TOKEN])
-    
-    return dropped
 
 
 def prepare_batch_sdp(batch):
@@ -254,7 +216,6 @@ def prepare_batch_sdp(batch):
             head_targets -
             rel_targets -
     '''
-
     batch_size = len(batch)
     batch_sorted = sorted(batch, key = lambda s: s.shape[0], reverse=True)
     sent_lens = torch.LongTensor([s.shape[0] for s in batch_sorted]) # Keep in mind, these lengths include ROOT token in each sentence
@@ -262,8 +223,8 @@ def prepare_batch_sdp(batch):
 
     words = torch.zeros((batch_size, length_longest)).long()
     pos = torch.zeros((batch_size, length_longest)).long()
-    head_targets = torch.Tensor(batch_size, length_longest).fill_(-1).long()
-    rel_targets = torch.Tensor(batch_size, length_longest).fill_(-1).long()
+    head_targets = torch.LongTensor(batch_size, length_longest).fill_(-1)
+    rel_targets = torch.LongTensor(batch_size, length_longest).fill_(-1)
 
     for i, s in enumerate(batch_sorted):
         for j, _ in enumerate(s):
@@ -275,7 +236,7 @@ def prepare_batch_sdp(batch):
             words[i,j] = int(s[j,0])
             pos[i,j] = int(s[j,1])
             head_targets[i,j] = int(s[j,2])
-            rel_targets[i,j] =  int(s[j,3])
+            rel_targets[i,j] = int(s[j,3])
 
     return {'words': words, 
             'pos' : pos, 
@@ -316,7 +277,7 @@ def prepare_batch_ss(batch):
     return words, pos, sent_lens
 
 
-def conllu_to_sents(f: str):
+def conllu_to_sents(f:str):
     '''
     inputs:
         f - filename of conllu file
@@ -457,6 +418,77 @@ def numericalize_ss(sents_list, x2i):
         sents_numericalized.append( (new_s1, new_s2) )
 
     return sents_numericalized
+
+
+def get_triplets(megabatch, minibatch_size, parser, device):
+    '''
+        inputs:
+            megabatch - an unprepared megabatch (M many batches) of sentences
+            batch_size - size of a minibatch
+
+        outputs:
+            s1 - list of orig. sentence instances
+            s2 - list of paraphrase instances
+            negs - list of neg sample instances
+    '''
+    s1 = []
+    s2 = []
+    
+    for mini in megabatch:
+        s1.append(mini[0]) # Does this allocate new memory?
+        s2.append(mini[1])
+
+    minibatches = [s1[i:i + minibatch_size] for i in range(0, len(s1), minibatch_size)]
+
+    megabatch_of_reps = [] # (megabatch_size, )
+    for m in minibatches:
+        words, pos, sent_lens = prepare_batch_ss(m)
+        sent_lens = sent_lens.to(device)
+
+        m_reps, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
+        megabatch_of_reps.append(utils.average_hiddens(m_reps, sent_lens))
+
+    megabatch_of_reps = torch.cat(megabatch_of_reps)
+
+    negs = get_negative_samps(megabatch, megabatch_of_reps)
+
+    return s1, s2, negs
+
+
+def get_negative_samps(megabatch, megabatch_of_reps):
+    '''
+        inputs:
+            megabatch - a megabatch (list) of sentences
+            megabatch_of_reps - a tensor of sentence representations
+
+        outputs:
+            neg_samps - a list matching length of input megabatch consisting
+                        of sentences
+    '''
+    negs = []
+
+    reps = []
+    sents = []
+    for i in range(len(megabatch)):
+        (s1, _) = megabatch[i]
+        reps.append(megabatch_of_reps[i].cpu().numpy())
+        sents.append(s1)
+
+    arr = pdist(reps, 'cosine')
+    arr = squareform(arr)
+
+    for i in range(len(arr)):
+        arr[i,i] = 0
+
+    arr = np.argmax(arr, axis=1)
+
+    for i in range(len(megabatch)):
+        t = None
+        t = sents[arr[i]]
+
+        negs.append(t)
+
+    return negs
 
 
 # From https://github.com/EelcovdW/Biaffine-Parser/blob/master/data_utils.py

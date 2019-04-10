@@ -1,11 +1,8 @@
-import sys
+from math import ceil
+import logging
 import os
 import time
 from time import sleep
-import logging
-import pickle
-#from memory_profiler import profile
-from math import ceil
 
 import numpy as np
 import torch
@@ -14,9 +11,9 @@ from torch.optim import Adam
 from torch.autograd import Variable
 import torch.nn.functional as F
 
-from data_utils import sdp_data_loader, word_dropout, ss_data_loader, prepare_batch_ss
-from utils import attachment_scoring, get_triplets, average_hiddens, predict_relations
+from data_utils import sdp_data_loader, ss_data_loader, prepare_batch_ss, get_triplets
 from losses import loss_heads, loss_rels, loss_sem_rep, loss_syn_rep
+from utils import attachment_scoring, average_hiddens, predict_relations, word_dropout
 
 
 LOG_DIR = '../log'
@@ -67,7 +64,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     train_sdp = data_ptb['train']
     if train_mode > 0:
         train_ss = data['data_ss']
-        train_ss = train_ss[:len(train_sdp)] #XXX THIS IS STUPID! (but good for testing)
+        train_ss = train_ss[:len(train_sdp)] #XXX 
     dev = data_ptb['dev']
 
     log.info(f'There are {len(train_sdp)} SDP training examples.')
@@ -101,7 +98,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
             parser.train()
             train_loss = 0
             num_steps = 0
-            if train_mode == 0:
+            if train_mode == 0: # Standard syntactic parsing
                 for b in range(n_train_batches):
                     log.info(f'Training batch {b+1}/{n_train_batches}.')
                     opt.zero_grad()
@@ -216,7 +213,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
                         opt.step()
 
-            train_loss /= (num_steps if num_steps > 0 else -1)# Just dependency parsing loss
+            train_loss /= (num_steps if num_steps > 0 else -1) # Just dependency parsing loss
 
             
             parser.eval()  # Crucial! Toggles dropout effects
@@ -243,7 +240,6 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     loss_r = loss_rels(S_rel, rel_targets)
                     dev_loss += loss_h.item() + loss_r.item()
 
-                    #UAS_, LAS_ = attachment_scoring(
                     results = attachment_scoring(
                             head_preds=head_preds.cpu(),
                             rel_preds=rel_preds,
@@ -274,15 +270,14 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
             else:
                 earlystop_counter += 1
                 if earlystop_counter >= 5:
-                    print('''LAS has not improved for 5 consecutive epochs,
-                          stopping after {} epochs'''.format(e))
+                    print(f'LAS has not improved for 5 consecutive epochs,
+                          stopping after {e} epochs')
                     break
             
             if train_mode != -1:
                 torch.save(parser.state_dict(), weights_path)
                 log.info(f'Weights saved to {weights_path}.')
 
-    # Save weights
     except KeyboardInterrupt:
         response = input("Keyboard interruption: Would you like to save weights? [y/n]")
         if response.lower() == 'y':

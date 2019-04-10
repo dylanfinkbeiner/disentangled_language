@@ -41,7 +41,6 @@ def get_args():
     parser.add_argument('--seed', type=int, dest='seed', default=7)
 
     # Evaluation options
-    #parser.add_argument('-e', action='store_true', dest='eval', default=False)
     evalgroup = parser.add_mutually_exclusive_group()
     evalgroup.add_argument('-e', help='Evaluate, and provide flags for datasets to evaluate on.', nargs='*', type=int)
     evalgroup.add_argument('-ef', help='Evaluate, and provide filename to evaluate on.')
@@ -51,7 +50,6 @@ def get_args():
 
     # Model hyperparameters
     parser.add_argument('-H', '--hsize', help='Size of LSTM hidden state.', dest='hsize', type=int, default=400)
-    #parser.add_argument('--semsize', help='Number of units of hidden state dedicated to semantic content.', dest='semsize', type=int, default=200)
     parser.add_argument('--synsize', help='Number of units of hidden state dedicated to syntactic content.', dest='synsize', type=int, default=200)
 
     # Training hyperparameters

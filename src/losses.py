@@ -1,6 +1,7 @@
 import torch
 import torch.functional as F
 
+
 def loss_heads(S_arc, head_targets, pad_idx=-1):
     '''
     S - should be something like a tensor w/ shape
@@ -31,17 +32,11 @@ def loss_sem_rep(h1, h2, hn, margin=0.4, syn_size=None, h_size=None):
         and minimize similarity of embeddings of "negative samples".
     '''
 
-    #f_para_attract = F.cosine_similarity(h1[:,syn_size:h_size], h2[:,syn_size:h_size]) # (b,sem_size), (b,sem_size) -> (b)
-    #b_para_attract = F.cosine_similarity(h1[:,h_size+syn_size:], h2[:,h_size+syn_size:]) # (b,sem_size), (b,sem_size) -> (b)
-
     sem_h1 = torch.cat((h1[:,syn_size:h_size], h1[:,h_size+syn_size:]), dim=-1)
     sem_h2 = torch.cat((h2[:,syn_size:h_size], h2[:,h_size+syn_size:]), dim=-1)
     sem_hn = torch.cat((hn[:,syn_size:h_size], hn[:,h_size+syn_size:]), dim=-1)
 
     para_attract = F.cosine_similarity(sem_h1, sem_h2) # (b,sem_size), (b,sem_size) -> (b)
-
-    #f_neg_repel = F.cosine_similarity(h1[:,syn_size:h_size], hn[:,syn_size:h_size]) # (b,2*d), (b,2*d) -> (b)
-    #b_neg_repel = F.cosine_similarity(h1[:,h_size+syn_size:], hn[:,h_size+syn_size:]) # (b,2*d), (b,2*d) -> (b)
 
     neg_repel = F.cosine_similarity(sem_h1, sem_hn) # (b,sem_size), (b,sem_size) -> (b)
 
@@ -50,11 +45,11 @@ def loss_sem_rep(h1, h2, hn, margin=0.4, syn_size=None, h_size=None):
     return losses.sum()
 
 
-def loss_syn_rep(outputs_batch, outputs_paired, scores, syn_size=None, h_size=None):
+def loss_syn_rep(h_batch, h_paired, scores, syn_size=None, h_size=None):
     '''
         inputs:
-            outputs_batch - (b, 2*h_size) tensor
-            outputs_paired - (b, 2*h_size) tensor
+            h_batch - (b, 2*h_size) tensor
+            h_paired - (b, 2*h_size) tensor
             scores - weights per sentence pair of batch, their LAS "similarity"
             syn_size - size, in units, of syntactic representation component of hidden state
 
@@ -62,20 +57,10 @@ def loss_syn_rep(outputs_batch, outputs_paired, scores, syn_size=None, h_size=No
             losses, where loss for sentence pair (x,y) is 1-cos(x,y) * score(x,y)
     '''
     # All should be (b, l , syn_size) tensors
-    #f_batch = outputs_batch[:,0:syn_size]
-    #b_batch = outputs_batch[:,h_size:h_size+syn_size]
-    #f_paired = outputs_paired[:,0:syn_size]
-    #b_paired = outputs_paired[:,h_size:h_size+syn_size]
-    syn_batch = torch.cat((outputs_batch[:,0:syn_size], outputs_batch[:,h_size:h_size+syn_size]), dim=-1)
-    syn_paired = torch.cat((outputs_paired[:,0:syn_size], outputs_paired[:,h_size:h_size+syn_size]), dim=-1)
-
-    # (b)
-    #f_loss = 1 - F.cosine_similarity(f_batch, f_paired, dim=-1)
-    #b_loss = 1 - F.cosine_similarity(b_batch, b_paired, dim=-1)
+    syn_batch = torch.cat((h_batch[:,0:syn_size], h_batch[:,h_size:h_size+syn_size]), dim=-1)
+    syn_paired = torch.cat((h_paired[:,0:syn_size], h_paired[:,h_size:h_size+syn_size]), dim=-1)
 
     losses = 1 - F.cosine_similarity(syn_batch, syn_paired, dim=-1)
-
-    #losses = f_loss + b_loss
 
     losses *= scores.view(-1)
 

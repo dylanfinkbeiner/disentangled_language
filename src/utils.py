@@ -2,6 +2,8 @@ import torch
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
 
+import data_utils
+
 def attachment_scoring(
         head_preds=None, 
         rel_preds=None, 
@@ -87,77 +89,6 @@ def average_hiddens(hiddens, sent_lens):
     return averaged_hiddens
 
 
-def get_triplets(megabatch, minibatch_size, parser, device):
-    '''
-        inputs:
-            megabatch - an unprepared megabatch (M many batches) of sentences
-            batch_size - size of a minibatch
-
-        outputs:
-            s1 - list of orig. sentence instances
-            s2 - list of paraphrase instances
-            negs - list of neg sample instances
-    '''
-    s1 = []
-    s2 = []
-    
-    for mini in megabatch:
-        s1.append(mini[0]) # Does this allocate new memory?
-        s2.append(mini[1])
-
-    minibatches = [s1[i:i + minibatch_size] for i in range(0, len(s1), minibatch_size)]
-
-    megabatch_of_reps = [] # (megabatch_size, )
-    for m in minibatches:
-        words, pos, sent_lens = prepare_batch_ss(m)
-        sent_lens = sent_lens.to(device)
-
-        m_reps, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
-        megabatch_of_reps.append(average_hiddens(m_reps, sent_lens))
-
-    megabatch_of_reps = torch.cat(megabatch_of_reps)
-
-    negs = get_negative_samps(megabatch, megabatch_of_reps)
-
-    return s1, s2, negs
-
-
-def get_negative_samps(megabatch, megabatch_of_reps):
-    '''
-        inputs:
-            megabatch - a megabatch (list) of sentences
-            megabatch_of_reps - a tensor of sentence representations
-
-        outputs:
-            neg_samps - a list matching length of input megabatch consisting
-                        of sentences
-    '''
-    negs = []
-
-    reps = []
-    sents = []
-    for i in range(len(megabatch)):
-        (s1, _) = megabatch[i]
-        reps.append(megabatch_of_reps[i].cpu().numpy())
-        sents.append(s1)
-
-    arr = pdist(reps, 'cosine')
-    arr = squareform(arr)
-
-    for i in range(len(arr)):
-        arr[i,i] = 0
-
-    arr = np.argmax(arr, axis=1)
-
-    for i in range(len(megabatch)):
-        t = None
-        t = sents[arr[i]]
-
-        negs.append(t)
-
-    return negs
-
-
 def predict_relations(S_rel):
     '''
         inputs:
@@ -170,3 +101,30 @@ def predict_relations(S_rel):
     rel_preds = S_rel.cpu().argmax(2).long()
     
     return rel_preds
+
+
+def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=40):
+    '''
+        inputs:
+            words - LongTensor, shape (b,l)
+            w2i - word to index dict
+            i2w - index to word dict
+            counts - Counter object associating words to counts in corpus
+            lens - lens of sentences (should be b of them)
+            alpha - hyperparameter for dropout
+
+        outputs:
+            dropped - new LongTensor, shape (b,l)
+    '''
+    dropped = torch.LongTensor(words)
+
+    for i, s in enumerate(words):
+        for j in range(1, lens[i]): # Skip root token
+            p = -1
+            c = counts[ i2w[s[j].item()] ]
+            p = alpha / (c + alpha) # Dropout probability
+            if random.random() <= p:
+                dropped[i,j] = int(w2i[UNK_TOKEN])
+    
+    return dropped
+

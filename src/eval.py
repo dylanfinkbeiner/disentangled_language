@@ -77,7 +77,7 @@ def eval(args, parser, data, exp_path_base=None):
     for name, gold, sents_list in zip(names, golds, sents):
         dataset = data[name]
         data_loader = sdp_data_loader(dataset, batch_size=1, shuffle_idx=False)
-        predicted = os.path.join(DATA_DIR, name)
+        predicted = os.path.join(DATA_DIR, name + '_predicted')
         with open(predicted, 'w') as f:
             parser.eval()
             with torch.no_grad():
