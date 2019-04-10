@@ -55,9 +55,6 @@ if __name__ == '__main__':
     log.info(f'New session: {d}\n')
 
     args = get_args()
-    init_data = args.initdata
-    init_model = args.initmodel
-    train_mode = args.trainingmode
     evaluating = args.e != None or args.ef != None
 
     # Build experiment file structure
@@ -87,8 +84,8 @@ if __name__ == '__main__':
 
     init_sdp = (not os.path.exists(vocabs_path)
             or not os.path.exists(data_ptb_path) 
-            or not os.path.exists(data_brown_path) or init_data)
-    #init_ss = (not os.path.exists(data_ss_path) or init_data) and train_mode > 0
+            or not os.path.exists(data_brown_path) or args.initdata)
+    #init_ss = (not os.path.exists(data_ss_path) or args.initdata) and args.trainmode > 0
     init_ss = False # NOTE must stay this way until we get CoreNLP working on pitts
 
     if init_sdp:
@@ -124,7 +121,7 @@ if __name__ == '__main__':
                 #os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
         with open(data_ss_path, 'wb') as f:
             pickle.dump(data_ss, f)
-    elif train_mode > 0:
+    elif args.trainmode > 0:
         log.info(f'Loading pickled sentence similarity data.')
         with open(data_ss_path, 'rb') as f:
             data_ss = pickle.load(f)
@@ -142,17 +139,18 @@ if __name__ == '__main__':
 
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
 
-    if not init_model and os.path.exists(weights_path):
+    if (not args.init_model) and os.path.exists(weights_path):
         log.info(f'Loading state dict from: \"{weights_path}\"')
         parser.load_state_dict(torch.load(weights_path))
     else:
         log.info(f'Model will have randomly initialized parameters.')
+        args.initmodel = True
 
     if not evaluating:
         data = {'data_ptb' : data_ptb,
                 'vocabs' : vocabs,
                 'word_counts' : word_counts}
-        if train_mode > 0:
+        if args.trainmode > 0:
             data['data_ss'] = data_ss
 
         train.train(args, parser, data, weights_path=weights_path, exp_path_base=exp_path_base)

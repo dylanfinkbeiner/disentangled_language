@@ -87,6 +87,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
     earlystop_counter = 0
     prev_best = 0
+    #prev_best = dev_eval(parser, args=args, data=data, loader=dev_loader) if not args.initmodel
     log.info('Starting train loop.')
     exp_file.write('Training results:')
     state = parser.state_dict() # For weight analysis
@@ -259,7 +260,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     Train Loss: {:.3f}
                     Dev Loss: {:.3f}
                     UAS: {:.3f}
-                    LAS: {:.3f} '''.format(e, train_loss, dev_loss, UAS, LAS)
+                    LAS: {:.3f}'''.format(e, train_loss, dev_loss, UAS, LAS)
             log.info(update)
             exp_file.write(update)
 
@@ -286,3 +287,82 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
         exp_file.close()
 
     exp_file.close()
+
+def train_standard_parser(parser, args=None, data=None, opt=None, loader=None):
+    parser.train()
+    for b in range(n_training_batches):
+       opt.zero_grad()
+       batch = next(loader)
+       head_targets = batch['head_targets']
+       rel_targets = batch['rel_targets']
+       sent_lens = batch['sent_lens'].to(device)
+
+       words_d = word_dropout(
+               batch['words'], 
+               w2i=data['vocabs']['x2i']['word'], 
+               i2w=data['vocabs']['i2x']['word'], 
+               counts=data['word_counts'], 
+               lens=sent_lens)
+       
+       S_arc, S_rel, _ = parser(words_d.to(device), batch['pos'].to(device), sent_lens)
+    
+       loss_h = loss_heads(S_arc, head_targets)
+       loss_r = loss_rels(S_rel, rel_targets)
+       loss = loss_h + loss_r
+    
+       train_loss += loss_h.item() + loss_r.item()
+    
+       loss.backward()
+       opt.step()
+       #num_steps += 1
+
+def train_()
+
+
+def dev_eval(parser, args=None, data=None, loader=None):
+    parser.eval()  # Crucial! Toggles dropout effects
+    dev_loss = 0
+    UAS = 0
+    LAS = 0
+    total_words = 0
+    log.info('Evaluation step begins.')
+    for b in range(n_dev_batches):
+        with torch.no_grad():
+            batch = next(loader)
+            head_targets = batch['head_targets']
+            rel_targets = batch['rel_targets']
+            sent_lens = batch['sent_lens'].to(device)
+    
+            S_arc, S_rel, head_preds = parser(
+                    batch['words'].to(device), 
+                    batch['pos'].to(device), 
+                    sent_lens)
+            rel_preds = predict_relations(S_rel)
+    
+            loss_h = loss_heads(S_arc, head_targets)
+            loss_r = loss_rels(S_rel, rel_targets)
+            dev_loss += loss_h.item() + loss_r.item()
+    
+            results = attachment_scoring(
+                    head_preds=head_preds.cpu(),
+                    rel_preds=rel_preds,
+                    head_targets=head_targets,
+                    rel_targets=rel_targets,
+                    sent_lens=sent_lens,
+                    include_root=True)
+            UAS += results['UAS_correct']
+            LAS += results['LAS_correct']
+            total_words += results['total_words']
+
+        dev_loss /= n_dev_batches
+        UAS /= total_words
+        LAS /= total_words
+
+        update = '''Epoch: {:}
+                Train Loss: {:.3f}
+                Dev Loss: {:.3f}
+                UAS: {:.3f}
+                LAS: {:.3f}'''.format(e, train_loss, dev_loss, UAS, LAS)
+
+        log.info(update)
+        exp_file.write(update)

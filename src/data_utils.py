@@ -114,21 +114,24 @@ def get_cutoffs(data_sorted: list) -> dict:
             i2c[i] = cutoffs
 
     if len(i2c) != len(data_sorted):
-        print(f'i2c : {len(i2c)} != data_sorted : {len(data_sorted)}')
+        print(f'i2c {len(i2c)} != data_sorted {len(data_sorted)}')
         raise Exception
 
     return i2c
 
 
-def get_paired_idx(idx, cutoffs):
-    paired_idx = []
-    ''' XXX This for loop is the main concern for me runtime-wise, since it must be
-     executed once every epoch, or potentially more often depending on how many
-     sentence similarity data samples there are
+def get_paired_idx(idx: list, cutoffs: dict):
     '''
+        produces a list of indices, paired to an index in idx, of a
+        sentence of equal length
+    '''
+    paired_idx = []
     for i in idx:
         c = cutoffs[i]
-        paired_idx.append(random.randrange(c[0], c[1]))
+        paired_i = random.randrange(c[0], c[1])
+        while (paired_i == i) and (c[0] != c[1]-1):
+            paired_i = random.randrange(c[0], c[1])
+        paired_idx.append(paired_i)
 
     return paired_idx
 
@@ -142,14 +145,13 @@ def get_scores(batch, paired):
         outputs:
             scores - a (b,1) tensor of 'scores' for the paired sentences, weights to be used in loss function
     '''
-
     results = attachment_scoring(
             head_preds=batch['head_targets'], 
             rel_preds=batch['rel_targets'], 
             head_targets=paired['head_targets'], 
             rel_targets=paired['rel_targets'], 
             sent_lens=batch['sent_lens'], 
-            include_root=True,
+            include_root=False,
             keep_dim=True)
 
     return results['LAS'] # (b, 1)
@@ -157,9 +159,9 @@ def get_scores(batch, paired):
 
 def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
     idx = list(range(len(data)))
-    data_sorted = sorted(data, key = lambda s : s.shape[0])
 
     if custom_task:
+        data_sorted = sorted(data, key = lambda s : s.shape[0])
         cutoffs = get_cutoffs(data_sorted)
     
     while True:
@@ -172,9 +174,9 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
             for chunk, chunk_p in zip(idx_chunks(idx, batch_size), idx_chunks(paired_idx, batch_size)):
                 batch = [data_sorted[i] for i in chunk]
                 paired = [data_sorted[i] for i in chunk_p]
-                prepared = prepare_batch_sdp(batch)
+                prepared_batch = prepare_batch_sdp(batch)
                 prepared_paired = prepare_batch_sdp(paired)
-                yield (prepared,
+                yield (prepared_batch,
                         prepared_paired, 
                         get_scores(prepared, prepared_paired))
         else:

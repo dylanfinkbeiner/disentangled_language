@@ -25,11 +25,11 @@ def attachment_scoring(
             LAS - average number of correct relation predictions
     '''
 
-    #sent_lens = torch.Tensor(sent_lens).view(-1, 1)
+    sent_lens = sent_lens.view(-1, 1)
     total_words = sent_lens.sum().float()
     b, l = head_preds.shape
 
-    # This way we can be sure padding values do not contribute to score when we do .eq() calls
+    # To ensure padding values do not contribute to score in the .eq() calls
     head_preds = torch.where(
             head_targets != -1,
             head_preds,
@@ -39,27 +39,24 @@ def attachment_scoring(
             rel_preds,
             torch.zeros(rel_preds.shape).long())
 
-    # Tensors with 1s in locations of correct predictions
-    #NOTE this could be optimized later to avoid sparse matrices
     correct_heads = head_preds.eq(head_targets).float()
     correct_rels = rel_preds.eq(rel_targets).float()
 
-    # We get per-sentence averages, then average across the batch (OLD COMMENT)
-    #UAS = correct_heads.sum(1, True) # (b,l) -> (b,1)
-    UAS_correct = correct_heads.sum() # (b,l) -> (1)
+    UAS_correct = correct_heads.sum(1, True) # (b,l) -> (b,1)
     UAS_correct = UAS_correct if include_root else UAS_correct - 1
-    #UAS /= (sent_lens-1 if include_root else sent_lens)
-    UAS = UAS_correct / (total_words if include_root else total_words - 1)
-    #if not keep_dim:
-    #    UAS = UAS.sum() / b
+    if not keep_dim:
+        UAS_correct = UAS_correct.sum() # (b,l) -> (1)
+        UAS = UAS_correct / (total_words if include_root else total_words - 1)
+    else:
+        UAS = UAS_correct / (sent_lens if include_root else sent_lens - 1)
 
-    #LAS = (correct_heads * correct_rels).sum(1, True)
-    LAS_correct = (correct_heads * correct_rels).sum()
+    LAS_correct = (correct_heads * correct_rels).sum(1, True)
     LAS_correct = LAS_correct if include_root else LAS_correct - 1
-    #LAS /= (sent_lens - 1 if include_root else sent_lens)
-    LAS = LAS_correct / (total_words if include_root else total_words - 1)
-    #if not keep_dim:
-    #    LAS = LAS.sum() / b
+    if not keep_dim:
+        LAS_correct = (correct_heads * correct_rels).sum()
+        LAS = LAS_correct / (total_words if include_root else total_words - 1)
+    else:
+        LAS = LAS_correct / (sent_lens if include_root else sent_lens - 1)
 
     return {'UAS': UAS,
             'LAS': LAS, 
