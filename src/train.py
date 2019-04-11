@@ -103,7 +103,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
 
     earlystop_counter = 0
-    prev_best = 0
+    prev_best = 0.8912
     log.info('Starting train loop.')
     exp_file.write('Training results:')
     state = parser.state_dict() # For weight analysis
@@ -122,7 +122,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     batch = next(train_sdp_loader)
                     head_targets = batch['head_targets']
                     rel_targets = batch['rel_targets']
-                    sent_lens = batch['sent_lens']
+                    sent_lens = batch['sent_lens'].to(device)
                     words_d = word_dropout(batch['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
                     
                     S_arc, S_rel, _ = parser(words_d.to(device), batch['pos'].to(device), sent_lens)
@@ -198,6 +198,9 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             loss_h_paired = loss_heads(S_arc_paired, paired['head_targets'])
                             loss_r_paired = loss_rels(S_rel_paired, paired['rel_targets'])
                             loss_paired = loss_h_paired + loss_r_paired
+
+                            if x % grad_print == 0:
+                                print('scores look like: ', scores)
 
                             loss_rep = loss_syn_rep(
                                     average_hiddens(outputs_batch, batch_lens),
@@ -307,13 +310,14 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
             # Early stopping heuristic from Jabberwocky paper
             if LAS > prev_best:
+                print('LAS improved.')
                 earlystop_counter = 0
                 prev_best = LAS
             else:
                 earlystop_counter += 1
+                print(f'LAS has not improved for {earlystop_counter} consecutive epochs.')
                 if earlystop_counter >= 5:
-                    print('''LAS has not improved for 5 consecutive epochs,
-                          stopping after {} epochs'''.format(e))
+                    print(f'Stopping after {e} epochs')
                     break
             
             if train_mode != -1:
