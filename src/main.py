@@ -1,28 +1,24 @@
-import sys
-import os
-import time
-import logging
-import pickle
-#from memory_profiler import profile
-from math import ceil
 import datetime
+import logging
+from math import ceil
+import os
+import pickle
+import time
 
 import numpy as np
+from scipy.spatial.distance import pdist, squareform
 import torch
 import torch.nn as nn
 from torch.optim import Adam
 from torch.autograd import Variable
 import torch.nn.functional as F
-from scipy.spatial.distance import pdist, squareform
 
 from args import get_args
-from parser import BiaffineParser
-from data_utils import build_ptb_dataset
-from data_utils import build_sdp_dataset
-from data_utils import build_dataset_ss
-
+from data_utils import build_ptb_dataset, build_sdp_dataset, build_dataset_ss
 import train
 import eval
+from parser import BiaffineParser
+
 
 WEIGHTS_DIR = '../weights'
 LOG_DIR = '../log'
@@ -59,15 +55,7 @@ if __name__ == '__main__':
     log.info(f'New session: {d}\n')
 
     args = get_args()
-    init_data = args.initdata
-    init_model = args.initmodel
-    train_mode = args.trainingmode
     evaluating = args.e != None or args.ef != None
-
-    #if not args.semsize + args.synsize == args.hsize:
-    #    print(f'Error: {args.semsize} semantic units, \
-    #            {args.synsize} syntactic units, {args.hsize} hidden units')
-    #    raise Exception
 
     # Build experiment file structure
     exp_dir = os.path.join(EXPERIMENTS_DIR, args.model)
@@ -78,7 +66,6 @@ if __name__ == '__main__':
 
     exp_type = 'evaluation' if evaluating else 'training'
 
-    #day = '_'.join(d.month, d.day, d.year)
     day = f'{d:%m_%d_%Y}'
     day_dir = os.path.join(exp_dir, exp_type, day)
     if not os.path.isdir(day_dir):
@@ -95,8 +82,10 @@ if __name__ == '__main__':
     data_brown_path = os.path.join(DATA_DIR, 'data_brown.pkl')
     data_ss_path = os.path.join(DATA_DIR, 'data_ss.pkl')
 
-    init_sdp = not os.path.exists(vocabs_path) or not os.path.exists(data_ptb_path) or not os.path.exists(data_brown_path) or init_data
-    #init_ss = (not os.path.exists(data_ss_path) or init_data) and train_mode > 0
+    init_sdp = (not os.path.exists(vocabs_path)
+            or not os.path.exists(data_ptb_path) 
+            or not os.path.exists(data_brown_path) or args.initdata)
+    #init_ss = (not os.path.exists(data_ss_path) or args.initdata) and args.trainmode > 0
     init_ss = False # NOTE must stay this way until we get CoreNLP working on pitts
 
     if init_sdp:
@@ -132,7 +121,7 @@ if __name__ == '__main__':
                 #os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
         with open(data_ss_path, 'wb') as f:
             pickle.dump(data_ss, f)
-    elif train_mode > 0:
+    elif args.trainmode > 0:
         log.info(f'Loading pickled sentence similarity data.')
         with open(data_ss_path, 'rb') as f:
             data_ss = pickle.load(f)
@@ -150,17 +139,18 @@ if __name__ == '__main__':
 
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
 
-    if not init_model and os.path.exists(weights_path):
+    if (not args.init_model) and os.path.exists(weights_path):
         log.info(f'Loading state dict from: \"{weights_path}\"')
         parser.load_state_dict(torch.load(weights_path))
     else:
         log.info(f'Model will have randomly initialized parameters.')
+        args.initmodel = True
 
     if not evaluating:
         data = {'data_ptb' : data_ptb,
                 'vocabs' : vocabs,
                 'word_counts' : word_counts}
-        if train_mode > 0:
+        if args.trainmode > 0:
             data['data_ss'] = data_ss
 
         train.train(args, parser, data, weights_path=weights_path, exp_path_base=exp_path_base)
