@@ -1,5 +1,5 @@
 import torch
-import torch.functional as F
+import torch.nn.functional as F
 
 
 def loss_arcs(S_arc, arc_targets, pad_idx=-1):

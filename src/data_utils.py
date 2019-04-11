@@ -5,6 +5,7 @@ import string
 from collections import defaultdict, Counter
 import numpy as np
 from nltk.parse import CoreNLPParser
+from scipy.spatial.distance import pdist, squareform
 import torch
 
 import utils
@@ -149,7 +150,7 @@ def get_scores(batch, paired):
         outputs:
             scores - a (b,1) tensor of 'scores' for the paired sentences, weights to be used in loss function
     '''
-    results = attachment_scoring(
+    results = utils.attachment_scoring(
             arc_preds=batch['arc_targets'], 
             rel_preds=batch['rel_targets'], 
             arc_targets=paired['arc_targets'], 
@@ -158,7 +159,7 @@ def get_scores(batch, paired):
             include_root=False,
             keep_dim=True)
 
-    return results['LAS'] # (b, 1)
+    return results['UAS'] # (b, 1)
 
 
 def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
@@ -182,7 +183,7 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
                 prepared_paired = prepare_batch_sdp(paired)
                 yield (prepared_batch,
                         prepared_paired, 
-                        get_scores(prepared, prepared_paired))
+                        get_scores(prepared_batch, prepared_paired))
         else:
             for chunk in idx_chunks(idx, batch_size):
                 batch = [data[i] for i in chunk]

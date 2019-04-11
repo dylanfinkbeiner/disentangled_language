@@ -139,7 +139,7 @@ if __name__ == '__main__':
 
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
 
-    if (not args.init_model) and os.path.exists(weights_path):
+    if (not args.initmodel) and os.path.exists(weights_path):
         log.info(f'Loading state dict from: \"{weights_path}\"')
         parser.load_state_dict(torch.load(weights_path))
     else:

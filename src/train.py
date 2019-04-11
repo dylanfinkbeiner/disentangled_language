@@ -3,6 +3,7 @@ import logging
 import os
 import time
 from time import sleep
+from tqdm import tqdm
 
 import numpy as np
 import torch
@@ -95,6 +96,15 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     exp_file.write('Training results:')
     state = parser.state_dict() # For weight analysis
     grad_print = 10
+
+    gradient_update = '\n'.join([ '========================'] + [n for n, p in list(parser.named_parameters())])
+    log.info(gradient_update)
+    gradient_update = '\n'.join([ '========================'] + [n for n, p in list(parser.BiLSTM.named_parameters())])
+    log.info(gradient_update)
+    parser.train()
+    print(f'named: {len(list(parser.BiLSTM.named_parameters()))}, unnamed: {len(list(parser.BiLSTM.parameters()))}')
+
+    exp_file.write(gradient_update)
     try:
         for e in range(n_epochs):
             log.info(f'Entering epoch {e+1}/{n_epochs}.')
@@ -103,8 +113,8 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
             train_loss = 0
             num_steps = 0
             if train_mode == 0: # Standard syntactic parsing
-                for b in range(n_train_batches):
-                    log.info(f'Epoch {e+1}/{n_epochs}, batch {b+1}/{n_train_batches}.')
+                for b in tqdm(range(n_train_batches), ascii=True, desc='Batches complete: ', ncols=80):
+                    #log.info(f'Training batch {b+1}/{n_train_batches}.')
                     opt.zero_grad()
                     batch = next(train_sdp_loader)
                     arc_targets = batch['arc_targets']
@@ -124,7 +134,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     opt_sdp.step()
                     num_steps += 1
 
-            elif train_mode >= 1:
+            elif train_mode == 1:
                 for m in range(n_megabatches):
                     megabatch = []
                     idxs = []
@@ -164,6 +174,9 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             loss_r_paired = loss_rels(S_rel_paired, paired['rel_targets'])
                             loss_paired = loss_h_paired + loss_r_paired
 
+                            if x % grad_print == 0:
+                                print('scores look like: ', scores)
+
                             loss_rep = loss_syn_rep(
                                     average_hiddens(h_batch, batch_lens),
                                     average_hiddens(h_paired, paired_lens),
@@ -182,7 +195,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             gradient_update = '\n'.join([ '========================',
                             f'Epoch {e+1}/{n_epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}',
                             'Gradients after SENTENCE SIMILARITY step:'] +
-                            [str(p.grad.data.norm(2).item()) for p in list(parser.BiLSTM.parameters())])
+                            ['{:35} {:3.8f}'.format(n, p.grad.data.norm(2).item()) for n, p in list(parser.BiLSTM.named_parameters())])
                             log.info(gradient_update)
                             exp_file.write(gradient_update)
 
@@ -211,7 +224,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             gradient_update = '\n'.join([ '========================',
                             f'Epoch {e+1}/{n_epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}',
                             'Gradients after SENTENCE SIMILARITY step:'] +
-                            [str(p.grad.data.norm(2).item()) for p in list(parser.BiLSTM.parameters())])
+                            [f'{p.name}:' + str(p.grad.data.norm(2).item()) for p in list(parser.BiLSTM.parameters())])
                             log.info(gradient_update)
                             exp_file.write(gradient_update)
 
@@ -269,13 +282,14 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
             # Early stopping heuristic from Jabberwocky paper
             if LAS > prev_best:
+                print('LAS improved.')
                 earlystop_counter = 0
                 prev_best = LAS
             else:
                 earlystop_counter += 1
+                print(f'LAS has not improved for {earlystop_counter} consecutive epochs.')
                 if earlystop_counter >= 5:
-                    print(f'LAS has not improved for 5 consecutive epochs,
-                          stopping after {e} epochs')
+                    print(f'Stopping after {e} epochs')
                     break
             
             if train_mode != -1:
