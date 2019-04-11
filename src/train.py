@@ -12,7 +12,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 from data_utils import sdp_data_loader, ss_data_loader, prepare_batch_ss, get_triplets
-from losses import loss_heads, loss_rels, loss_sem_rep, loss_syn_rep
+from losses import loss_arcs, loss_rels, loss_sem_rep, loss_syn_rep
 from utils import attachment_scoring, average_hiddens, predict_relations, word_dropout
 
 
@@ -35,11 +35,11 @@ log.addHandler(stream_handler)
 def train(args, parser, data, weights_path=None, exp_path_base=None):
     seed = args.seed
     model_name = args.model
-    train_mode = args.trainingmode
-    batch_size = args.batchsize
+    train_mode = args.train_mode
+    batch_size = args.batch_size
     mega_size = args.M
-    h_size = args.hsize
-    syn_size = args.synsize
+    h_size = args.h_size
+    syn_size = args.syn_size
     n_epochs = args.epochs if train_mode != -1 else 1
     custom_task = train_mode > 0
 
@@ -83,7 +83,10 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     if train_mode > 0:
         n_megabatches = ceil(len(train_ss) / (mega_size * batch_size))
 
-    opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
+    opt_sdp = Adam(parser.parameters(), lr=args.lr_syn, betas=[0.9, 0.9])
+    if train_mode > 0:
+        opt_ss = Adam(parser.parameters(), lr=args.lr_sem, betas=[0.9, 0.9])
+
 
     earlystop_counter = 0
     prev_best = 0
@@ -101,24 +104,24 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
             num_steps = 0
             if train_mode == 0: # Standard syntactic parsing
                 for b in range(n_train_batches):
-                    log.info(f'Training batch {b+1}/{n_train_batches}.')
+                    log.info(f'Epoch {e+1}/{n_epochs}, batch {b+1}/{n_train_batches}.')
                     opt.zero_grad()
                     batch = next(train_sdp_loader)
-                    head_targets = batch['head_targets']
+                    arc_targets = batch['arc_targets']
                     rel_targets = batch['rel_targets']
                     sent_lens = batch['sent_lens'].to(device)
                     words_d = word_dropout(batch['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=sent_lens)
                     
                     S_arc, S_rel, _ = parser(words_d.to(device), batch['pos'].to(device), sent_lens)
 
-                    loss_h = loss_heads(S_arc, head_targets)
+                    loss_h = loss_arcs(S_arc, arc_targets)
                     loss_r = loss_rels(S_rel, rel_targets)
                     loss = loss_h + loss_r
 
                     train_loss += loss_h.item() + loss_r.item()
 
                     loss.backward()
-                    opt.step()
+                    opt_sdp.step()
                     num_steps += 1
 
             elif train_mode >= 1:
@@ -127,9 +130,9 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     idxs = []
                     idx = 0
                     for _ in range(mega_size):
-                        instances = [train_ss[j] for j in next(train_ss_loader)]
-                        curr_idxs = [i + idx for i in range(len(instances))]
-                        megabatch.extend(instances)
+                        mini_batch = [train_ss[j] for j in next(train_ss_loader)]
+                        curr_idxs = [i + idx for i in range(len(mini_batch))]
+                        megabatch.extend(mini_batch)
                         idxs.append(curr_idxs)
                         idx += len(curr_idxs)
 
@@ -137,9 +140,9 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                         s1, s2, negs = get_triplets(megabatch, batch_size, parser, device)
 
                     for x in range(len(idxs)):
-                        print(f'Epoch {e+1}/{n_epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}')
+                        log.info(f'Epoch {e+1}/{n_epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}')
 
-                        opt.zero_grad()
+                        opt_sdp.zero_grad()
                         if train_mode == 1:
                             batch, paired, scores = next(train_sdp_loader)
                             batch_lens = batch['sent_lens'].to(device)
@@ -148,22 +151,22 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             words_d_batch = word_dropout(batch['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=batch_lens)
                             words_d_paired = word_dropout(paired['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=paired_lens)
 
-                            outputs_batch, _ = parser.BiLSTM(words_d_batch.to(device), batch['pos'].to(device), batch_lens)
-                            outputs_paired, _ = parser.BiLSTM(words_d_paired.to(device), paired['pos'].to(device), paired_lens)
+                            h_batch, _ = parser.BiLSTM(words_d_batch.to(device), batch['pos'].to(device), batch_lens)
+                            h_paired, _ = parser.BiLSTM(words_d_paired.to(device), paired['pos'].to(device), paired_lens)
 
-                            S_arc_batch, S_rel_batch, _ = parser.BiAffineAttention(outputs_batch.to(device), batch_lens)
-                            S_arc_paired, S_rel_paired, _ = parser.BiAffineAttention(outputs_paired.to(device), paired_lens)
+                            S_arc_batch, S_rel_batch, _ = parser.BiAffineAttention(h_batch.to(device), batch_lens)
+                            S_arc_paired, S_rel_paired, _ = parser.BiAffineAttention(h_paired.to(device), paired_lens)
 
-                            loss_h_batch = loss_heads(S_arc_batch, batch['head_targets'])
+                            loss_h_batch = loss_arcs(S_arc_batch, batch['arc_targets'])
                             loss_r_batch = loss_rels(S_rel_batch, batch['rel_targets'])
                             loss_batch = loss_h_batch + loss_r_batch
-                            loss_h_paired = loss_heads(S_arc_paired, paired['head_targets'])
+                            loss_h_paired = loss_arcs(S_arc_paired, paired['arc_targets'])
                             loss_r_paired = loss_rels(S_rel_paired, paired['rel_targets'])
                             loss_paired = loss_h_paired + loss_r_paired
 
                             loss_rep = loss_syn_rep(
-                                    average_hiddens(outputs_batch, batch_lens),
-                                    average_hiddens(outputs_paired, paired_lens),
+                                    average_hiddens(h_batch, batch_lens),
+                                    average_hiddens(h_paired, paired_lens),
                                     scores.to(device), 
                                     syn_size=syn_size,
                                     h_size=h_size)
@@ -183,10 +186,10 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             log.info(gradient_update)
                             exp_file.write(gradient_update)
 
-                        opt.step()
+                        opt_sdp.step()
 
                         # Sentence similarity step begins
-                        opt.zero_grad()
+                        opt_ss.zero_grad()
 
                         w1, p1, sl1 = prepare_batch_ss([s1[i] for i in idxs[x]])
                         w2, p2, sl2 = prepare_batch_ss([s2[i] for i in idxs[x]])
@@ -212,7 +215,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             log.info(gradient_update)
                             exp_file.write(gradient_update)
 
-                        opt.step()
+                        opt_ss.step()
 
             train_loss /= (num_steps if num_steps > 0 else -1) # Just dependency parsing loss
 
@@ -221,46 +224,46 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
             dev_loss = 0
             UAS = 0
             LAS = 0
-            total = 0
+            total_words = 0
             log.info('Evaluation step begins.')
             for b in range(n_dev_batches):
                 #log.info(f'Eval batch {b+1}/{n_dev_batches}.')
                 with torch.no_grad():
                     batch = next(dev_loader)
-                    head_targets = batch['head_targets']
+                    arc_targets = batch['arc_targets']
                     rel_targets = batch['rel_targets']
                     sent_lens = batch['sent_lens'].to(device)
 
-                    S_arc, S_rel, head_preds = parser(
+                    S_arc, S_rel, arc_preds = parser(
                             batch['words'].to(device), 
                             batch['pos'].to(device), 
                             sent_lens)
                     rel_preds = predict_relations(S_rel)
 
-                    loss_h = loss_heads(S_arc, head_targets)
+                    loss_h = loss_arcs(S_arc, arc_targets)
                     loss_r = loss_rels(S_rel, rel_targets)
                     dev_loss += loss_h.item() + loss_r.item()
 
                     results = attachment_scoring(
-                            head_preds=head_preds.cpu(),
+                            arc_preds=arc_preds.cpu(),
                             rel_preds=rel_preds,
-                            head_targets=head_targets,
+                            arc_targets=arc_targets,
                             rel_targets=rel_targets,
                             sent_lens=sent_lens,
                             include_root=True)
                     UAS += results['UAS_correct']
                     LAS += results['LAS_correct']
-                    total += results['total_words']
+                    total_words += results['total_words']
 
             dev_loss /= n_dev_batches
-            UAS /= total
+            UAS /= total_words
             LAS /= total
 
             update = '''Epoch: {:}
                     Train Loss: {:.3f}
                     Dev Loss: {:.3f}
                     UAS: {:.3f}
-                    LAS: {:.3f}'''.format(e, train_loss, dev_loss, UAS, LAS)
+                    LAS: {:.3f}'''.format(e, train_loss, dev_loss, UAS * 100, LAS * 100)
             log.info(update)
             exp_file.write(update)
 
@@ -288,12 +291,13 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
     exp_file.close()
 
+
 def train_standard_parser(parser, args=None, data=None, opt=None, loader=None):
     parser.train()
     for b in range(n_training_batches):
        opt.zero_grad()
        batch = next(loader)
-       head_targets = batch['head_targets']
+       arc_targets = batch['arc_targets']
        rel_targets = batch['rel_targets']
        sent_lens = batch['sent_lens'].to(device)
 
@@ -306,7 +310,7 @@ def train_standard_parser(parser, args=None, data=None, opt=None, loader=None):
        
        S_arc, S_rel, _ = parser(words_d.to(device), batch['pos'].to(device), sent_lens)
     
-       loss_h = loss_heads(S_arc, head_targets)
+       loss_h = loss_arcs(S_arc, arc_targets)
        loss_r = loss_rels(S_rel, rel_targets)
        loss = loss_h + loss_r
     
@@ -315,8 +319,6 @@ def train_standard_parser(parser, args=None, data=None, opt=None, loader=None):
        loss.backward()
        opt.step()
        #num_steps += 1
-
-def train_()
 
 
 def dev_eval(parser, args=None, data=None, loader=None):
@@ -329,24 +331,24 @@ def dev_eval(parser, args=None, data=None, loader=None):
     for b in range(n_dev_batches):
         with torch.no_grad():
             batch = next(loader)
-            head_targets = batch['head_targets']
+            arc_targets = batch['arc_targets']
             rel_targets = batch['rel_targets']
             sent_lens = batch['sent_lens'].to(device)
     
-            S_arc, S_rel, head_preds = parser(
+            S_arc, S_rel, arc_preds = parser(
                     batch['words'].to(device), 
                     batch['pos'].to(device), 
                     sent_lens)
             rel_preds = predict_relations(S_rel)
     
-            loss_h = loss_heads(S_arc, head_targets)
+            loss_h = loss_arcs(S_arc, arc_targets)
             loss_r = loss_rels(S_rel, rel_targets)
             dev_loss += loss_h.item() + loss_r.item()
     
             results = attachment_scoring(
-                    head_preds=head_preds.cpu(),
+                    arc_preds=arc_preds.cpu(),
                     rel_preds=rel_preds,
-                    head_targets=head_targets,
+                    arc_targets=arc_targets,
                     rel_targets=rel_targets,
                     sent_lens=sent_lens,
                     include_root=True)
@@ -362,7 +364,7 @@ def dev_eval(parser, args=None, data=None, loader=None):
                 Train Loss: {:.3f}
                 Dev Loss: {:.3f}
                 UAS: {:.3f}
-                LAS: {:.3f}'''.format(e, train_loss, dev_loss, UAS, LAS)
+                LAS: {:.3f}'''.format(e, train_loss, dev_loss, UAS * 100, LAS * 100)
 
         log.info(update)
         exp_file.write(update)
