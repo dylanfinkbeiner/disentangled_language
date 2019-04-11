@@ -1,8 +1,14 @@
+import random
+from random import shuffle
+
 import torch
+import torch.nn.functional as F
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
 
 import data_utils
+
+UNK_TOKEN = '<unk>'
 
 def attachment_scoring(
         head_preds=None, 
@@ -25,7 +31,7 @@ def attachment_scoring(
             LAS - average number of correct relation predictions
     '''
 
-    sent_lens = sent_lens.view(-1, 1)
+    sent_lens = sent_lens.view(-1, 1).float()
     total_words = sent_lens.sum().float()
     b, l = head_preds.shape
 
@@ -43,7 +49,7 @@ def attachment_scoring(
     correct_rels = rel_preds.eq(rel_targets).float()
 
     UAS_correct = correct_heads.sum(1, True) # (b,l) -> (b,1)
-    UAS_correct = UAS_correct if include_root else UAS_correct - 1
+    UAS_correct = UAS_correct if include_root else F.relu(UAS_correct - 1)
     if not keep_dim:
         UAS_correct = UAS_correct.sum() # (b,l) -> (1)
         UAS = UAS_correct / (total_words if include_root else total_words - 1)
@@ -51,7 +57,7 @@ def attachment_scoring(
         UAS = UAS_correct / (sent_lens if include_root else sent_lens - 1)
 
     LAS_correct = (correct_heads * correct_rels).sum(1, True)
-    LAS_correct = LAS_correct if include_root else LAS_correct - 1
+    LAS_correct = LAS_correct if include_root else F.relu(LAS_correct - 1)
     if not keep_dim:
         LAS_correct = (correct_heads * correct_rels).sum()
         LAS = LAS_correct / (total_words if include_root else total_words - 1)

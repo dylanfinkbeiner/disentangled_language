@@ -1,5 +1,5 @@
 import torch
-import torch.functional as F
+import torch.nn.functional as F
 
 
 def loss_heads(S_arc, head_targets, pad_idx=-1):
