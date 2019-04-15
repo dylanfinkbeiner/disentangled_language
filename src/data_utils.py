@@ -86,7 +86,7 @@ def build_dataset_ss(paranmt_file: str, x2i=None):
     return sents_list
 
 
-def get_cutoffs(data_sorted: list) -> dict:
+def build_bucket_dicts(data_sorted: list) -> dict:
     '''
         inputs:
             data_sorted - list of np arrays (conllu-formatted sentences)
@@ -98,12 +98,15 @@ def get_cutoffs(data_sorted: list) -> dict:
     '''
     i2c = dict()
     l2c = defaultdict(list)
+    l2n = defaultdict(int)
 
     l_prev = data_sorted[0].shape[0]
     l_max = data_sorted[-1].shape[0]
     l2c[l_prev].append(0)
+    l2n[l_prev] += 1
     for i, s in enumerate(data_sorted[1:], start=1):
         l = s.shape[0]
+        l2n[l] += 1
         if l > l_prev:
             l2c[l_prev].append(i)
             l2c[l].append(i)
@@ -118,7 +121,8 @@ def get_cutoffs(data_sorted: list) -> dict:
         print(f'i2c {len(i2c)} != data_sorted {len(data_sorted)}')
         raise Exception
 
-    return i2c
+
+    return {'l2c': dict(l2c), 'i2c': i2c, 'l2n': dict(l2n)}
 
 
 def get_paired_idx(idx: list, cutoffs: dict):
@@ -137,7 +141,7 @@ def get_paired_idx(idx: list, cutoffs: dict):
     return paired_idx
 
 
-def get_scores(batch, paired):
+def get_scores(batch, paired, score=None):
     '''
         inputs:
             batch -
@@ -155,7 +159,14 @@ def get_scores(batch, paired):
             include_root=False,
             keep_dim=True)
 
-    return results['UAS'] # (b, 1)
+    return results[score] # (b, 1)
+
+
+def get_buckets():
+
+
+
+    return buckets
 
 
 def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
@@ -163,7 +174,24 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
 
     if custom_task:
         data_sorted = sorted(data, key = lambda s : s.shape[0])
-        cutoffs = get_cutoffs(data_sorted)
+        bucket_dicts = build_bucket_dicts(data_sorted)
+        l2n = bucket_dicts['l2n']
+        cutoffs = bucket_dicts['i2c']
+
+        l2c = bucket_dicts['l2c']
+        print('Num lengths: ', len(l2c))
+
+        print(l2c.keys())
+        print(len(cutoffs))
+        print(l2n.items())
+
+        k = 0
+        for v in l2n.values():
+            k += v
+
+        print(f'k: {k} , len: {len(data_sorted)}')
+
+        exit()
     
     while True:
         if shuffle_idx:
@@ -172,14 +200,17 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
         if custom_task:
             paired_idx = get_paired_idx(idx, cutoffs)
 
-            for chunk, chunk_p in zip(idx_chunks(idx, batch_size), idx_chunks(paired_idx, batch_size)):
+            for chunk, chunk_p in zip(
+                    idx_chunks(idx, batch_size), 
+                    idx_chunks(paired_idx, batch_size)):
+
                 batch = [data_sorted[i] for i in chunk]
                 paired = [data_sorted[i] for i in chunk_p]
                 prepared_batch = prepare_batch_sdp(batch)
                 prepared_paired = prepare_batch_sdp(paired)
                 yield (prepared_batch,
                         prepared_paired, 
-                        get_scores(prepared_batch, prepared_paired))
+                        get_scores(prepared_batch, prepared_paired, 'LAS'))
         else:
             for chunk in idx_chunks(idx, batch_size):
                 batch = [data[i] for i in chunk]
