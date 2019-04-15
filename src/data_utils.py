@@ -65,6 +65,10 @@ def build_ptb_dataset(conllu_files=[]):
 
 
 def build_sdp_dataset(conllu_files: list, x2i=None):
+    '''
+        For building a dataset from conllu files in general, once the x2i dict
+        has been constructed by build_ptb_dataset.
+    '''
     data = {}
 
     for f in conllu_files:
@@ -79,7 +83,7 @@ def build_sdp_dataset(conllu_files: list, x2i=None):
     
 
 def build_dataset_ss(paranmt_file: str, x2i=None):
-    sents_list = para_to_sents(paranmt_file)
+    sents_list = paraphrase_to_sents(paranmt_file)
 
     sents_list = numericalize_ss(sents_list, x2i)
 
@@ -151,9 +155,9 @@ def get_scores(batch, paired, score=None):
             scores - a (b,1) tensor of 'scores' for the paired sentences, weights to be used in loss function
     '''
     results = utils.attachment_scoring(
-            head_preds=batch['head_targets'], 
+            arc_preds=batch['arc_targets'], 
             rel_preds=batch['rel_targets'], 
-            head_targets=paired['head_targets'], 
+            arc_targets=paired['arc_targets'], 
             rel_targets=paired['rel_targets'], 
             sent_lens=batch['sent_lens'], 
             include_root=False,
@@ -247,7 +251,7 @@ def prepare_batch_sdp(batch):
             words - 
             pos -
             sent_lens - list of lengths (INCLUDES ROOT TOKEN)
-            head_targets -
+            arc_targets -
             rel_targets -
     '''
     batch_size = len(batch)
@@ -257,7 +261,7 @@ def prepare_batch_sdp(batch):
 
     words = torch.zeros((batch_size, length_longest)).long()
     pos = torch.zeros((batch_size, length_longest)).long()
-    head_targets = torch.LongTensor(batch_size, length_longest).fill_(-1)
+    arc_targets = torch.LongTensor(batch_size, length_longest).fill_(-1)
     rel_targets = torch.LongTensor(batch_size, length_longest).fill_(-1)
 
     for i, s in enumerate(batch_sorted):
@@ -269,13 +273,13 @@ def prepare_batch_sdp(batch):
             '''
             words[i,j] = int(s[j,0])
             pos[i,j] = int(s[j,1])
-            head_targets[i,j] = int(s[j,2])
+            arc_targets[i,j] = int(s[j,2])
             rel_targets[i,j] = int(s[j,3])
 
     return {'words': words, 
             'pos' : pos, 
             'sent_lens' : sent_lens, 
-            'head_targets' : head_targets, 
+            'arc_targets' : arc_targets, 
             'rel_targets' : rel_targets}
 
 
@@ -342,7 +346,7 @@ def conllu_to_sents(f:str):
     return sents_list
 
 
-def para_to_sents(f: str):
+def paraphrase_to_sents(f: str):
     '''
         inputs:
             f - name of sentences/paraphrases dataset txt file

@@ -2,16 +2,16 @@ import torch
 import torch.nn.functional as F
 
 
-def loss_heads(S_arc, head_targets, pad_idx=-1):
+def loss_arcs(S_arc, arc_targets, pad_idx=-1):
     '''
     S - should be something like a tensor w/ shape
         (batch_size, sent_len, sent_len); also, these are
-        head scores BEFORE softmax applied
+        arcs scores BEFORE softmax applied
 
-    heads - should be a list of integers (the indices)
+    arcs - should be a list of integers (the indices)
     '''
     # For input to cross_entropy, shape must be (b, C, ...) where C is number of classes
-    return F.cross_entropy(S_arc.permute(0,2,1).cpu(), head_targets, ignore_index=pad_idx)
+    return F.cross_entropy(S_arc.permute(0,2,1).cpu(), arc_targets, ignore_index=pad_idx)
 
 
 def loss_rels(S_rel, rel_targets, pad_idx=-1):

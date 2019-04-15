@@ -1,8 +1,5 @@
 import os
-import sys
-import time
 import logging
-#from memory_profiler import profile
 
 import numpy as np
 import torch
@@ -81,11 +78,11 @@ class BiLSTM(nn.Module):
 
         h_size = self.hidden_size
 
+        # Zero-out "unk" word at test time
         if not self.training:
-            self.word_emb.weight.data[self.unk_idx,:] = 0.0 # Zero-out "unk" word at test time
+            self.word_emb.weight.data[self.unk_idx,:] = 0.0 
 
-        # Sort the words, pos, sent_lens
-        #lens_sorted = torch.LongTensor(sent_lens).to(device)
+        # Sort the words, pos, sent_lens (necessary for pack_padded_sequence)
         lens_sorted = sent_lens
         words_sorted = words
         pos_sorted = pos
@@ -174,15 +171,15 @@ class BiAffineAttention(nn.Module):
         S_arc += bias # (b, l, l) where logits vectors s_i are 3rd axis of S
 
         if self.training:  # Greedy
-            head_preds = torch.argmax(S_arc, 2) # (b, l, l) -> (b, l)
+            arc_preds = torch.argmax(S_arc, 2) # (b, l, l) -> (b, l)
 
         else:  # Single-rooted, acyclic graph of head-dependency relations
-            head_preds = mst_preds(S_arc, sent_lens) # S:(b, l, l) -> [length-b list of np arrays]
-            head_preds = pad_sequence([torch.Tensor(s).long() for s in head_preds],
+            arc_preds = mst_preds(S_arc, sent_lens) # S:(b, l, l) -> [length-b list of np arrays]
+            arc_preds = pad_sequence([torch.Tensor(s).long() for s in arc_preds],
                     batch_first=True, padding_value=0) # (b, l)
 
         # head_preds should be (b,l), not (b,l-1), as head of a word might be root
-        head_preds = head_preds.to(device)
+        arc_preds = arc_preds.to(device)
 
         d_rel, num_rel, _ = self.U_rel.size()
 
@@ -197,7 +194,7 @@ class BiAffineAttention(nn.Module):
         sums = (torch.mm((H_rel_head + H_rel_dep).view(b*l, d_rel), self.W_rel) + self.b_rel).view(b, l, num_rel)
         S_rel = interactions + sums # (b, l, num_rel) where logits vectors l_i are 3rd axis of L
 
-        return S_arc, S_rel, head_preds
+        return S_arc, S_rel, arc_preds
 
 
 class BiaffineParser(nn.Module):
@@ -250,7 +247,7 @@ class BiaffineParser(nn.Module):
         outs:
             S_arc - Tensor containing scores for arcs
             S_rel - Tensor containing scores for
-            head_preds - Tensor of predicted heads
+            arc_preds - Tensor of predicted arcs
         '''
 
         outputs, (h_n, c_n) = self.BiLSTM(words, pos, sent_lens)
@@ -259,16 +256,16 @@ class BiaffineParser(nn.Module):
 
 ## From https://github.com/chantera/biaffineparser/blob/master/pytorch_model.py#L86
 def mst_preds(S_arc, sent_lens):
-    heads_batch = []
+    arcs_batch = []
     
     batch_logits = S_arc.data.cpu().numpy() # Take to numpy arrays
 
     for sent_logits, true_length in zip(batch_logits, sent_lens):
         sent_probs = softmax2d(sent_logits[:true_length, :true_length]) # Select out THE ACTUAL SENTENCE (including ROOT token)
-        head_preds = mst.mst(sent_probs) # NOTE Input to mst is softmax of arc scores
-        heads_batch.append(head_preds)
+        arc_preds = mst.mst(sent_probs) # NOTE Input to mst is softmax of arc scores
+        arcs_batch.append(arc_preds)
         
-    return heads_batch # (b, l, l)
+    return arcs_batch # (b, l, l)
 
 
 def softmax2d(x): #Just doing softmax of row vectors

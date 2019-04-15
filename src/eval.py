@@ -39,9 +39,9 @@ NAMES = {
 def eval(args, parser, data, exp_path_base=None):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    if not exp_path_base:
-        print('Base of path to experiment documentation file missing.')
-        raise Exception
+    exp_path = '_'.join([exp_path_base] + names)
+    exp_file = open(exp_path, 'a')
+    exp_file.write(f'Training experiment for model : {model_name}')
 
     vocabs = data['vocabs']
     i2r = vocabs['i2x']['rel']
@@ -52,7 +52,7 @@ def eval(args, parser, data, exp_path_base=None):
 
     if not args.ef:
         eval_flags = args.e
-        # Evaluate on all datasets
+        # By default, evaluate on all datasets
         if not eval_flags:
             eval_flags = list(range(len(GOLD)))
 
@@ -71,8 +71,6 @@ def eval(args, parser, data, exp_path_base=None):
         data[name] = build_sdp_dataset([path], vocabs['x2i'])[name]
 
     print(f'Evaluating on datasets: {names}')
-
-    exp_path = '_'.join([exp_path_base] + names)
 
     for name, gold, sents_list in zip(names, golds, sents):
         dataset = data[name]
@@ -115,6 +113,7 @@ def eval(args, parser, data, exp_path_base=None):
 
         print_results(evaluation, name)
 
+    exp_file.close()
 
 def print_results(evaluation, name):
     print(f"---------------Results for {name} dataset------------------")
