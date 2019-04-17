@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
-import scipy.stats.pearsonr as pearsonr
+from scipy.stats import pearsonr
 
 import data_utils
 
@@ -107,12 +107,12 @@ def predict_relations(S_rel):
     return rel_preds
 
 
-def sts_scoring(predictions, targets):
+def sts_scoring(predictions, targets) -> float:
     r, _ = pearsonr(predictions, targets)
     return r
 
 
-def predict_sem_sim(h1, h2, syn_size=None, sem_size=None):
+def predict_sem_sim(h1, h2, h_size=None, syn_size=None):
     sem_h1 = torch.cat((h1[:,syn_size:h_size], h1[:,h_size+syn_size:]), dim=-1)
     sem_h2 = torch.cat((h2[:,syn_size:h_size], h2[:,h_size+syn_size:]), dim=-1)
 

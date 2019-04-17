@@ -11,7 +11,7 @@ from conll17_ud_eval import evaluate, load_conllu
 from train import predict_relations
 
 from data_utils import conllu_to_sents, sdp_data_loader, build_sdp_dataset
-from utils import predict_relations
+from utils import predict_relations, predict_sem_sim
 
 #CORPORA_DIR = '/corpora'
 CORPORA_DIR = '/home/AD/dfinkbei/corpora'
@@ -36,12 +36,14 @@ NAMES = {
         2 : 'brown_cf'
         }
 
-def eval(args, parser, data, exp_path_base=None):
+YEARS = ['2012', '2013', '2014', '2015', '2016']
+
+def eval_sdp(args, parser, data, exp_path_base=None):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     exp_path = '_'.join([exp_path_base] + names)
     exp_file = open(exp_path, 'a')
-    exp_file.write(f'Training experiment for model : {model_name}')
+    exp_file.write(f'Syntactic evaluation for model : {args.model}')
 
     vocabs = data['vocabs']
     i2r = vocabs['i2x']['rel']
@@ -103,35 +105,50 @@ def eval(args, parser, data, exp_path_base=None):
             predicted_ud = load_conllu(f)
         evaluation = evaluate(gold_ud, predicted_ud)
 
-        with open(exp_path, 'a') as f:
-            info = ("Results for {}:\n LAS : {:10.2f} | UAS : {:10.2f} \n".format(
-                name,
-                100 * evaluation['UAS'].aligned_accuracy,
-                100 * evaluation['LAS'].aligned_accuracy,
-            ))
-            f.write(info)
+        info = 'Results for {}:\n LAS : {:10.2f} | UAS : {:10.2f} \n'.format(
+            name,
+            100 * evaluation['UAS'].aligned_accuracy,
+            100 * evaluation['LAS'].aligned_accuracy,
+        )
+        exp_file.write(info)
 
         print_results(evaluation, name)
 
     exp_file.close()
 
 
-def eval_ss(args):
+def eval_sts(args, parser, data, exp_path_base=None):
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    for year in years:
-        curr_data = data[year]
+    exp_path = '_'.join([exp_path_base, 'semeval'])
+    exp_file = open(exp_path, 'a')
+    exp_file.write('Semantic evaluation for model : {args.model}')
+
+    for year in YEARS:
+        curr_data = data['semeval'][year]
         predictions = []
-        for s1, s2, t in curr_data:
-                w1, p1, sl1 = prepare_batch_ss(s1)
-                w1, p1, sl1 = prepare_batch_ss(s2)
-                h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1.to(device))
-                h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2.to(device))
+        for s1, s2 in curr_data['sent_pairs']:
+            w1, p1, sl1 = prepare_batch_ss(s1)
+            w1, p1, sl1 = prepare_batch_ss(s2)
+            h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1.to(device))
+            h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2.to(device))
 
-                predictions.append(predict_sem_sim(h1,h2), args=args)
+            predictions.append(
+                    predict_sem_sim(
+                        h1,
+                        h2, 
+                        h_size=args.h_size, 
+                        syn_size=args.syn_size))
 
-        corr = sts_score(predictions, targets)
+        correlation = sts_scoring(predictions, curr_data['targets'])
 
-        print(year, corr)
+        info = 'Pearson R * 100 for {} task: {:10.2f}\n'.format(
+            year,
+            100 * correlation
+            )
+        exp_file.write(info)
+
+    exp_file.close()
 
 
 
@@ -149,6 +166,6 @@ def print_results(evaluation, name):
             100 * evaluation[metric].recall,
             100 * evaluation[metric].f1,
             "{:10.2f}".format(100 * evaluation[metric].aligned_accuracy) if evaluation[metric].aligned_accuracy is not None else ""
-        ))
-    print("-----------+-----------+-----------+-----------+-----------")
+            ))
+        print("-----------+-----------+-----------+-----------+-----------")
 

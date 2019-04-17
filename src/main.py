@@ -27,14 +27,14 @@ EXPERIMENTS_DIR = '../experiments'
 
 #CORPORA_DIR = '/corpora'
 CORPORA_DIR = '/home/AD/dfinkbei/corpora'
-STS_DIR = '/home/AD/dfinkbei/sts'
+#STS_DIR = '/home/AD/dfinkbei/sts'
+STS_DIR = f'{DATA_DIR}/sts'
 DEP_DIR = f'{CORPORA_DIR}/wsj/dependencies'
 #BROWN_DIR = f'{CORPORA_DIR}/brown/dependencies'
 BROWN_DIR = '../data/brown'
 MODEL_NAME = ''
 CONLLU_FILES = []
 PARANMT_FILE = 'para_100k.txt'
-#PARANMT_FILE = 'para_tiny.txt'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
 UNK_TOKEN = '<unk>'
@@ -56,7 +56,9 @@ if __name__ == '__main__':
     log.info(f'New session: {d}\n')
 
     args = get_args()
-    evaluating = args.e != None or args.ef != None
+    syn_eval = args.e != None or args.ef != None
+    sem_eval = args.es
+    evaluating = syn_eval or sem_eval
 
     # Build experiment file structure
     exp_dir = os.path.join(EXPERIMENTS_DIR, args.model)
@@ -83,11 +85,12 @@ if __name__ == '__main__':
     data_brown_path = os.path.join(DATA_DIR, 'data_brown.pkl')
     data_ss_path = os.path.join(DATA_DIR, 'data_ss.pkl')
 
-    init_sdp = (not os.path.exists(vocabs_path)
-            or not os.path.exists(data_ptb_path) 
-            or not os.path.exists(data_brown_path) or args.initdata)
+    #init_sdp = (not os.path.exists(vocabs_path)
+    #        or not os.path.exists(data_ptb_path) 
+    #        or not os.path.exists(data_brown_path) or args.init_sdp)
+    init_sdp = False
     #init_ss = (not os.path.exists(data_ss_path) or args.initdata) and args.trainmode > 0
-    init_ss = False # NOTE must stay this way until we get CoreNLP working on pitts
+    init_ss = True # NOTE must stay this way until we get CoreNLP working on pitts
 
     if init_sdp:
         log.info(f'Initializing syntactic dependency parsing data (including vocabs).')
@@ -116,31 +119,37 @@ if __name__ == '__main__':
                 data_brown = pickle.load(f)
 
     if init_ss:
+        log.info(f'Initializing semantic similarity data.')
         data_ss = {}
-        log.info(f'Initializing sentence similarity data.')
-        train_ss = build_ss_dataset(os.path.join(DATA_DIR, PARANMT_FILE), x2i=x2i)
-        dev_ss = build_ss_dataset(os.path.join(STS_DIR, 'input', '2017'),
-                os.path.join(STS_DIR, 'gs', '2017'),
+        STS_INPUT = os.path.join(STS_DIR, 'input')
+        STS_GS = os.path.join(STS_DIR, 'gs')
+
+        #train_ss = build_ss_dataset(os.path.join(DATA_DIR, PARANMT_FILE), gs='', x2i=x2i)
+        dev_ss = build_ss_dataset(
+                os.path.join(STS_INPUT, '2017'),
+                gs=os.path.join(STS_GS, '2017'),
+                x2i=x2i)
+        test_ss = {}
+        years = os.listdir(STS_INPUT)
+        years.remove('2017')
+        for year in years:
+            test_ss[year] = build_ss_dataset(
+                os.path.join(STS_INPUT, year),
+                gs=os.path.join(STS_GS, year),
                 x2i=x2i)
 
-        test_ss = {}
-        for i in range(2,7):
-            year = '201' + str(i)
-            test_ss[year] = build_ss_dataset(
-                    os.path.join(DATA_DIR, 'input', year), 
-                    gs=os.path.join(STS_DIR, 'gs', year),
-                    x2i=x2i)
-
-            #os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
-        data_ss['train'] = train_ss
+        #data_ss['train'] = train_ss
         data_ss['dev'] = dev_ss
         data_ss['test'] = test_ss
         with open(data_ss_path, 'wb') as f:
             pickle.dump(data_ss, f)
     elif args.trainmode > 0:
-        log.info(f'Loading pickled sentence similarity data.')
+        log.info(f'Loading pickled semantic similarity data.')
         with open(data_ss_path, 'rb') as f:
             data_ss = pickle.load(f)
+
+    print('Finished!')
+    exit()
 
     vocabs = {'x2i': x2i, 'i2x': i2x}
 
@@ -172,11 +181,15 @@ if __name__ == '__main__':
         train.train(args, parser, data, weights_path=weights_path, exp_path_base=exp_path_base)
 
     else:
-        data = {'ptb_test': data_ptb['test'],
-                'ptb_dev': data_ptb['dev'],
-                'brown_cf' : data_brown['cf'],
-                'vocabs' : vocabs}
+        if syn_eval:
+            data = {'ptb_test': data_ptb['test'],
+                    'ptb_dev': data_ptb['dev'],
+                    'brown_cf': data_brown['cf'],
+                    'vocabs': vocabs}
+            eval.eval_sdp(args, parser, data, exp_path_base=exp_path_base)
 
-        # Evaluate model
-        eval.eval(args, parser, data, exp_path_base=exp_path_base)
+        if sem_eval:
+            data = {'semeval': data_ss['test'],
+                    'vocabs': vocabs}
+            eval.eval_sts(args, parser, data, exp_path_base=exp_path_base)
 

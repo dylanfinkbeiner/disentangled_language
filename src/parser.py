@@ -217,6 +217,8 @@ class BiaffineParser(nn.Module):
             unk_idx=None):
         super(BiaffineParser, self).__init__()
 
+        self.h_size = hidden_size
+
         self.BiLSTM = BiLSTM(
                 word_e_size=word_e_size,
                 pos_e_size=pos_e_size,

@@ -15,7 +15,7 @@ ROOT_TOKEN = '<root>'
 PAD_TOKEN = '<pad>'
 
 CONLLU_MASK = [1, 4, 6, 7]  # [word, pos, head, rel]
-CORENLP_URL = 'http://localhost:9001'
+CORENLP_URL = 'http://localhost:9000'
 
 
 def build_ptb_dataset(conllu_files=[]):
@@ -82,30 +82,33 @@ def build_sdp_dataset(conllu_files: list, x2i=None):
     return data
 
 
-def txt_to_sem_scores(txt: str):
-    with open(txt, 'r') as f:
-        lines = f.read_lines()
-        sem_scores = [float(l.strip()) for l in lines if l != '\n' else -1.0]
-
-    return sem_scores
-
-
 def build_ss_dataset(ss_file, gs='', x2i=None):
-    sent_pairs = paraphrase_to_sents(ss_file)
-    sent_pairs = numericalize_ss(sent_pairs, x2i)
+    raw_sent_pairs = paraphrase_to_sents(ss_file)
+    raw_sent_pairs = numericalize_ss(raw_sent_pairs, x2i)
 
-    targets = txt_to_scores(gs) if gs else 
+    raw_targets = txt_to_sem_scores(gs) if gs else None
     
-    data = []
-    for s, t in zip(sent_pairs, targets):
-        if t != -1.0:
-            data.append((s1, s2, t))
+    sent_pairs = []
+    targets = []
+    if gs != None:
+        for s, t in zip(raw_sent_pairs, raw_targets):
+            if t != -1.0:
+                sent_pairs.append(s)
+                targets.append(t)
 
     if len(targets) != len(sent_pairs):
         print('Mismatch between targets ({len(targets)}) and sents ({len(sent_pairs)})')
         raise Exception
 
-    return data
+    return {'sent_pairs': sent_pairs, 'targets': targets}
+
+
+def txt_to_sem_scores(txt: str) -> list:
+    with open(txt, 'r') as f:
+        lines = f.readlines()
+        sem_scores = [float(l.strip()) if l != '\n' else -1.0 for l in lines]
+
+    return sem_scores
 
 
 def build_bucket_dicts(data_sorted: list) -> dict:

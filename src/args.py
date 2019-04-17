@@ -41,11 +41,13 @@ def get_args():
     parser.add_argument('--seed', type=int, dest='seed', default=7)
 
     # Evaluation options
-    evalgroup = parser.add_mutually_exclusive_group()
-    evalgroup.add_argument('-e', help='Evaluate, and provide flags for datasets to evaluate on.', nargs='*', type=int)
-    evalgroup.add_argument('-ef', help='Evaluate, and provide filename to evaluate on.')
+    sdp_eval = parser.add_mutually_exclusive_group()
+    sdp_eval.add_argument('-e', help='Evaluate, and provide flags for datasets to evaluate on.', nargs='*', type=int)
+    sdp_eval.add_argument('-ef', help='Evaluate, and provide filename to evaluate on.')
+    parser.add_argument('-es', action='store_true', default=False)
 
-    parser.add_argument('--initdata', action='store_true', default=False)
+    parser.add_argument('--initsdpdata', action='store_true', dest='init_sdp', default=False)
+    parser.add_argument('--initssdata', action='store_true', dest='init_ss', default=False)
     parser.add_argument('--initmodel', action='store_true', default=False)
 
     # Model hyperparameters
