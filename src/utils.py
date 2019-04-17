@@ -122,6 +122,9 @@ def predict_sem_sim(h1, h2, h_size=None, syn_size=None):
     sims += 1
     sims *= 2.5
 
+    if sims.shape[0] == 1:
+        sims = sims.view(-1).item()
+
     return sims
 
 

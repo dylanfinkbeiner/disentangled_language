@@ -83,14 +83,15 @@ if __name__ == '__main__':
     vocabs_path = os.path.join(DATA_DIR, 'vocabs.pkl')
     data_ptb_path = os.path.join(DATA_DIR, 'data_ptb.pkl')
     data_brown_path = os.path.join(DATA_DIR, 'data_brown.pkl')
-    data_ss_path = os.path.join(DATA_DIR, 'data_ss.pkl')
+    #data_ss_path = os.path.join(DATA_DIR, 'data_ss.pkl')
+    data_ss_path = os.path.join(DATA_DIR, 'data_ss_local.pkl')
 
     #init_sdp = (not os.path.exists(vocabs_path)
     #        or not os.path.exists(data_ptb_path) 
     #        or not os.path.exists(data_brown_path) or args.init_sdp)
     init_sdp = False
-    #init_ss = (not os.path.exists(data_ss_path) or args.initdata) and args.trainmode > 0
-    init_ss = True # NOTE must stay this way until we get CoreNLP working on pitts
+    #init_ss = (not os.path.exists(data_ss_path) or args.initdata) and args.train_mode > 0
+    init_ss = False # NOTE must stay this way until we get CoreNLP working on pitts
 
     if init_sdp:
         log.info(f'Initializing syntactic dependency parsing data (including vocabs).')
@@ -143,13 +144,11 @@ if __name__ == '__main__':
         data_ss['test'] = test_ss
         with open(data_ss_path, 'wb') as f:
             pickle.dump(data_ss, f)
-    elif args.trainmode > 0:
+    elif args.train_mode > 0 or args.es:
         log.info(f'Loading pickled semantic similarity data.')
         with open(data_ss_path, 'rb') as f:
             data_ss = pickle.load(f)
 
-    print('Finished!')
-    exit()
 
     vocabs = {'x2i': x2i, 'i2x': i2x}
 
@@ -157,7 +156,7 @@ if __name__ == '__main__':
             word_vocab_size = len(x2i['word']),
             pos_vocab_size = len(x2i['pos']),
             num_relations = len(x2i['rel']),
-            hidden_size = args.hsize,
+            hidden_size = args.h_size,
             padding_idx = x2i['word'][PAD_TOKEN],
             unk_idx = x2i['word'][UNK_TOKEN])
     parser.to(device)
@@ -175,7 +174,7 @@ if __name__ == '__main__':
         data = {'data_ptb' : data_ptb,
                 'vocabs' : vocabs,
                 'word_counts' : word_counts}
-        if args.trainmode > 0:
+        if args.train_mode > 0:
             data['data_ss'] = data_ss
 
         train.train(args, parser, data, weights_path=weights_path, exp_path_base=exp_path_base)

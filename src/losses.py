@@ -24,7 +24,7 @@ def loss_rels(S_rel, rel_targets, pad_idx=-1):
     return F.cross_entropy(S_rel.permute(0,2,1).cpu(), rel_targets, ignore_index=pad_idx)
 
 
-def loss_sem_rep(h1, h2, hn, margin=0.4, syn_size=None, h_size=None):
+def loss_sem_rep(h1, h2, hn, margin=0.4, h_size=None, syn_size=None):
     '''
         Based on the loss function from Wieting et al (2018), where the
         BiLSTM hidden state is treated as a sentence embedding and the goal
@@ -45,7 +45,7 @@ def loss_sem_rep(h1, h2, hn, margin=0.4, syn_size=None, h_size=None):
     return losses.sum()
 
 
-def loss_syn_rep(h_batch, h_paired, scores, syn_size=None, h_size=None):
+def loss_syn_rep(h_batch, h_paired, scores, h_size=None, syn_size=None):
     '''
         inputs:
             h_batch - (b, 2*h_size) tensor
