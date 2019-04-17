@@ -14,7 +14,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 from args import get_args
-from data_utils import build_ptb_dataset, build_sdp_dataset, build_dataset_ss
+from data_utils import build_ptb_dataset, build_sdp_dataset, build_ss_dataset
 import train
 import eval
 from parser import BiaffineParser
@@ -115,10 +115,16 @@ if __name__ == '__main__':
                 data_brown = pickle.load(f)
 
     if init_ss:
+        data_ss = {}
         log.info(f'Initializing sentence similarity data.')
-        data_ss = build_dataset_ss(
-                os.path.join(DATA_DIR, PARANMT_FILE), x2i)
+        train_ss = build_ss_dataset(os.path.join(DATA_DIR, PARANMT_FILE), x2i)
+        dev_ss = build_ss_dataset(os.path.join(DATA_DIR, dev_), x2i)
+        test_ss = build_ss_dataset(os.path.join(DATA_DIR, PARANMT_FILE), x2i)
+
                 #os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
+        data_ss['train'] = train_ss
+        data_ss['dev'] = dev_ss
+        data_ss['test'] = test_ss
         with open(data_ss_path, 'wb') as f:
             pickle.dump(data_ss, f)
     elif args.trainmode > 0:

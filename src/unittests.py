@@ -24,3 +24,6 @@ class TestDataUtils(unittest.TestCase):
 if __name__ == '__main__':
     unittest.main()
 
+
+
+# Should test to see if loss returned by feeding the EXACT SAME sentence in twice to syn rep loss is 0, as expected (i.e. not even word dropout)

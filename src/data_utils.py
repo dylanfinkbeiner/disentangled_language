@@ -80,14 +80,33 @@ def build_sdp_dataset(conllu_files: list, x2i=None):
         data[name] = numericalize_sdp(filtered, x2i)
 
     return data
-    
+    pairwise_scores
 
-def build_dataset_ss(paranmt_file: str, x2i=None):
+
+def txt_to_scores(txt: str):
+
+    with open(txt, 'r') as f:
+        lines = f.read_lines()
+
+        [float(line) for line in lines]
+
+
+def build_ss_dataset(paranmt_file='', scores_file='', x2i=None):
     sents_list = paraphrase_to_sents(paranmt_file)
-
     sents_list = numericalize_ss(sents_list, x2i)
 
-    return sents_list
+    targets = txt_to_scores(scores_file) if scores_file else None
+    
+    data = []
+    for s, t in zip(sents_list, targets):
+        if t == '\n':
+            sents_list.pop(s)
+
+    if len(targets) != len(sents_list):
+        print('Mismatch between targets ({len(targets)}) and sents ({len(sents_list)})')
+        raise Exception
+
+    return sents_list, targets
 
 
 def build_bucket_dicts(data_sorted: list) -> dict:
@@ -138,14 +157,15 @@ def get_paired_idx(idx: list, cutoffs: dict):
     for i in idx:
         c = cutoffs[i]
         paired_i = random.randrange(c[0], c[1])
-        while (paired_i == i) and (c[0] != c[1]-1):
+        unique_length = c[0] == c[1] - 1
+        while (paired_i == i) and not unique_length:
             paired_i = random.randrange(c[0], c[1])
         paired_idx.append(paired_i)
 
     return paired_idx
 
 
-def get_scores(batch, paired, score=None):
+def get_scores(batch, paired, score_type=None):
     '''
         inputs:
             batch -
@@ -163,12 +183,23 @@ def get_scores(batch, paired, score=None):
             include_root=False,
             keep_dim=True)
 
-    return results[score] # (b, 1)
+    return results[score_type] # (b, 1)
 
 
-def get_buckets():
+def build_buckets(data_sorted, l2c=None, i2c=None, score_type=None) -> dict:
+    buckets = {}
 
+    for length in l2c.keys():
+        curr_pairwise = defaultdict(int)
 
+        c = l2c[length]
+        for i in range(c[0], c[1]):
+            s1 = data_sorted[i]
+            for j in range(i+1, c[1]):
+                s2 = data_sorted[j]
+                curr_pairwise[(i,j)] = get_scores([s1], [s2], score_type='LAS')
+
+        buckets[length] = dict(curr_pairwise)
 
     return buckets
 
@@ -197,6 +228,7 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
 
         exit()
     
+
     while True:
         if shuffle_idx:
             shuffle(idx) # In-place shuffle
@@ -214,7 +246,7 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
                 prepared_paired = prepare_batch_sdp(paired)
                 yield (prepared_batch,
                         prepared_paired, 
-                        get_scores(prepared_batch, prepared_paired, 'LAS'))
+                        get_scores(prepared_batch, prepared_paired, score_type='LAS'))
         else:
             for chunk in idx_chunks(idx, batch_size):
                 batch = [data[i] for i in chunk]

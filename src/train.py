@@ -84,10 +84,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     if train_mode > 0:
         n_megabatches = ceil(len(train_ss) / (mega_size * batch_size))
 
-    opt_sdp = Adam(parser.parameters(), lr=args.lr_syn, betas=[0.9, 0.9])
-    if train_mode > 0:
-        opt_ss = Adam(parser.parameters(), lr=args.lr_sem, betas=[0.9, 0.9])
-
+    opt = Adam(parser.parameters(), lr=1.0, betas=[0.9, 0.9])
 
     earlystop_counter = 0
     prev_best = 0
@@ -131,7 +128,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     train_loss += loss_h.item() + loss_r.item()
 
                     loss.backward()
-                    opt_sdp.step()
+                    opt.step()
                     num_steps += 1
 
             elif train_mode == 1:
@@ -152,7 +149,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     for x in range(len(idxs)):
                         log.info(f'Epoch {e+1}/{n_epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}')
 
-                        opt_sdp.zero_grad()
+                        opt.zero_grad()
                         if train_mode == 1:
                             batch, paired, scores = next(train_sdp_loader)
                             batch_lens = batch['sent_lens'].to(device)
@@ -185,6 +182,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                                     h_size=h_size)
 
                             loss = loss_batch.to(device) + loss_paired.to(device) + loss_rep
+                            loss *= args.lr_syn
 
                             train_loss += loss.item()
                             num_steps += 1
@@ -199,10 +197,10 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             log.info(gradient_update)
                             exp_file.write(gradient_update)
 
-                        opt_sdp.step()
+                        opt.step()
 
                         # Sentence similarity step begins
-                        opt_ss.zero_grad()
+                        opt.zero_grad()
 
                         w1, p1, sl1 = prepare_batch_ss([s1[i] for i in idxs[x]])
                         w2, p2, sl2 = prepare_batch_ss([s2[i] for i in idxs[x]])
@@ -219,6 +217,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                                 syn_size=syn_size,
                                 h_size=h_size)
 
+                        loss *= args.lr_sem
                         loss.backward()
                         if x % grad_print == 0:
                             gradient_update = '\n'.join([ '========================',
@@ -228,7 +227,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             log.info(gradient_update)
                             exp_file.write(gradient_update)
 
-                        opt_ss.step()
+                        opt.step()
 
             train_loss /= (num_steps if num_steps > 0 else -1) # Just dependency parsing loss
 
