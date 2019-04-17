@@ -80,33 +80,32 @@ def build_sdp_dataset(conllu_files: list, x2i=None):
         data[name] = numericalize_sdp(filtered, x2i)
 
     return data
-    pairwise_scores
 
 
-def txt_to_scores(txt: str):
-
+def txt_to_sem_scores(txt: str):
     with open(txt, 'r') as f:
         lines = f.read_lines()
+        sem_scores = [float(l.strip()) for l in lines if l != '\n' else -1.0]
 
-        [float(line) for line in lines]
+    return sem_scores
 
 
-def build_ss_dataset(paranmt_file='', scores_file='', x2i=None):
-    sents_list = paraphrase_to_sents(paranmt_file)
-    sents_list = numericalize_ss(sents_list, x2i)
+def build_ss_dataset(ss_file, gs='', x2i=None):
+    sent_pairs = paraphrase_to_sents(ss_file)
+    sent_pairs = numericalize_ss(sent_pairs, x2i)
 
-    targets = txt_to_scores(scores_file) if scores_file else None
+    targets = txt_to_scores(gs) if gs else 
     
     data = []
-    for s, t in zip(sents_list, targets):
-        if t == '\n':
-            sents_list.pop(s)
+    for s, t in zip(sent_pairs, targets):
+        if t != -1.0:
+            data.append((s1, s2, t))
 
-    if len(targets) != len(sents_list):
-        print('Mismatch between targets ({len(targets)}) and sents ({len(sents_list)})')
+    if len(targets) != len(sent_pairs):
+        print('Mismatch between targets ({len(targets)}) and sents ({len(sent_pairs)})')
         raise Exception
 
-    return sents_list, targets
+    return data
 
 
 def build_bucket_dicts(data_sorted: list) -> dict:
@@ -359,6 +358,8 @@ def conllu_to_sents(f:str):
 
     with open(f, 'r') as conllu_file:
         lines = conllu_file.readlines()
+        if lines[-1] != '\n':
+            lines.append('\n') # So split_points works properly
 
     while(lines[0] == '\n'):
         lines.pop(0)
@@ -384,7 +385,7 @@ def paraphrase_to_sents(f: str):
             f - name of sentences/paraphrases dataset txt file
 
         outputs:
-            sents_list - a list of pairs (tuples) of sentences and their
+            sent_pairs - a list of pairs (tuples) of sentences and their
                          paraphrases
     '''
 
@@ -394,16 +395,16 @@ def paraphrase_to_sents(f: str):
     with open(f, 'r') as para_file:
         lines = para_file.readlines()
 
-    sents_list = []
+    sent_pairs = []
     for line in lines:
         sents = line.split('\t')
         s1 = sents[0].strip().split(' ')
         s2 = sents[1].strip().split(' ')
         s1 = np.array(tagger.tag(s1))
         s2 = np.array(tagger.tag(s2))
-        sents_list.append( (s1,s2) )
+        sent_pairs.append( (s1,s2) )
 
-    return sents_list
+    return sent_pairs
 
 
 def build_dicts(sents_list):
@@ -514,12 +515,12 @@ def get_triplets(megabatch, minibatch_size, parser, device):
     for m in minibatches:
         words, pos, sent_lens = prepare_batch_ss(m)
         sent_lens = sent_lens.to(device)
-
         m_reps, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
         megabatch_of_reps.append(utils.average_hiddens(m_reps, sent_lens))
 
     megabatch_of_reps = torch.cat(megabatch_of_reps)
 
+    # Get negative samples with respect to s1
     negs = get_negative_samps(megabatch, megabatch_of_reps)
 
     return s1, s2, negs

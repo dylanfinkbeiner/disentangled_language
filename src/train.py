@@ -266,6 +266,16 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     UAS += results['UAS_correct']
                     LAS += results['LAS_correct']
                     total_words += results['total_words']
+            with torch.no_grad():
+                w1, p1, sl1 = prepare_batch_ss(s1_dev)
+                w1, p1, sl1 = prepare_batch_ss(s2_dev)
+                h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1.to(device))
+                h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2.to(device))
+
+                predictions = predict_sem_sim(h1, h2)
+
+                sts_scores(predictions, targets_dev)
+
 
             dev_loss /= n_dev_batches
             UAS /= total_words

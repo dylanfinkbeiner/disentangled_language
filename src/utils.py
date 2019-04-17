@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
+import scipy.stats.pearsonr as pearsonr
 
 import data_utils
 
@@ -106,6 +107,24 @@ def predict_relations(S_rel):
     return rel_preds
 
 
+def sts_scoring(predictions, targets):
+    r, _ = pearsonr(predictions, targets)
+    return r
+
+
+def predict_sem_sim(h1, h2, syn_size=None, sem_size=None):
+    sem_h1 = torch.cat((h1[:,syn_size:h_size], h1[:,h_size+syn_size:]), dim=-1)
+    sem_h2 = torch.cat((h2[:,syn_size:h_size], h2[:,h_size+syn_size:]), dim=-1)
+
+    sims = F.cosine_similarity(sem_h1, sem_h2)
+
+    # Scale into 0-5 range, per SemEval STS task conventions
+    sims += 1
+    sims *= 2.5
+
+    return sims
+
+
 def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=40):
     '''
         inputs:
@@ -130,4 +149,3 @@ def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=40):
                 dropped[i,j] = int(w2i[UNK_TOKEN])
     
     return dropped
-

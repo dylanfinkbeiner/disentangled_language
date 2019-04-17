@@ -115,6 +115,26 @@ def eval(args, parser, data, exp_path_base=None):
 
     exp_file.close()
 
+
+def eval_ss(args):
+
+    for year in years:
+        curr_data = data[year]
+        predictions = []
+        for s1, s2, t in curr_data:
+                w1, p1, sl1 = prepare_batch_ss(s1)
+                w1, p1, sl1 = prepare_batch_ss(s2)
+                h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1.to(device))
+                h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2.to(device))
+
+                predictions.append(predict_sem_sim(h1,h2), args=args)
+
+        corr = sts_score(predictions, targets)
+
+        print(year, corr)
+
+
+
 def print_results(evaluation, name):
     print(f"---------------Results for {name} dataset------------------")
 

@@ -27,6 +27,7 @@ EXPERIMENTS_DIR = '../experiments'
 
 #CORPORA_DIR = '/corpora'
 CORPORA_DIR = '/home/AD/dfinkbei/corpora'
+STS_DIR = '/home/AD/dfinkbei/sts'
 DEP_DIR = f'{CORPORA_DIR}/wsj/dependencies'
 #BROWN_DIR = f'{CORPORA_DIR}/brown/dependencies'
 BROWN_DIR = '../data/brown'
@@ -117,11 +118,20 @@ if __name__ == '__main__':
     if init_ss:
         data_ss = {}
         log.info(f'Initializing sentence similarity data.')
-        train_ss = build_ss_dataset(os.path.join(DATA_DIR, PARANMT_FILE), x2i)
-        dev_ss = build_ss_dataset(os.path.join(DATA_DIR, dev_), x2i)
-        test_ss = build_ss_dataset(os.path.join(DATA_DIR, PARANMT_FILE), x2i)
+        train_ss = build_ss_dataset(os.path.join(DATA_DIR, PARANMT_FILE), x2i=x2i)
+        dev_ss = build_ss_dataset(os.path.join(STS_DIR, 'input', '2017'),
+                os.path.join(STS_DIR, 'gs', '2017'),
+                x2i=x2i)
 
-                #os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
+        test_ss = {}
+        for i in range(2,7):
+            year = '201' + str(i)
+            test_ss[year] = build_ss_dataset(
+                    os.path.join(DATA_DIR, 'input', year), 
+                    gs=os.path.join(STS_DIR, 'gs', year),
+                    x2i=x2i)
+
+            #os.path.join(f'{CORPORA_DIR}/paraphrase', PARANMT_FILE), x2i)
         data_ss['train'] = train_ss
         data_ss['dev'] = dev_ss
         data_ss['test'] = test_ss
