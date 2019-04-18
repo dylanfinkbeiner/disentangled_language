@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import datetime
+from tqdm import tqdm
 
 import torch
 
@@ -10,8 +11,8 @@ from conll17_ud_eval import evaluate, load_conllu
 
 from train import predict_relations
 
-from data_utils import conllu_to_sents, sdp_data_loader, build_sdp_dataset
-from utils import predict_relations, predict_sem_sim
+from data_utils import conllu_to_sents, sdp_data_loader, build_sdp_dataset, prepare_batch_ss
+from utils import predict_relations, predict_sem_sim, sts_scoring, average_hiddens
 
 #CORPORA_DIR = '/corpora'
 CORPORA_DIR = '/home/AD/dfinkbei/corpora'
@@ -122,23 +123,23 @@ def eval_sts(args, parser, data, exp_path_base=None):
 
     exp_path = '_'.join([exp_path_base, 'semeval'])
     exp_file = open(exp_path, 'a')
-    exp_file.write('Semantic evaluation for model : {args.model}')
+    exp_file.write(f'Semantic evaluation for model : {args.model}')
 
     for year in YEARS:
         curr_data = data['semeval'][year]
         predictions = []
-        for s1, s2 in curr_data['sent_pairs']:
-            w1, p1, sl1 = prepare_batch_ss(s1)
-            w1, p1, sl1 = prepare_batch_ss(s2)
+        for s1, s2 in tqdm(curr_data['sent_pairs'], ascii=True, desc=f'Progress for {year} task:'):
+            w1, p1, sl1 = prepare_batch_ss([s1])
+            w2, p2, sl2 = prepare_batch_ss([s2])
             h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1.to(device))
             h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2.to(device))
 
-            predictions.append(
-                    predict_sem_sim(
-                        h1,
-                        h2, 
-                        h_size=args.h_size, 
-                        syn_size=args.syn_size))
+            sim = predict_sem_sim(
+                    average_hiddens(h1, sl1.to(device)), 
+                    average_hiddens(h2, sl2.to(device)), 
+                    h_size=args.h_size, 
+                    syn_size=args.syn_size)
+            predictions.append(sim)
 
         correlation = sts_scoring(predictions, curr_data['targets'])
 
