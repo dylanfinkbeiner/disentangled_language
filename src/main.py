@@ -77,7 +77,7 @@ if __name__ == '__main__':
     exp_path_base = os.path.join(day_dir, f'{d:%H%M}')
 
     # possible?
-    args.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     log.info(f'Using device: {device}')
 
     # Filenames
@@ -126,7 +126,7 @@ if __name__ == '__main__':
         STS_INPUT = os.path.join(STS_DIR, 'input')
         STS_GS = os.path.join(STS_DIR, 'gs')
 
-        #train_ss = build_ss_dataset(os.path.join(DATA_DIR, PARANMT_FILE), gs='', x2i=x2i)
+        train_ss = build_ss_dataset(os.path.join(DATA_DIR, PARANMT_FILE), gs='', x2i=x2i)
         dev_ss = build_ss_dataset(
                 os.path.join(STS_INPUT, '2017'),
                 gs=os.path.join(STS_GS, '2017'),
@@ -140,7 +140,7 @@ if __name__ == '__main__':
                 gs=os.path.join(STS_GS, year),
                 x2i=x2i)
 
-        #data_ss['train'] = train_ss
+        data_ss['train'] = train_ss
         data_ss['dev'] = dev_ss
         data_ss['test'] = test_ss
         with open(data_ss_path, 'wb') as f:
@@ -172,9 +172,11 @@ if __name__ == '__main__':
         args.init_model = True
 
     if not evaluating:
+        args.epochs = args.epochs if args.train_mode != -1 else 1
         data = {'data_ptb' : data_ptb,
                 'vocabs' : vocabs,
-                'word_counts' : word_counts}
+                'word_counts' : word_counts,
+                'device': device}
         if args.train_mode > 0:
             data['data_ss'] = data_ss
 
@@ -185,11 +187,13 @@ if __name__ == '__main__':
             data = {'ptb_test': data_ptb['test'],
                     'ptb_dev': data_ptb['dev'],
                     'brown_cf': data_brown['cf'],
+                    'device': device,
                     'vocabs': vocabs}
             eval.eval_sdp(args, parser, data, exp_path_base=exp_path_base)
 
         if sem_eval:
             data = {'semeval': data_ss['test'],
+                    'device': device,
                     'vocabs': vocabs}
             eval.eval_sts(args, parser, data, exp_path_base=exp_path_base)
 

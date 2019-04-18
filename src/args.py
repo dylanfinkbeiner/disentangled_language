@@ -63,7 +63,7 @@ def get_args():
     parser.add_argument('--synbatchsize', help='Size of batch for syntactic parsing task.', type=int, dest='syn_batchsize', default=100)
     parser.add_argument('-M', '--megasize', help='Number of batches in a megabatch.', type=int, dest='M', default=1)
     parser.add_argument('--epochs', help='Number of epochs in training.', type=int, default=5)
-    parser.add_argument('--margin', help='Margin in semantic similarity objective function.', type=float, default=0.4)
+    parser.add_argument('--margin', help='Margin in semantic similarity objective function.', dest='margin', type=float, default=0.4)
 
     # Train mode
     parser.add_argument('-tm', help='Training mode setting.', dest='train_mode', type=int, default=-1)
