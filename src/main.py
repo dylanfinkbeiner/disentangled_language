@@ -57,8 +57,7 @@ if __name__ == '__main__':
 
     args = get_args()
     syn_eval = args.e != None or args.ef != None
-    sem_eval = args.es
-    evaluating = syn_eval or sem_eval
+    evaluating = syn_eval or args.evaluate_semantic
 
     # Build experiment file structure
     exp_dir = os.path.join(EXPERIMENTS_DIR, args.model)
@@ -84,14 +83,17 @@ if __name__ == '__main__':
     data_ptb_path = os.path.join(DATA_DIR, 'data_ptb.pkl')
     data_brown_path = os.path.join(DATA_DIR, 'data_brown.pkl')
     #data_ss_path = os.path.join(DATA_DIR, 'data_ss.pkl')
-    data_ss_path = os.path.join(DATA_DIR, 'data_ss_local.pkl')
+    data_ss_dir = os.path.join(DATA_DIR, 'data_ss_local')
+    if not os.path.isdir(data_ss_dir):
+        os.mkdir(data_ss_dir)
 
     #init_sdp = (not os.path.exists(vocabs_path)
     #        or not os.path.exists(data_ptb_path) 
     #        or not os.path.exists(data_brown_path) or args.init_sdp)
     init_sdp = False
     #init_ss = (not os.path.exists(data_ss_path) or args.initdata) and args.train_mode > 0
-    init_ss = False # NOTE must stay this way until we get CoreNLP working on pitts
+    #init_ss = False # NOTE must stay this way until we get CoreNLP working on pitts
+    init_ss = args.init_ss
 
     if init_sdp:
         log.info(f'Initializing syntactic dependency parsing data (including vocabs).')
@@ -119,17 +121,41 @@ if __name__ == '__main__':
             with open(data_brown_path, 'rb') as f:
                 data_brown = pickle.load(f)
 
-    if not init_ss:
-        log.info(f'Initializing semantic similarity data.')
-        data_ss = {}
-        STS_INPUT = os.path.join(STS_DIR, 'input')
-        STS_GS = os.path.join(STS_DIR, 'gs')
+    data_ss = {}
+    STS_INPUT = os.path.join(STS_DIR, 'input')
+    STS_GS = os.path.join(STS_DIR, 'gs')
 
+    train_ss = {}
+    train_path = os.path.join(data_ss_dir, 'ss_train.pkl')
+    if 'train' in init_ss:
+        log.info(f'Initializing SS train data.')
         train_ss = build_ss_dataset(os.path.join(DATA_DIR, PARANMT_FILE), gs='', x2i=x2i)
+        with open(train_path, 'wb') as pkl:
+            pickle.dump(train_ss, pkl)
+    elif args.train_mode > 0:
+        log.info(f'Loading pickled SS train data.')
+        with open(train_path, 'rb') as pkl:
+            train_ss = pickle.load(pkl)
+
+    dev_ss = {}
+    dev_path = os.path.join(data_ss_dir, 'ss_dev.pkl')
+    if 'dev' in init_ss:
+        log.info(f'Initializing SS dev data.')
         dev_ss = build_ss_dataset(
-                os.path.join(STS_INPUT, '2017'),
-                gs=os.path.join(STS_GS, '2017'),
-                x2i=x2i)
+            os.path.join(STS_INPUT, '2017'),
+            gs=os.path.join(STS_GS, '2017'),
+            x2i=x2i)
+        with open(dev_path, 'wb') as pkl:
+            pickle.dump(dev_ss, pkl)
+    elif args.train_mode > 0:
+        log.info(f'Loading pickled SS dev data.')
+        with open(dev_path, 'rb') as pkl:
+            dev_ss = pickle.load(pkl)
+
+    test_ss = {}
+    test_path = os.path.join(data_ss_dir, 'ss_test.pkl')
+    if 'test' in init_ss:
+        log.info(f'Initializing SS test data.')
         test_ss = {}
         years = os.listdir(STS_INPUT)
         years.remove('2017')
@@ -138,17 +164,19 @@ if __name__ == '__main__':
                 os.path.join(STS_INPUT, year),
                 gs=os.path.join(STS_GS, year),
                 x2i=x2i)
+        with open(test_path, 'wb') as pkl:
+            pickle.dump(test_ss, pkl)
+    elif args.evaluate_semantic:
+       log.info(f'Loading pickled SS test data.')
+       with open(test_path, 'rb') as pkl:
+           test_ss = pickle.load(pkl)
 
-        data_ss['train'] = train_ss
-        data_ss['dev'] = dev_ss
-        data_ss['test'] = test_ss
-        with open(data_ss_path, 'wb') as f:
-            pickle.dump(data_ss, f)
-    elif args.train_mode > 0 or args.es:
-        log.info(f'Loading pickled semantic similarity data.')
-        with open(data_ss_path, 'rb') as f:
-            data_ss = pickle.load(f)
+    data_ss['train'] = train_ss
+    data_ss['dev'] = dev_ss
+    data_ss['test'] = test_ss
 
+    print('finished!')
+    exit()
 
     vocabs = {'x2i': x2i, 'i2x': i2x}
 

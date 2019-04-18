@@ -90,15 +90,16 @@ def build_ss_dataset(ss_file, gs='', x2i=None):
     
     sent_pairs = []
     targets = []
-    if gs != None:
+    if raw_targets != None:
         for s, t in zip(raw_sent_pairs, raw_targets):
             if t != -1.0:
                 sent_pairs.append(s)
                 targets.append(t)
-
-    if len(targets) != len(sent_pairs):
-        print('Mismatch between targets ({len(targets)}) and sents ({len(sent_pairs)})')
-        raise Exception
+        if len(targets) != len(sent_pairs):
+            print('Mismatch between targets ({len(targets)}) and sents ({len(sent_pairs)})')
+            raise Exception
+    else:
+        sent_pairs = raw_sent_pairs
 
     return {'sent_pairs': sent_pairs, 'targets': targets}
 
