@@ -39,6 +39,7 @@ def get_args():
 
     parser.add_argument('model', help='Name of model', default='default_model')
     parser.add_argument('--seed', type=int, dest='seed', default=7)
+    parser.add_argument('--device', type=str, dest='device', default='')
 
     # Evaluation options
     sdp_eval = parser.add_mutually_exclusive_group()
@@ -48,7 +49,7 @@ def get_args():
 
     parser.add_argument('--initsdpdata', action='store_true', dest='init_sdp', default=False)
     parser.add_argument('--initssdata', action='store_true', dest='init_ss', default=False)
-    parser.add_argument('--initmodel', action='store_true', default=False)
+    parser.add_argument('--initmodel', action='store_true', dest='init_model', default=False)
 
     # Model hyperparameters
     parser.add_argument('-H', '--hsize', help='Size of LSTM hidden state.', dest='h_size', type=int, default=400)

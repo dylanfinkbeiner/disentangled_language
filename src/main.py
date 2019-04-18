@@ -76,7 +76,8 @@ if __name__ == '__main__':
 
     exp_path_base = os.path.join(day_dir, f'{d:%H%M}')
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    # possible?
+    args.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     log.info(f'Using device: {device}')
 
     # Filenames
@@ -163,12 +164,12 @@ if __name__ == '__main__':
 
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
 
-    if (not args.initmodel) and os.path.exists(weights_path):
+    if (not args.init_model) and os.path.exists(weights_path):
         log.info(f'Loading state dict from: \"{weights_path}\"')
         parser.load_state_dict(torch.load(weights_path))
     else:
         log.info(f'Model will have randomly initialized parameters.')
-        args.initmodel = True
+        args.init_model = True
 
     if not evaluating:
         data = {'data_ptb' : data_ptb,

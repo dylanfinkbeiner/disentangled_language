@@ -128,7 +128,7 @@ def eval_sts(args, parser, data, exp_path_base=None):
     for year in YEARS:
         curr_data = data['semeval'][year]
         predictions = []
-        for s1, s2 in tqdm(curr_data['sent_pairs'], ascii=True, desc=f'Progress for {year} task:'):
+        for s1, s2 in tqdm(curr_data['sent_pairs'], ascii=True, desc=f'Progress for {year} task', ncols=80):
             w1, p1, sl1 = prepare_batch_ss([s1])
             w2, p2, sl2 = prepare_batch_ss([s2])
             h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1.to(device))

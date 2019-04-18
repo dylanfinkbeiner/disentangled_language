@@ -494,7 +494,7 @@ def numericalize_ss(sents_list, x2i):
     return sents_numericalized
 
 
-def get_triplets(megabatch, minibatch_size, parser, device):
+def megabatch_breakdown(megabatch, minibatch_size, parser, device):
     '''
         inputs:
             megabatch - an unprepared megabatch (M many batches) of sentences
