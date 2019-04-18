@@ -118,13 +118,13 @@ if __name__ == '__main__':
             with open(data_brown_path, 'rb') as f:
                 data_brown = pickle.load(f)
 
-    if init_ss:
+    if not init_ss:
         log.info(f'Initializing semantic similarity data.')
         data_ss = {}
         STS_INPUT = os.path.join(STS_DIR, 'input')
         STS_GS = os.path.join(STS_DIR, 'gs')
 
-        #train_ss = build_ss_dataset(os.path.join(DATA_DIR, PARANMT_FILE), gs='', x2i=x2i)
+        train_ss = build_ss_dataset(os.path.join(DATA_DIR, PARANMT_FILE), gs='', x2i=x2i)
         dev_ss = build_ss_dataset(
                 os.path.join(STS_INPUT, '2017'),
                 gs=os.path.join(STS_GS, '2017'),
@@ -138,7 +138,7 @@ if __name__ == '__main__':
                 gs=os.path.join(STS_GS, year),
                 x2i=x2i)
 
-        #data_ss['train'] = train_ss
+        data_ss['train'] = train_ss
         data_ss['dev'] = dev_ss
         data_ss['test'] = test_ss
         with open(data_ss_path, 'wb') as f:
