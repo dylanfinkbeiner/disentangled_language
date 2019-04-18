@@ -37,7 +37,7 @@ NAMES = {
         2 : 'brown_cf'
         }
 
-YEARS = ['2012'] #, '2013', '2014', '2015', '2016']
+YEARS = ['2012', '2013', '2014', '2015', '2016']
 
 def eval_sdp(args, parser, data, exp_path_base=None):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
