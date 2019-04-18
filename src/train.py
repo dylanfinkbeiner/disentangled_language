@@ -49,30 +49,24 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
     torch.manual_seed(args.seed)
     
-    custom_task = args.train_mode > 0
-
     mode_description = MODE_DESC[args.train_mode]
-
-    dev_batch_size = args.batch_size
 
     train_sdp = data['data_ptb']['train']
     dev_sdp = data['data_ptb']['dev']
-    loader_sdp_train = sdp_data_loader(train_sdp, batch_size=args.batch_size, shuffle_idx=True, custom_task=custom_task)
-    loader_sdp_dev = sdp_data_loader(dev_sdp, batch_size=dev_batch_size, shuffle_idx=False, custom_task=False)
+    loader_sdp_train = sdp_data_loader(train_sdp, batch_size=args.batch_size, shuffle_idx=True, custom_task=(args.train_mode > 0))
+    loader_sdp_dev = sdp_data_loader(dev_sdp, batch_size=100, shuffle_idx=False, custom_task=False)
     log.info(f'There are {len(train_sdp)} SDP training examples.')
     log.info(f'There are {len(train_sdp)} SDP training examples.')
-
     if args.train_mode > 0:
         train_ss = data['data_ss']['train']
         train_ss = train_ss[:len(train_sdp)] #XXX 
         dev_ss = data['data_ss']['dev']
+        idxloader_ss_train = idx_loader(num_data=len(train_ss), batch_size=args.batch_size)
         log.info(f'There are {len(train_ss)} SS training examples.')
         log.info(f'There are {len(dev_ss)} SS dev examples.')
 
-        idxloader_ss_train = idx_loader(num_data=len(train_ss), batch_size=args.batch_size)
-
     n_train_batches = ceil(len(train_sdp) / args.batch_size)
-    n_dev_batches = ceil(len(dev) / dev_batch_size)
+    n_dev_batches = ceil(len(dev) / 100)
     if args.train_mode > 0:
         n_megabatches = ceil(len(train_ss) / (args.M * args.batch_size))
 
@@ -84,7 +78,6 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     if not args.init_model:
         _, prev_best, _ = sdp_dev_eval(parser, args=args, data=data, loader=loader_sdp_dev)
 
-    # XXX BETTER SYSTEM FOR THIS?
     print_grad_every = 10
     try:
         for e in range(args.epochs):
@@ -100,7 +93,6 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     loss = forward_syntactic_original(parser, batch, args=args, data=data)
                     loss.backward()
                     opt.step()
-
                     #num_steps += 1
 
             else:
@@ -150,13 +142,11 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                         loss_sem.backward()
                         opt.step()
 
-
             #train_loss /= (num_steps if num_steps > 0 else -1) # Just dependency parsing loss
 
-            
             parser.eval()  # Crucial! Toggles dropout effects
             UAS, LAS, dev_loss = sdp_dev_eval(parser, args=args, data=data, loader=loader_sdp_dev)
-            r = ss_dev_eval(parser, dev_ss, args=args, data=data)
+            correlation = ss_dev_eval(parser, dev_ss, args=args, data=data)
 
             update = '''Epoch: {:}
                     Train Loss: {:.3f}
