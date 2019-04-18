@@ -112,20 +112,17 @@ def sts_scoring(predictions, targets) -> float:
     return r
 
 
-def predict_sem_sim(h1, h2, h_size=None, syn_size=None):
+def predict_sts_score(h1, h2, h_size=None, syn_size=None):
     sem_h1 = torch.cat((h1[:,syn_size:h_size], h1[:,h_size+syn_size:]), dim=-1)
     sem_h2 = torch.cat((h2[:,syn_size:h_size], h2[:,h_size+syn_size:]), dim=-1)
 
-    sims = F.cosine_similarity(sem_h1, sem_h2)
+    sims = F.cosine_similarity(sem_h1, sem_h2).flatten()
 
     # Scale into 0-5 range, per SemEval STS task conventions
     sims += 1
     sims *= 2.5
 
-    if sims.shape[0] == 1:
-        sims = sims.view(-1).item()
-
-    return sims
+    return sims.tolist()
 
 
 def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=40):

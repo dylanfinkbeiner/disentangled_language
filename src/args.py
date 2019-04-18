@@ -39,6 +39,7 @@ def get_args():
 
     parser.add_argument('model', help='Name of model', default='default_model')
     parser.add_argument('--seed', type=int, dest='seed', default=7)
+    parser.add_argument('--device', type=str, dest='device', default='')
 
     # Evaluation options
     sdp_eval = parser.add_mutually_exclusive_group()
@@ -48,7 +49,7 @@ def get_args():
 
     parser.add_argument('--initsdp', action='store_true', dest='init_sdp', default=False)
     parser.add_argument('--initss', help='Initialize a part of the semantic similarity data.', dest='init_ss', nargs='*', type=str)
-    parser.add_argument('--initmodel', action='store_true', default=False)
+    parser.add_argument('--initmodel', action='store_true', dest='init_model', default=False)
 
     # Model hyperparameters
     parser.add_argument('-H', '--hsize', help='Size of LSTM hidden state.', dest='h_size', type=int, default=400)
@@ -62,7 +63,7 @@ def get_args():
     parser.add_argument('--synbatchsize', help='Size of batch for syntactic parsing task.', type=int, dest='syn_batchsize', default=100)
     parser.add_argument('-M', '--megasize', help='Number of batches in a megabatch.', type=int, dest='M', default=1)
     parser.add_argument('--epochs', help='Number of epochs in training.', type=int, default=5)
-    parser.add_argument('--margin', help='Margin in semantic similarity objective function.', type=float, default=0.4)
+    parser.add_argument('--margin', help='Margin in semantic similarity objective function.', dest='margin', type=float, default=0.4)
 
     # Train mode
     parser.add_argument('-tm', help='Training mode setting.', dest='train_mode', type=int, default=-1)

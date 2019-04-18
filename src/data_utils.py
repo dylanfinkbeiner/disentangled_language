@@ -256,7 +256,7 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
                 yield prepare_batch_sdp(batch)
 
 
-def ss_data_loader(data, batch_size=None):
+def idx_loader(num_data=None, batch_size=None):
     '''
         inputs:
             data - the full Python list of pairs of numericalized sentences (np arrays)
@@ -265,7 +265,7 @@ def ss_data_loader(data, batch_size=None):
         yields:
             chunk - list of indices representing a minibatch
     '''
-    idx = list(range(len(data)))
+    idx = list(range(num_data))
     while True:
         shuffle(idx)
         for chunk in idx_chunks(idx, batch_size):
@@ -495,7 +495,7 @@ def numericalize_ss(sents_list, x2i):
     return sents_numericalized
 
 
-def get_triplets(megabatch, minibatch_size, parser, device):
+def megabatch_breakdown(megabatch, minibatch_size, parser, device):
     '''
         inputs:
             megabatch - an unprepared megabatch (M many batches) of sentences
@@ -509,18 +509,18 @@ def get_triplets(megabatch, minibatch_size, parser, device):
     s1 = []
     s2 = []
     
-    for mini in megabatch:
-        s1.append(mini[0]) # Does this allocate new memory?
-        s2.append(mini[1])
+    for batch in megabatch:
+        s1.append(batch[0]) # Does this allocate new memory?
+        s2.append(batch[1])
 
     minibatches = [s1[i:i + minibatch_size] for i in range(0, len(s1), minibatch_size)]
 
     megabatch_of_reps = [] # (megabatch_size, )
-    for m in minibatches:
-        words, pos, sent_lens = prepare_batch_ss(m)
+    for b in minibatches:
+        words, pos, sent_lens = prepare_batch_ss(b)
         sent_lens = sent_lens.to(device)
-        m_reps, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
-        megabatch_of_reps.append(utils.average_hiddens(m_reps, sent_lens))
+        b_reps, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
+        megabatch_of_reps.append(utils.average_hiddens(b_reps, sent_lens))
 
     megabatch_of_reps = torch.cat(megabatch_of_reps)
 
