@@ -168,7 +168,7 @@ def get_paired_idx(idx: list, cutoffs: dict):
     return paired_idx
 
 
-def get_scores(batch, paired, score_type=None):
+def get_syntactic_scores(s1_batch, s2_batch, score_type=None):
     '''
         inputs:
             batch -
@@ -178,11 +178,11 @@ def get_scores(batch, paired, score_type=None):
             scores - a (b,1) tensor of 'scores' for the paired sentences, weights to be used in loss function
     '''
     results = utils.attachment_scoring(
-            arc_preds=batch['arc_targets'], 
-            rel_preds=batch['rel_targets'], 
-            arc_targets=paired['arc_targets'], 
-            rel_targets=paired['rel_targets'], 
-            sent_lens=batch['sent_lens'], 
+            arc_preds=s1_batch['arc_targets'], 
+            rel_preds=s1_batch['rel_targets'], 
+            arc_targets=s2_batch['arc_targets'], 
+            rel_targets=s2_batch['rel_targets'], 
+            sent_lens=s1_batch['sent_lens'], 
             include_root=False,
             keep_dim=True)
 
@@ -193,14 +193,14 @@ def build_buckets(data_sorted, l2c=None, i2c=None, score_type=None) -> dict:
     buckets = {}
 
     for length in l2c.keys():
-        curr_pairwise = defaultdict(int)
+        curr_pairwise = {}
 
         c = l2c[length]
         for i in range(c[0], c[1]):
             s1 = data_sorted[i]
             for j in range(i+1, c[1]):
                 s2 = data_sorted[j]
-                curr_pairwise[(i,j)] = get_scores([s1], [s2], score_type='LAS')
+                curr_pairwise[(i,j)] = get_syntactic_scores([s1], [s2], score_type='LAS').flatten()
 
         buckets[length] = dict(curr_pairwise)
 
@@ -215,7 +215,6 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
         bucket_dicts = build_bucket_dicts(data_sorted)
         l2n = bucket_dicts['l2n']
         cutoffs = bucket_dicts['i2c']
-
         l2c = bucket_dicts['l2c']
         print('Num lengths: ', len(l2c))
 

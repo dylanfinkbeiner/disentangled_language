@@ -56,6 +56,10 @@ if __name__ == '__main__':
     log.info(f'New session: {d}\n')
 
     args = get_args()
+    if args.syn_size > args.h_size:
+        print('Syn/hidden mismatch')
+        exit()
+
     syn_eval = args.e != None or args.ef != None
     evaluating = syn_eval or args.evaluate_semantic
 
