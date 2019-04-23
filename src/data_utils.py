@@ -218,17 +218,24 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
         l2c = bucket_dicts['l2c']
         print('Num lengths: ', len(l2c))
 
-        print(l2c.keys())
-        print(len(cutoffs))
-        print(l2n.items())
+        #print(l2c.keys())
+        #print(len(cutoffs))
+        print('Length, # sentences: ', l2n.items())
 
-        k = 0
-        for v in l2n.values():
-            k += v
+        unique_len_counter = 0
+        for n in l2n.values():
+            if n <= 2:
+                unique_len_counter += 1
 
-        print(f'k: {k} , len: {len(data_sorted)}')
+        print('Unique lengths: ', unique_len_counter)
 
-        exit()
+        #k = 0
+        #for v in l2n.values():
+        #    k += v
+
+        #print(f'k: {k} , len: {len(data_sorted)}')
+
+        #exit()
     
 
     while True:
@@ -248,7 +255,7 @@ def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
                 prepared_paired = prepare_batch_sdp(paired)
                 yield (prepared_batch,
                         prepared_paired, 
-                        get_scores(prepared_batch, prepared_paired, score_type='LAS'))
+                        get_syntactic_scores(prepared_batch, prepared_paired, score_type='LAS'))
         else:
             for chunk in idx_chunks(idx, batch_size):
                 batch = [data[i] for i in chunk]

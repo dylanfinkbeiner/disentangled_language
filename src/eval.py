@@ -9,10 +9,8 @@ import torch
 import conll17_ud_eval
 from conll17_ud_eval import evaluate, load_conllu
 
-from train import predict_relations
-
 from data_utils import conllu_to_sents, sdp_data_loader, build_sdp_dataset, prepare_batch_ss
-from utils import predict_relations, predict_sem_sim, sts_scoring, average_hiddens
+from utils import predict_relations, predict_sts_score, sts_scoring, average_hiddens
 
 #CORPORA_DIR = '/corpora'
 CORPORA_DIR = '/home/AD/dfinkbei/corpora'
@@ -42,10 +40,6 @@ YEARS = ['2012', '2013', '2014', '2015', '2016']
 def eval_sdp(args, parser, data, exp_path_base=None):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    exp_path = '_'.join([exp_path_base] + names)
-    exp_file = open(exp_path, 'a')
-    exp_file.write(f'Syntactic evaluation for model : {args.model}')
-
     vocabs = data['vocabs']
     i2r = vocabs['i2x']['rel']
 
@@ -72,6 +66,10 @@ def eval_sdp(args, parser, data, exp_path_base=None):
         golds = [path]
         sents = [conllu_to_sents(path)]
         data[name] = build_sdp_dataset([path], vocabs['x2i'])[name]
+
+    exp_path = '_'.join([exp_path_base] + names)
+    exp_file = open(exp_path, 'a')
+    exp_file.write(f'Syntactic evaluation for model : {args.model}')
 
     print(f'Evaluating on datasets: {names}')
 

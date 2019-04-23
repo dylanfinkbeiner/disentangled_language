@@ -32,15 +32,19 @@ def attachment_scoring(
             LAS - average number of correct relation predictions
     '''
 
+    # CRUCIAL to remember sentence lengths INCLUDE root token in their count
     sent_lens = sent_lens.view(-1, 1).float()
+    sent_lens = sent_lens if include_root else sent_lens - 1
     total_words = sent_lens.sum().float()
     b, l = arc_preds.shape
 
-    # To ensure padding values do not contribute to score in the .eq() calls
+    # CRUCIAL to remember that targets come with -1 padding in the ROOT position!
+    # This means that the root predictions are NEVER counted towards correct #
     arc_preds = torch.where(
             arc_targets != -1,
             arc_preds,
             torch.zeros(arc_preds.shape).long())
+
     rel_preds = torch.where(
             rel_targets != -1,
             rel_preds,
@@ -49,21 +53,22 @@ def attachment_scoring(
     correct_arcs = arc_preds.eq(arc_targets).float()
     correct_rels = rel_preds.eq(rel_targets).float()
 
-    UAS_correct = correct_heads.sum(1, True) # (b,l) -> (b,1)
-    UAS_correct = UAS_correct if include_root else F.relu(UAS_correct - 1)
+    UAS_correct = correct_arcs.sum(1, True) # (b,l) -> (b,1)
+    UAS_correct = UAS_correct + 1 if include_root else UAS_correct
     if not keep_dim:
-        UAS_correct = UAS_correct.sum() # (b,l) -> (1)
-        UAS = UAS_correct / (total_words if include_root else total_words - 1)
+        UAS_correct = UAS_correct.sum() # (b,1) -> (1)
+        UAS = UAS_correct / total_words
     else:
-        UAS = UAS_correct / (sent_lens if include_root else sent_lens - 1)
+        UAS = UAS_correct / sent_lens
 
-    LAS_correct = (correct_heads * correct_rels).sum(1, True)
-    LAS_correct = LAS_correct if include_root else F.relu(LAS_correct - 1)
+    LAS_correct = (correct_arcs * correct_rels).sum(1, True) # (b,l) -> (b,1)
+    LAS_correct = LAS_correct + 1 if include_root else LAS_correct
     if not keep_dim:
-        LAS_correct = (correct_arcs * correct_rels).sum()
-        LAS = LAS_correct / (total_words if include_root else total_words - 1)
+        LAS_correct = LAS_correct.sum() # (b,1) -> (1)
+        LAS = LAS_correct / total_words
     else:
-        LAS = LAS_correct / (sent_lens if include_root else sent_lens - 1)
+        LAS = LAS_correct / sent_lens
+
 
     return {'UAS': UAS,
             'LAS': LAS, 
