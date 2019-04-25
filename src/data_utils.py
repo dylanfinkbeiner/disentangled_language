@@ -201,20 +201,44 @@ def length_to_results(data_sorted, l2c=None, device=None) -> dict:
         t = torch.zeros(len(idxs), len(idxs))
         print(f'Tensor for length {l} has shape: {t.shape}')
 
-        s1_batch = []
-        s2_batch = []
-        for i, idx_i in enumerate(idxs):
-            for j, idx_j in enumerate(range(idx_i + 1, c[1])):
-                s1_batch.append(data_sorted[idx_i])
-                s2_batch.append(data_sorted[idx_j])
-        
-        print('Fetching syntactic scores')
-        results = get_syntactic_scores(
-                prepare_batch_sdp(s1_batch),
-                prepare_batch_sdp(s2_batch),
-                device=device)
 
-        l2r[l] = results
+        UAS_tensors = []
+        LAS_tensors = []
+        for chunk in idx_chunks(idxs, 100):
+            s1_batch = []
+            s2_batch = []
+            for i, idx_i in enumerate(chunk):
+                for j, idx_j in enumerate(chunk[i+1:]):
+                    s1_batch.append(data_sorted[idx_i])
+                    s2_batch.append(data_sorted[idx_j])
+            
+            print('Fetching syntactic scores')
+            results = get_syntactic_scores(
+                    prepare_batch_sdp(s1_batch),
+                    prepare_batch_sdp(s2_batch),
+                    device=device)
+
+            UAS_tensors.append(results['UAS'])
+            LAS_tensors.append(results['LAS'])
+
+        UAS_t = torch.cat(UAS_tensors, dim=0)
+        LAS_t = torch.cat(LAS_tensors, dim=0)
+        l2r[l] = {'UAS': UAS_t, 'LAS': LAS_t}
+
+        #s1_batch = []
+        #s2_batch = []
+        #for i, idx_i in enumerate(idxs):
+        #    for j, idx_j in enumerate(range(idx_i + 1, c[1])):
+        #        s1_batch.append(data_sorted[idx_i])
+        #        s2_batch.append(data_sorted[idx_j])
+        #
+        #print('Fetching syntactic scores')
+        #results = get_syntactic_scores(
+        #        prepare_batch_sdp(s1_batch),
+        #        prepare_batch_sdp(s2_batch),
+        #        device=device)
+
+        #l2r[l] = results
 
     return l2r
 
