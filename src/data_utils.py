@@ -195,9 +195,11 @@ def get_syntactic_scores(s1_batch, s2_batch, device=None):
 def length_to_results(data_sorted, l2c=None, device=None) -> dict:
     l2r = {}
 
-    for l, c in tqdm(l2c.items()):
+    #for l, c in tqdm(l2c.items()):
+    for l, c in tqdm(l2c.items(), ascii=True, desc=f'Progress in building l2r', ncols=80):
         idxs = list(range(c[0], c[1]))
         t = torch.zeros(len(idxs), len(idxs))
+        print(f'Tensor for length {l} has shape: {t.shape}')
 
         s1_batch = []
         s2_batch = []
@@ -206,6 +208,7 @@ def length_to_results(data_sorted, l2c=None, device=None) -> dict:
                 s1_batch.append(data_sorted[idx_i])
                 s2_batch.append(data_sorted[idx_j])
         
+        print('Fetching syntactic scores')
         results = get_syntactic_scores(
                 prepare_batch_sdp(s1_batch),
                 prepare_batch_sdp(s2_batch),
@@ -220,7 +223,8 @@ def get_score_tensors(data_sorted, l2c=None, l2r=None, score_type=None, device=N
     l2t = {}
     num_duplicates = 0
 
-    for l, c in tqdm(l2c.items()):
+    #for l, c in tqdm(l2c.items()):
+    for l, c in tqdm(l2c.items(), ascii=True, desc=f'Progress in building {score_type} l2t', ncols=80):
         idxs = list(range(c[0], c[1]))
         t = torch.zeros(len(idxs), len(idxs))
 
@@ -349,24 +353,34 @@ def prepare_batch_sdp(batch):
     batch_size = len(batch)
     batch_sorted = sorted(batch, key = lambda s: s.shape[0], reverse=True)
     sent_lens = torch.LongTensor([s.shape[0] for s in batch_sorted]) # Keep in mind, these lengths include ROOT token in each sentence
-    length_longest = sent_lens[0]
+    l_longest = sent_lens[0]
 
-    words = torch.zeros((batch_size, length_longest)).long()
-    pos = torch.zeros((batch_size, length_longest)).long()
-    arc_targets = torch.LongTensor(batch_size, length_longest).fill_(-1)
-    rel_targets = torch.LongTensor(batch_size, length_longest).fill_(-1)
+    words = torch.zeros((batch_size, l_longest)).long()
+    pos = torch.zeros((batch_size, l_longest)).long()
+    arc_targets = torch.LongTensor(batch_size, l_longest).fill_(-1)
+    rel_targets = torch.LongTensor(batch_size, l_longest).fill_(-1)
 
     for i, s in enumerate(batch_sorted):
-        for j, _ in enumerate(s):
-            '''
-            Casting as ints because for some stupid reason
-            you cannot set a value in torch long tensor using
-            numpy's 64 bit ints
-            '''
-            words[i,j] = int(s[j,0])
-            pos[i,j] = int(s[j,1])
-            arc_targets[i,j] = int(s[j,2])
-            rel_targets[i,j] = int(s[j,3])
+        # s shape (length, 4)
+
+        dt = np.dtype(int)
+        resized_np = np.zeros((l_longest, s.shape[1]), dtype=dt)
+        resized_np[:s.shape[0]] = s
+        words[i] = torch.LongTensor(resized_np[:,0])
+        pos[i] = torch.LongTensor(resized_np[:,1])
+        arc_targets[i] = torch.LongTensor(resized_np[:,2])
+        rel_targets[i] = torch.LongTensor(resized_np[:,3])
+
+        #for j, _ in enumerate(s):
+        #    '''
+        #    Casting as ints because for some stupid reason
+        #    you cannot set a value in torch long tensor using
+        #    numpy's 64 bit ints
+        #    '''
+        #    words[i,j] = int(s[j,0])
+        #    pos[i,j] = int(s[j,1])
+        #    arc_targets[i,j] = int(s[j,2])
+        #    rel_targets[i,j] = int(s[j,3])
 
     return {'words': words, 
             'pos' : pos, 
@@ -797,8 +811,10 @@ def l2t_to_l2avg(l2t):
     avg_list = []
 
     for l, t in l2t.items():
-        nonzeros = t.flatten().index_select(0, t.nonzero().flatten())
-        avg = torch.mean(nonzeros).item()
+        #nonzeros = t.flatten().index_select(0, t.nonzero().flatten())
+        #avg = torch.mean(nonzeros).item()
+        divisor = (t.shape[0] * (t.shape[0] - 1)) / 2
+        avg = (t.sum() / divisor).item()
         avg_list.append(avg)
         l2avg[l] = avg
     
