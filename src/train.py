@@ -13,7 +13,8 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 from data_utils import sdp_data_loader, idx_loader, prepare_batch_ss, megabatch_breakdown, get_syntactic_scores
-from data_utils import prepare_batch_sdp
+from data_utils import prepare_batch_sdp, decode_sdp_sents
+import data_utils
 from losses import loss_arcs, loss_rels, loss_sem_rep, loss_syn_rep
 import utils 
 
@@ -54,6 +55,9 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     mode_description = MODE_DESC[args.train_mode]
 
     train_sdp = data['data_ptb']['train']
+    data_utils.sdp_corpus_stats(train_sdp, device=data['device'])
+    exit()
+
     dev_sdp = data['data_ptb']['dev']
     loader_sdp_train = sdp_data_loader(train_sdp, batch_size=args.batch_size, shuffle_idx=True, custom_task=True)
     loader_sdp_dev = sdp_data_loader(dev_sdp, batch_size=100, shuffle_idx=False, custom_task=False)
@@ -117,15 +121,23 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
                         # Syntactic step
                         opt.zero_grad()
+
                         #prep = prepare_batch_sdp([train_sdp[100]])
                         #print('call to prep', get_syntactic_scores(prep, prep, score_type='LAS'))
+                        sample = train_sdp[100:103]
+                        decoded = decode_sdp_sents(sents=sample, i2x=data['vocabs']['i2x'])
+                        #print('The 100th, should have 35 words?', decoded[0][0])
+                        #print('The 100th, should have 35 words?', list(zip(*decoded[0])))
+                        exit()
+
                         s1_batch, s2_batch, scores_batch = next(loader_sdp_train)
+
                         print('call to s1 uas', get_syntactic_scores(s1_batch, s1_batch, score_type='UAS'))
                         print('call to s1 las', get_syntactic_scores(s1_batch, s1_batch, score_type='LAS'))
                         print('call to s2 uas', get_syntactic_scores(s2_batch, s2_batch, score_type='UAS'))
                         print('call to s2 las', get_syntactic_scores(s2_batch, s2_batch, score_type='LAS'))
                         exit()
-                        breakpoint()
+
                         loss_syn = forward_syntactic_custom(parser,
                                 s1=s1_batch, 
                                 s2=s2_batch, 

@@ -1,11 +1,14 @@
 import random
 from random import shuffle
 import string
+import pickle
+import os
 
 from collections import defaultdict, Counter
 import numpy as np
 from nltk.parse import CoreNLPParser
 from scipy.spatial.distance import pdist, squareform
+from tqdm import tqdm
 import torch
 
 import utils
@@ -168,7 +171,7 @@ def get_paired_idx(idx: list, cutoffs: dict):
     return paired_idx
 
 
-def get_syntactic_scores(s1_batch, s2_batch, score_type=None):
+def get_syntactic_scores(s1_batch, s2_batch, device=None):
     '''
         inputs:
             batch -
@@ -178,33 +181,81 @@ def get_syntactic_scores(s1_batch, s2_batch, score_type=None):
             scores - a (b,1) tensor of 'scores' for the paired sentences, weights to be used in loss function
     '''
     results = utils.attachment_scoring(
-            arc_preds=s1_batch['arc_targets'], 
-            rel_preds=s1_batch['rel_targets'], 
-            arc_targets=s2_batch['arc_targets'], 
-            rel_targets=s2_batch['rel_targets'], 
-            sent_lens=s1_batch['sent_lens'], 
+            arc_preds=s1_batch['arc_targets'].to(device), 
+            rel_preds=s1_batch['rel_targets'].to(device), 
+            arc_targets=s2_batch['arc_targets'].to(device), 
+            rel_targets=s2_batch['rel_targets'].to(device), 
+            sent_lens=s1_batch['sent_lens'].to(device), 
             include_root=False,
             keep_dim=True)
 
-    return results[score_type] # (b, 1)
+    return results
 
 
-def build_buckets(data_sorted, l2c=None, i2c=None, score_type=None) -> dict:
-    buckets = {}
+def length_to_results(data_sorted, l2c=None, device=None) -> dict:
+    l2r = {}
 
-    for length in l2c.keys():
-        curr_pairwise = {}
+    for l, c in tqdm(l2c.items()):
+        idxs = list(range(c[0], c[1]))
+        t = torch.zeros(len(idxs), len(idxs))
 
-        c = l2c[length]
-        for i in range(c[0], c[1]):
-            s1 = data_sorted[i]
-            for j in range(i+1, c[1]):
-                s2 = data_sorted[j]
-                curr_pairwise[(i,j)] = get_syntactic_scores([s1], [s2], score_type='LAS').flatten()
+        s1_batch = []
+        s2_batch = []
+        for i, idx_i in enumerate(idxs):
+            for j, idx_j in enumerate(range(idx_i + 1, c[1])):
+                s1_batch.append(data_sorted[idx_i])
+                s2_batch.append(data_sorted[idx_j])
+        
+        results = get_syntactic_scores(
+                prepare_batch_sdp(s1_batch),
+                prepare_batch_sdp(s2_batch),
+                device=device)
 
-        buckets[length] = dict(curr_pairwise)
+        l2r[l] = results
 
-    return buckets
+    return l2r
+
+
+def get_score_tensors(data_sorted, l2c=None, l2r=None, score_type=None, device=None) -> dict:
+    l2t = {}
+    num_duplicates = 0
+
+    for l, c in tqdm(l2c.items()):
+        idxs = list(range(c[0], c[1]))
+        t = torch.zeros(len(idxs), len(idxs))
+
+        #s1_batch = []
+        #s2_batch = []
+        #for i, idx_i in enumerate(idxs):
+        #    for j, idx_j in enumerate(range(idx_i + 1, c[1])):
+        #        s1_batch.append(data_sorted[idx_i])
+        #        s2_batch.append(data_sorted[idx_j])
+        #
+        #results = get_syntactic_scores(
+        #        prepare_batch_sdp(s1_batch),
+        #        prepare_batch_sdp(s2_batch),
+        #        score_type=score_type,
+        #        device=device)
+        
+        scores = l2r[l][score_type]
+
+        for i, idx_i in enumerate(idxs):
+            for j, idx_j in enumerate(range(idx_i + 1, c[1])):
+                t[i,j] = scores[i+j]
+                if scores[i+j] == 1.0:
+                    num_duplicates += 1
+
+        #for i, idx_i in enumerate(idxs):
+        #    si = prepare_batch_sdp([data_sorted[idx_i]])
+        #    for j, idx_j in enumerate(range(idx_i+1, c[1])):
+        #        sj = prepare_batch_sdp([data_sorted[idx_j]])
+        #        t[i,j] = get_syntactic_scores(si, sj, score_type=score_type).flatten()
+        #        #curr_pairwise[(i,j)] = get_syntactic_scores([s1], [s2], score_type='LAS').flatten()
+
+
+        l2t[l] = t
+
+    return l2t, num_duplicates
 
 
 def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
@@ -418,14 +469,14 @@ def paraphrase_to_sents(f: str):
 
 
 def build_dicts(sents_list):
-    words, pos, rel = set(), set(), set()
+    word, pos, rel = set(), set(), set()
     for s in sents_list:
         for line in s:
-            words.add(line[0].lower())
+            word.add(line[0].lower())
             pos.add(line[1])
             rel.add(line[3])
 
-    words = sorted(words)
+    word = sorted(word)
     pos = sorted(pos)
     rel = sorted(rel)
 
@@ -444,7 +495,7 @@ def build_dicts(sents_list):
     i2w[w2i[ROOT_TOKEN]] = ROOT_TOKEN
     i2p[p2i[ROOT_TOKEN]] = ROOT_TOKEN
 
-    for w in words:
+    for w in word:
         i2w[w2i[w]] = w
     for p in pos:
         i2p[p2i[p]] = p
@@ -478,6 +529,32 @@ def numericalize_sdp(sents_list, x2i):
         sents_numericalized.append(new_s)
 
     return sents_numericalized
+
+
+def decode_sdp_sents(sents=[], i2x=None):
+    i2w = i2x['word']
+    i2p = i2x['pos']
+    i2r = i2x['rel']
+
+    decoded_sents = []
+    for sent in sents:
+        # sent is a (l,4) np array
+        words = []
+        pos = []
+        heads = []
+        rels = []
+
+        for i in range(sent.shape[0]):
+            words.append(i2w[sent[i,0]])
+            pos.append(i2p[sent[i,1]])
+            heads.append(sent[i,2])
+            rel = i2r[sent[i,3]] if sent[i,3] != -1 else ROOT_TOKEN
+            rels.append(rel)
+
+        decoded_sents.append([words, pos, heads, rels])
+
+
+    return decoded_sents
 
 
 def numericalize_ss(sents_list, x2i):
@@ -637,3 +714,97 @@ def has_digits(word):
     True if word contains digits.
     """
     return bool(set(string.digits).intersection(word))
+
+
+def sdp_corpus_stats(data, stats_pkl='../data/sdp_corpus_stats.pkl', stats_readable ='../data/readable_stats.txt', device=None):
+    stats = {}
+    data_sorted = sorted(data, key = lambda s : s.shape[0])
+    bucket_dicts = build_bucket_dicts(data_sorted)
+    
+    l2n = bucket_dicts['l2n']
+    i2c = bucket_dicts['i2c']
+    l2c = bucket_dicts['l2c']
+
+    for l, n in l2n.items():
+        if n < 2:
+            l2c.pop(l)
+
+    print(len(l2c))
+
+    if not os.path.exists(stats_pkl):
+        l2r = length_to_results(data_sorted, l2c=l2c, device=device)
+
+        l2t_UAS, ud = get_score_tensors(data_sorted, l2c=l2c, l2r=l2r, score_type='UAS', device=device)
+        l2t_LAS, ld = get_score_tensors(data_sorted, l2c=l2c, l2r=l2r, score_type='LAS', device=device)
+
+        avgs_UAS, ou = l2t_to_l2avg(l2t_UAS)
+        avgs_LAS, ol = l2t_to_l2avg(l2t_LAS)
+
+        stats['l2t_UAS'] = l2t_UAS
+        stats['l2t_LAS'] = l2t_LAS
+        stats['avgs_UAS'] = avgs_UAS
+        stats['avgs_LAS'] = avgs_LAS
+        stats['ou'] = ou
+        stats['ol'] = ol
+        stats['ud'] = ud
+        stats['ld'] = ld
+
+        with open(stats_pkl, 'wb') as f:
+            pickle.dump(stats, f)
+    else:
+        with open(stats_pkl, 'rb') as f:
+            stats = pickle.load(f)
+
+    l2t_UAS = stats['l2t_UAS']
+    l2t_LAS = stats['l2t_LAS'] 
+    avgs_UAS = stats['avgs_UAS'] 
+    avgs_LAS = stats['avgs_LAS'] 
+    ou = stats['ou']
+    ol = stats['ol']
+    ud = stats['ud']
+    ld = stats['ld']
+
+    print('UAS averages: ', avgs_UAS)
+    print('LAS averages: ', avgs_LAS)
+
+    print('UAS overall: ', ou)
+    print('LAS overall: ', ol)
+
+    unique_len_counter = 0
+    for n in l2n.values():
+        if n <= 1:
+            unique_len_counter += 1
+
+    print('Unique lengths: ', unique_len_counter)
+
+    with open(stats_readable, 'w') as f:
+        f.write('Sentence length\tNum of length\tAvg UAS\t Avg LAS\n')
+        for l, c in l2c.items():
+            n = len(range(c[0], c[1]))
+            f.write('{:10}\t{:10}\t{:10.3f}\t{:10.3f}\n'.format(
+                l,
+                n,
+                avgs_UAS[l],
+                avgs_LAS[l]))
+
+        f.write(f'\nUnique lengths: {unique_len_counter}')
+        f.write(f'\nNum dupes (by UAS): {ud}')
+        f.write(f'\nNum dupes (by LAS): {ld}')
+
+
+def l2t_to_l2avg(l2t):
+    l2avg = {}
+    avg_list = []
+
+    for l, t in l2t.items():
+        nonzeros = t.flatten().index_select(0, t.nonzero().flatten())
+        avg = torch.mean(nonzeros).item()
+        avg_list.append(avg)
+        l2avg[l] = avg
+    
+    overall_avg = torch.tensor(avg_list).mean().item()
+
+    return l2avg, overall_avg
+
+
+

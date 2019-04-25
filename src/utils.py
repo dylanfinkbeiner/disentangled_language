@@ -32,6 +32,11 @@ def attachment_scoring(
             LAS - average number of correct relation predictions
     '''
 
+    device = arc_preds.device # Tensor chosen mostly arbitrarily
+    arc_targets = arc_targets.to(device)
+    rel_targets = rel_targets.to(device)
+    sent_lens = sent_lens.to(device)
+
     # CRUCIAL to remember sentence lengths INCLUDE root token in their count
     sent_lens = sent_lens.view(-1, 1).float()
     sent_lens = sent_lens if include_root else sent_lens - 1
@@ -43,12 +48,12 @@ def attachment_scoring(
     arc_preds = torch.where(
             arc_targets != -1,
             arc_preds,
-            torch.zeros(arc_preds.shape).long())
+            torch.zeros(arc_preds.shape).long().to(device))
 
     rel_preds = torch.where(
             rel_targets != -1,
             rel_preds,
-            torch.zeros(rel_preds.shape).long())
+            torch.zeros(rel_preds.shape).long().to(device))
 
     correct_arcs = arc_preds.eq(arc_targets).float()
     correct_rels = rel_preds.eq(rel_targets).float()
