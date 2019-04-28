@@ -112,7 +112,7 @@ def txt_to_sem_scores(txt: str) -> list:
     return sem_scores
 
 
-def build_bucket_dicts(data_sorted: list) -> dict:
+def build_cutoff_dicts(data_sorted: list) -> dict:
     '''
         inputs:
             data_sorted - list of np arrays (conllu-formatted sentences)
@@ -139,9 +139,9 @@ def build_bucket_dicts(data_sorted: list) -> dict:
         l_prev = l
     l2c[l_max].append(len(data_sorted))
 
-    for cutoffs in l2c.values():
-        for i in range(cutoffs[0], cutoffs[1]):
-            i2c[i] = cutoffs
+    for c in l2c.values():
+        for i in range(c[0], c[1]):
+            i2c[i] = c
 
     if len(i2c) != len(data_sorted):
         print(f'i2c {len(i2c)} != data_sorted {len(data_sorted)}')
@@ -160,8 +160,8 @@ def get_paired_idx(idx: list, cutoffs: dict):
     for i in idx:
         c = cutoffs[i]
         paired_i = random.randrange(c[0], c[1])
-        unique_length = c[0] == c[1] - 1
-        while (paired_i == i) and not unique_length:
+        is_unique_length = (c[0] == c[1] - 1)
+        while (paired_i == i) and not is_unique_length:
             paired_i = random.randrange(c[0], c[1])
         paired_idx.append(paired_i)
 
@@ -189,7 +189,7 @@ def get_syntactic_scores(s1_batch, s2_batch, score_type=None):
     return results[score_type] # (b, 1)
 
 
-def build_buckets(data_sorted, l2c=None, i2c=None, score_type=None) -> dict:
+def build_buckets(data_sorted, l2c=None, score_type=None) -> dict:
     buckets = {}
 
     for length in l2c.keys():
@@ -197,62 +197,72 @@ def build_buckets(data_sorted, l2c=None, i2c=None, score_type=None) -> dict:
 
         c = l2c[length]
         for i in range(c[0], c[1]):
-            s1 = data_sorted[i]
+            s1 = prepare_batch_sdp([data_sorted[i]])
             for j in range(i+1, c[1]):
-                s2 = data_sorted[j]
-                curr_pairwise[(i,j)] = get_syntactic_scores([s1], [s2], score_type='LAS').flatten()
+                s2 = prepare_batch_sdp([data_sorted[j]])
+                score = get_syntactic_scores(s1, s2, score_type='LAS') # (1,1) I think
+                curr_pairwise[(i,j)] = score.flatten().item()
 
         buckets[length] = dict(curr_pairwise)
 
     return buckets
 
 
-def sdp_data_loader(data, batch_size=1, shuffle_idx=False, custom_task=False):
+def sdp_data_loader_original(data, batch_size=1, shuffle_idx=False):
     idx = list(range(len(data)))
-
-    if custom_task:
-        data_sorted = sorted(data, key = lambda s : s.shape[0])
-        bucket_dicts = build_bucket_dicts(data_sorted)
-        l2n = bucket_dicts['l2n']
-        cutoffs = bucket_dicts['i2c']
-        l2c = bucket_dicts['l2c']
-        print('Num lengths: ', len(l2c))
-
-        print(l2c.keys())
-        print(len(cutoffs))
-        print(l2n.items())
-
-        k = 0
-        for v in l2n.values():
-            k += v
-
-        print(f'k: {k} , len: {len(data_sorted)}')
-
-        exit()
-    
 
     while True:
         if shuffle_idx:
             shuffle(idx) # In-place shuffle
 
-        if custom_task:
-            paired_idx = get_paired_idx(idx, cutoffs)
+        for chunk in idx_chunks(idx, batch_size):
+            batch = [data[i] for i in chunk]
+            yield prepare_batch_sdp(batch)
 
-            for chunk, chunk_p in zip(
-                    idx_chunks(idx, batch_size), 
-                    idx_chunks(paired_idx, batch_size)):
 
-                batch = [data_sorted[i] for i in chunk]
-                paired = [data_sorted[i] for i in chunk_p]
-                prepared_batch = prepare_batch_sdp(batch)
-                prepared_paired = prepare_batch_sdp(paired)
-                yield (prepared_batch,
-                        prepared_paired, 
-                        get_scores(prepared_batch, prepared_paired, score_type='LAS'))
-        else:
-            for chunk in idx_chunks(idx, batch_size):
-                batch = [data[i] for i in chunk]
-                yield prepare_batch_sdp(batch)
+def sdp_data_loader_custom(data, batch_size=1):
+    idx = list(range(len(data)))
+
+    data_sorted = sorted(data, key = lambda s : s.shape[0])
+    cutoff_dicts = build_cutoff_dicts(data_sorted)
+    #l2n = cutoff_dicts['l2n']
+    #i2c = cutoff_dicts['i2c']
+    l2c = cutoff_dicts['l2c']
+
+    print(l2c
+    
+
+    exit()
+
+    buckets = build_buckets(data_sorted, l2c=l2c, score_type='LAS')
+
+    while True:
+        if shuffle_idx:
+            shuffle(idx) # In-place shuffle
+
+        num_buckets = len(buckets)
+
+        for bucket in buckets:
+            from bucket rando-grab batch_size/num_buckets many indices
+            idx.extend(batch)
+
+        paired_idx = get_paired_idx(idx, cutoff_dicts['i2c'])
+
+        for chunk, chunk_p in zip(
+                idx_chunks(idx, batch_size),
+                idx_chunks(paired_idx, batch_size)):
+
+            batch = [data_sorted[i] for i in chunk]
+            paired = [data_sorted[i] for i in chunk_p]
+            prepared_batch = prepare_batch_sdp(batch)
+            prepared_paired = prepare_batch_sdp(paired)
+            scores =   #XXX (b, 1) tensor
+            yield (prepared_batch, prepared_paired, scores)
+
+def flarg():
+
+    for l, i in length_index_tuples:
+        score.append(pairwise[l][i])
 
 
 def idx_loader(num_data=None, batch_size=None):
@@ -349,7 +359,7 @@ def prepare_batch_ss(batch):
     return words, pos, sent_lens
 
 
-def conllu_to_sents(f:str):
+def conllu_to_sents(f: str):
     '''
     inputs:
         f - filename of conllu file
