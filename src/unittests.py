@@ -20,6 +20,10 @@ class TestDataUtils(unittest.TestCase):
 
         self.assertEqual(len(test_sentences), len(i2c))
 
+    def test_sts_scoring():
+        sts_scoring
+
+
 
 if __name__ == '__main__':
     unittest.main()

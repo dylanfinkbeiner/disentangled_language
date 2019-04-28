@@ -35,6 +35,7 @@ BROWN_DIR = '../data/brown'
 MODEL_NAME = ''
 CONLLU_FILES = []
 PARANMT_FILE = 'para_100k.txt'
+PARANMT_FILE = 'para-nmt-5m-processed.txt'
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
 UNK_TOKEN = '<unk>'
@@ -131,7 +132,7 @@ if __name__ == '__main__':
     STS_GS = os.path.join(STS_DIR, 'gs')
 
     train_ss = {}
-    train_path = os.path.join(data_ss_dir, 'ss_train.pkl')
+    train_path = os.path.join(data_ss_dir, 'ss_train_{PARANMT_FILE}.pkl')
     if 'train' in init_ss:
         log.info(f'Initializing SS train data.')
         train_ss = build_ss_dataset(os.path.join(DATA_DIR, PARANMT_FILE), gs='', x2i=x2i)
@@ -220,7 +221,7 @@ if __name__ == '__main__':
                     'vocabs': vocabs}
             eval.eval_sdp(args, parser, data, exp_path_base=exp_path_base)
 
-        if sem_eval:
+        if args.evaluate_semantic:
             data = {'semeval': data_ss['test'],
                     'device': device,
                     'vocabs': vocabs}

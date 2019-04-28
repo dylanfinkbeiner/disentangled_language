@@ -184,7 +184,7 @@ class BiAffineAttention(nn.Module):
         d_rel, num_rel, _ = self.U_rel.size()
 
         for i in range(b):
-            H_rel_head[i] = H_rel_head[i].index_select(0, head_preds[i].view(-1))
+            H_rel_head[i] = H_rel_head[i].index_select(0, arc_preds[i].view(-1))
 
         # H_rel_head: Now the i-th row of this matrix is h_p_i^(rel_head), the MLP output for predicted head of ith word
         U_rel = self.U_rel.view(-1, num_rel * d_rel) # (d_rel, num_rel * d_rel)

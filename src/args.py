@@ -48,17 +48,17 @@ def get_args():
     parser.add_argument('-es', action='store_true', dest='evaluate_semantic', default=False)
 
     parser.add_argument('--initsdp', action='store_true', dest='init_sdp', default=False)
-    parser.add_argument('--initss', help='Initialize a part of the semantic similarity data.', dest='init_ss', nargs='*', type=str)
+    parser.add_argument('--initss', help='Initialize a part of the semantic similarity data.', dest='init_ss', nargs='*', type=str, default=[])
     parser.add_argument('--initmodel', action='store_true', dest='init_model', default=False)
 
     # Model hyperparameters
     parser.add_argument('-H', '--hsize', help='Size of LSTM hidden state.', dest='h_size', type=int, default=400)
     parser.add_argument('--synsize', help='Number of units of hidden state dedicated to syntactic content.', dest='syn_size', type=int, default=200)
     parser.add_argument('--lrsyn', help='Learning rate for optimization during syntactic task.', dest='lr_syn', type=float, default=2e-3)
-    parser.add_argument('--lrsem', help='Learning rate for optimization during semantic task.', dest='lr_sem', type=float, default=2e-3)
+    parser.add_argument('--lrsem', help='Learning rate for optimization during semantic task.', dest='lr_sem', type=float, default=1e-3)
 
     # Training hyperparameters
-    parser.add_argument('-b', '--batchsize', help='Size of batch', type=int, dest='batchsize', default=100)
+    parser.add_argument('-b', '--batchsize', help='Size of batch', type=int, dest='batch_size', default=100)
     parser.add_argument('--sembatchsize', help='Size of batch for semantic similarity task.', type=int, dest='sem_batchsize', default=100)
     parser.add_argument('--synbatchsize', help='Size of batch for syntactic parsing task.', type=int, dest='syn_batchsize', default=100)
     parser.add_argument('-M', '--megasize', help='Number of batches in a megabatch.', type=int, dest='M', default=1)

@@ -1,11 +1,14 @@
 import random
 from random import shuffle
 import string
+import pickle
+import os
 
 from collections import defaultdict, Counter
 import numpy as np
 from nltk.parse import CoreNLPParser
 from scipy.spatial.distance import pdist, squareform
+from tqdm import tqdm
 import torch
 
 import utils
@@ -168,7 +171,7 @@ def get_paired_idx(idx: list, cutoffs: dict):
     return paired_idx
 
 
-def get_syntactic_scores(s1_batch, s2_batch, score_type=None):
+def get_syntactic_scores(s1_batch, s2_batch, device=None):
     '''
         inputs:
             batch -
@@ -178,34 +181,108 @@ def get_syntactic_scores(s1_batch, s2_batch, score_type=None):
             scores - a (b,1) tensor of 'scores' for the paired sentences, weights to be used in loss function
     '''
     results = utils.attachment_scoring(
-            arc_preds=s1_batch['arc_targets'], 
-            rel_preds=s1_batch['rel_targets'], 
-            arc_targets=s2_batch['arc_targets'], 
-            rel_targets=s2_batch['rel_targets'], 
-            sent_lens=s1_batch['sent_lens'], 
+            arc_preds=s1_batch['arc_targets'].to(device), 
+            rel_preds=s1_batch['rel_targets'].to(device), 
+            arc_targets=s2_batch['arc_targets'].to(device), 
+            rel_targets=s2_batch['rel_targets'].to(device), 
+            sent_lens=s1_batch['sent_lens'].to(device), 
             include_root=False,
             keep_dim=True)
 
-    return results[score_type] # (b, 1)
+    return results
 
 
-def build_buckets(data_sorted, l2c=None, score_type=None) -> dict:
-    buckets = {}
+def length_to_results(data_sorted, l2c=None, device=None) -> dict:
+    l2r = {}
 
-    for length in l2c.keys():
-        curr_pairwise = {}
+    #for l, c in tqdm(l2c.items()):
+    for l, c in tqdm(l2c.items(), ascii=True, desc=f'Progress in building l2r', ncols=80):
+        idxs = list(range(c[0], c[1]))
+        t = torch.zeros(len(idxs), len(idxs))
+        print(f'Tensor for length {l} has shape: {t.shape}')
 
-        c = l2c[length]
-        for i in range(c[0], c[1]):
-            s1 = prepare_batch_sdp([data_sorted[i]])
-            for j in range(i+1, c[1]):
-                s2 = prepare_batch_sdp([data_sorted[j]])
-                score = get_syntactic_scores(s1, s2, score_type='LAS') # (1,1) I think
-                curr_pairwise[(i,j)] = score.flatten().item()
 
-        buckets[length] = dict(curr_pairwise)
+        UAS_tensors = []
+        LAS_tensors = []
+        for chunk in idx_chunks(idxs, 100):
+            s1_batch = []
+            s2_batch = []
+            for i, idx_i in enumerate(chunk):
+                for j, idx_j in enumerate(chunk[i+1:]):
+                    s1_batch.append(data_sorted[idx_i])
+                    s2_batch.append(data_sorted[idx_j])
+            
+            results = get_syntactic_scores(
+                    prepare_batch_sdp(s1_batch),
+                    prepare_batch_sdp(s2_batch),
+                    device=device)
 
-    return buckets
+            UAS_tensors.append(results['UAS'].flatten())
+            LAS_tensors.append(results['LAS'].flatten())
+
+        UAS_t = torch.cat(UAS_tensors, dim=0)
+        LAS_t = torch.cat(LAS_tensors, dim=0)
+        l2r[l] = {'UAS': UAS_t, 'LAS': LAS_t}
+
+        #s1_batch = []
+        #s2_batch = []
+        #for i, idx_i in enumerate(idxs):
+        #    for j, idx_j in enumerate(range(idx_i + 1, c[1])):
+        #        s1_batch.append(data_sorted[idx_i])
+        #        s2_batch.append(data_sorted[idx_j])
+        #
+        #print('Fetching syntactic scores')
+        #results = get_syntactic_scores(
+        #        prepare_batch_sdp(s1_batch),
+        #        prepare_batch_sdp(s2_batch),
+        #        device=device)
+
+        #l2r[l] = results
+
+    return l2r
+
+
+def get_score_tensors(data_sorted, l2c=None, l2r=None, score_type=None, device=None) -> dict:
+    l2t = {}
+    num_duplicates = 0
+
+    #for l, c in tqdm(l2c.items()):
+    for l, c in tqdm(l2c.items(), ascii=True, desc=f'Progress in building {score_type} l2t', ncols=80):
+        idxs = list(range(c[0], c[1]))
+        t = torch.zeros(len(idxs), len(idxs))
+
+        #s1_batch = []
+        #s2_batch = []
+        #for i, idx_i in enumerate(idxs):
+        #    for j, idx_j in enumerate(range(idx_i + 1, c[1])):
+        #        s1_batch.append(data_sorted[idx_i])
+        #        s2_batch.append(data_sorted[idx_j])
+        #
+        #results = get_syntactic_scores(
+        #        prepare_batch_sdp(s1_batch),
+        #        prepare_batch_sdp(s2_batch),
+        #        score_type=score_type,
+        #        device=device)
+        
+        scores = l2r[l][score_type]
+
+        for i, idx_i in enumerate(idxs):
+            for j, idx_j in enumerate(range(idx_i + 1, c[1])):
+                t[i,j] = scores[i+j]
+                if scores[i+j] == 1.0:
+                    num_duplicates += 1
+
+        #for i, idx_i in enumerate(idxs):
+        #    si = prepare_batch_sdp([data_sorted[idx_i]])
+        #    for j, idx_j in enumerate(range(idx_i+1, c[1])):
+        #        sj = prepare_batch_sdp([data_sorted[idx_j]])
+        #        t[i,j] = get_syntactic_scores(si, sj, score_type=score_type).flatten()
+        #        #curr_pairwise[(i,j)] = get_syntactic_scores([s1], [s2], score_type='LAS').flatten()
+
+
+        l2t[l] = t
+
+    return l2t, num_duplicates
 
 
 def sdp_data_loader_original(data, batch_size=1, shuffle_idx=False):
@@ -221,6 +298,7 @@ def sdp_data_loader_original(data, batch_size=1, shuffle_idx=False):
 
 
 def sdp_data_loader_custom(data, batch_size=1):
+    raise Exception
     idx = list(range(len(data)))
 
     data_sorted = sorted(data, key = lambda s : s.shape[0])
@@ -229,22 +307,16 @@ def sdp_data_loader_custom(data, batch_size=1):
     #i2c = cutoff_dicts['i2c']
     l2c = cutoff_dicts['l2c']
 
-    print(l2c
-    
-
-    exit()
-
-    buckets = build_buckets(data_sorted, l2c=l2c, score_type='LAS')
 
     while True:
         if shuffle_idx:
             shuffle(idx) # In-place shuffle
 
-        num_buckets = len(buckets)
+        #num_buckets = len(buckets)
 
         for bucket in buckets:
-            from bucket rando-grab batch_size/num_buckets many indices
-            idx.extend(batch)
+            #from bucket rando-grab batch_size/num_buckets many indices
+            #idx.extend(batch)
 
         paired_idx = get_paired_idx(idx, cutoff_dicts['i2c'])
 
@@ -256,13 +328,8 @@ def sdp_data_loader_custom(data, batch_size=1):
             paired = [data_sorted[i] for i in chunk_p]
             prepared_batch = prepare_batch_sdp(batch)
             prepared_paired = prepare_batch_sdp(paired)
-            scores =   #XXX (b, 1) tensor
+            scores = None  #XXX (b, 1) tensor
             yield (prepared_batch, prepared_paired, scores)
-
-def flarg():
-
-    for l, i in length_index_tuples:
-        score.append(pairwise[l][i])
 
 
 def idx_loader(num_data=None, batch_size=None):
@@ -301,24 +368,23 @@ def prepare_batch_sdp(batch):
     batch_size = len(batch)
     batch_sorted = sorted(batch, key = lambda s: s.shape[0], reverse=True)
     sent_lens = torch.LongTensor([s.shape[0] for s in batch_sorted]) # Keep in mind, these lengths include ROOT token in each sentence
-    length_longest = sent_lens[0]
+    l_longest = sent_lens[0]
 
-    words = torch.zeros((batch_size, length_longest)).long()
-    pos = torch.zeros((batch_size, length_longest)).long()
-    arc_targets = torch.LongTensor(batch_size, length_longest).fill_(-1)
-    rel_targets = torch.LongTensor(batch_size, length_longest).fill_(-1)
+    words = torch.zeros((batch_size, l_longest)).long()
+    pos = torch.zeros((batch_size, l_longest)).long()
+    arc_targets = torch.LongTensor(batch_size, l_longest).fill_(-1)
+    rel_targets = torch.LongTensor(batch_size, l_longest).fill_(-1)
 
     for i, s in enumerate(batch_sorted):
-        for j, _ in enumerate(s):
-            '''
-            Casting as ints because for some stupid reason
-            you cannot set a value in torch long tensor using
-            numpy's 64 bit ints
-            '''
-            words[i,j] = int(s[j,0])
-            pos[i,j] = int(s[j,1])
-            arc_targets[i,j] = int(s[j,2])
-            rel_targets[i,j] = int(s[j,3])
+        # s shape (length, 4)
+
+        dt = np.dtype(int)
+        resized_np = np.zeros((l_longest, s.shape[1]), dtype=dt)
+        resized_np[:s.shape[0]] = s
+        words[i] = torch.LongTensor(resized_np[:,0])
+        pos[i] = torch.LongTensor(resized_np[:,1])
+        arc_targets[i] = torch.LongTensor(resized_np[:,2])
+        rel_targets[i] = torch.LongTensor(resized_np[:,3])
 
     return {'words': words, 
             'pos' : pos, 
@@ -341,20 +407,17 @@ def prepare_batch_ss(batch):
     batch_size = len(batch)
 
     sent_lens = torch.LongTensor([s.shape[0] for s in batch])
-    length_longest = max(sent_lens)
+    l_longest = max(sent_lens)
 
-    words = torch.zeros((batch_size, length_longest)).long()
-    pos = torch.zeros((batch_size, length_longest)).long()
+    words = torch.zeros((batch_size, l_longest)).long()
+    pos = torch.zeros((batch_size, l_longest)).long()
 
     for i, s in enumerate(batch):
-        for j, _ in enumerate(s):
-            '''
-            Casting as ints because for some stupid reason
-            you cannot set a value in torch long tensor using
-            numpy's 64 bit ints
-            '''
-            words[i,j] = int(s[j,0])
-            pos[i,j] = int(s[j,1])
+        dt = np.dtype(int)
+        resized_np = np.zeros((l_longest, s.shape[1]), dtype=dt)
+        resized_np[:s.shape[0]] = s
+        words[i] = torch.LongTensor(resized_np[:,0])
+        pos[i] = torch.LongTensor(resized_np[:,1])
 
     return words, pos, sent_lens
 
@@ -421,14 +484,14 @@ def paraphrase_to_sents(f: str):
 
 
 def build_dicts(sents_list):
-    words, pos, rel = set(), set(), set()
+    word, pos, rel = set(), set(), set()
     for s in sents_list:
         for line in s:
-            words.add(line[0].lower())
+            word.add(line[0].lower())
             pos.add(line[1])
             rel.add(line[3])
 
-    words = sorted(words)
+    word = sorted(word)
     pos = sorted(pos)
     rel = sorted(rel)
 
@@ -447,7 +510,7 @@ def build_dicts(sents_list):
     i2w[w2i[ROOT_TOKEN]] = ROOT_TOKEN
     i2p[p2i[ROOT_TOKEN]] = ROOT_TOKEN
 
-    for w in words:
+    for w in word:
         i2w[w2i[w]] = w
     for p in pos:
         i2p[p2i[p]] = p
@@ -483,6 +546,32 @@ def numericalize_sdp(sents_list, x2i):
     return sents_numericalized
 
 
+def decode_sdp_sents(sents=[], i2x=None) -> list:
+    i2w = i2x['word']
+    i2p = i2x['pos']
+    i2r = i2x['rel']
+
+    decoded_sents = []
+    for sent in sents:
+        # sent is a (l,4) np array
+        words = []
+        pos = []
+        heads = []
+        rels = []
+
+        for i in range(sent.shape[0]):
+            words.append(i2w[sent[i,0]])
+            pos.append(i2p[sent[i,1]])
+            heads.append(sent[i,2])
+            rel = i2r[sent[i,3]] if sent[i,3] != -1 else ROOT_TOKEN
+            rels.append(rel)
+
+        decoded_sents.append([words, pos, heads, rels])
+
+
+    return decoded_sents
+
+
 def numericalize_ss(sents_list, x2i):
     w2i = x2i['word']
     p2i = x2i['pos']
@@ -512,34 +601,38 @@ def megabatch_breakdown(megabatch, minibatch_size, parser, device):
 
         outputs:
             s1 - list of orig. sentence instances
-            s2 - list of paraphrase instances
-            negs - list of neg sample instances
+            mb_para2 - list of paraphrase instances
+            mb_neg1 - list of neg sample instances
     '''
-    s1 = []
-    s2 = []
+    mb_para1 = []
+    mb_para2 = []
     
-    for batch in megabatch:
-        s1.append(batch[0]) # Does this allocate new memory?
-        s2.append(batch[1])
+    for para1, para2 in megabatch:
+        mb_para1.append(para1) # Does this allocate new memory?
+        mb_para2.append(para2)
 
-    minibatches = [s1[i:i + minibatch_size] for i in range(0, len(s1), minibatch_size)]
+    minibatches = [mb_para1[i:i+minibatch_size] for i in range(0, len(mb_para1), minibatch_size)]
+
+    if len(minibatches) * minibatch_size != len(megabatch):
+        raise Exception
 
     megabatch_of_reps = [] # (megabatch_size, )
     for b in minibatches:
         words, pos, sent_lens = prepare_batch_ss(b)
         sent_lens = sent_lens.to(device)
         b_reps, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
-        megabatch_of_reps.append(utils.average_hiddens(b_reps, sent_lens))
+        b_reps_avg = utils.average_hiddens(b_reps, sent_lens)
+        megabatch_of_reps.append(b_reps_avg)
 
     megabatch_of_reps = torch.cat(megabatch_of_reps)
 
-    # Get negative samples with respect to s1
-    negs = get_negative_samps(megabatch, megabatch_of_reps)
+    # Get negative samples with respect to mb_para1
+    mb_neg1 = get_negative_samps(mb_para1, megabatch_of_reps)
 
-    return s1, s2, negs
+    return mb_para1, mb_para2, mb_neg1
 
 
-def get_negative_samps(megabatch, megabatch_of_reps):
+def get_negative_samps(mb_para1, megabatch_of_reps):
     '''
         inputs:
             megabatch - a megabatch (list) of sentences
@@ -553,24 +646,26 @@ def get_negative_samps(megabatch, megabatch_of_reps):
 
     reps = []
     sents = []
-    for i in range(len(megabatch)):
-        (s1, _) = megabatch[i]
-        reps.append(megabatch_of_reps[i].cpu().numpy())
-        sents.append(s1)
+    for para1, rep in zip(mb_para1, megabatch_of_reps): 
+    #for i in range(len(megabatch)):
+        #(s1, _) = megabatch[i]
+        #reps.append(megabatch_of_reps[i].cpu().numpy())
+        reps.append(rep.cpu().numpy())
+        sents.append(para1)
 
-    arr = pdist(reps, 'cosine')
-    arr = squareform(arr)
+    dists = pdist(reps, 'cosine') # cosine distance, as (1 - normalized inner product)
+    dists = squareform(dists) # Symmetric 2-D matrix of pairwise distances
 
-    for i in range(len(arr)):
-        arr[i,i] = 0
+    # Don't risk pairing a sentence with itself
+    # Wieting's code looks different here, as they must cleverly deal with 2x as many indices
+    np.fill_diagonal(dists, 0)
 
-    arr = np.argmax(arr, axis=1)
+    # For each sentence, get index of sentence 'farthest' from it
+    neg_idxs = np.argmax(dists, axis=1)
 
-    for i in range(len(megabatch)):
-        t = None
-        t = sents[arr[i]]
-
-        negs.append(t)
+    for idx in neg_idxs:
+        neg = sents[idx]
+        negs.append(neg)
 
     return negs
 
@@ -640,3 +735,99 @@ def has_digits(word):
     True if word contains digits.
     """
     return bool(set(string.digits).intersection(word))
+
+
+def sdp_corpus_stats(data, stats_pkl='../data/sdp_corpus_stats.pkl', stats_readable ='../data/readable_stats.txt', device=None):
+    stats = {}
+    data_sorted = sorted(data, key = lambda s : s.shape[0])
+    bucket_dicts = build_bucket_dicts(data_sorted)
+    
+    l2n = bucket_dicts['l2n']
+    i2c = bucket_dicts['i2c']
+    l2c = bucket_dicts['l2c']
+
+    for l, n in l2n.items():
+        if n < 2:
+            l2c.pop(l)
+
+    print(len(l2c))
+
+    if not os.path.exists(stats_pkl):
+        l2r = length_to_results(data_sorted, l2c=l2c, device=device)
+
+        l2t_UAS, ud = get_score_tensors(data_sorted, l2c=l2c, l2r=l2r, score_type='UAS', device=device)
+        l2t_LAS, ld = get_score_tensors(data_sorted, l2c=l2c, l2r=l2r, score_type='LAS', device=device)
+
+        avgs_UAS, ou = l2t_to_l2avg(l2t_UAS)
+        avgs_LAS, ol = l2t_to_l2avg(l2t_LAS)
+
+        stats['l2t_UAS'] = l2t_UAS
+        stats['l2t_LAS'] = l2t_LAS
+        stats['avgs_UAS'] = avgs_UAS
+        stats['avgs_LAS'] = avgs_LAS
+        stats['ou'] = ou
+        stats['ol'] = ol
+        stats['ud'] = ud
+        stats['ld'] = ld
+
+        with open(stats_pkl, 'wb') as f:
+            pickle.dump(stats, f)
+    else:
+        with open(stats_pkl, 'rb') as f:
+            stats = pickle.load(f)
+
+    l2t_UAS = stats['l2t_UAS']
+    l2t_LAS = stats['l2t_LAS'] 
+    avgs_UAS = stats['avgs_UAS'] 
+    avgs_LAS = stats['avgs_LAS'] 
+    ou = stats['ou']
+    ol = stats['ol']
+    ud = stats['ud']
+    ld = stats['ld']
+
+    print('UAS averages: ', avgs_UAS)
+    print('LAS averages: ', avgs_LAS)
+
+    print('UAS overall: ', ou)
+    print('LAS overall: ', ol)
+
+    unique_len_counter = 0
+    for n in l2n.values():
+        if n <= 1:
+            unique_len_counter += 1
+
+    print('Unique lengths: ', unique_len_counter)
+
+    with open(stats_readable, 'w') as f:
+        f.write('Sentence length\tNum of length\tAvg UAS\t Avg LAS\n')
+        for l, c in l2c.items():
+            n = len(range(c[0], c[1]))
+            f.write('{:10}\t{:10}\t{:10.3f}\t{:10.3f}\n'.format(
+                l,
+                n,
+                avgs_UAS[l],
+                avgs_LAS[l]))
+
+        f.write(f'\nUnique lengths: {unique_len_counter}')
+        f.write(f'\nNum dupes (by UAS): {ud}')
+        f.write(f'\nNum dupes (by LAS): {ld}')
+
+
+def l2t_to_l2avg(l2t):
+    l2avg = {}
+    avg_list = []
+
+    for l, t in l2t.items():
+        #nonzeros = t.flatten().index_select(0, t.nonzero().flatten())
+        #avg = torch.mean(nonzeros).item()
+        divisor = (t.shape[0] * (t.shape[0] - 1)) / 2
+        avg = (t.sum() / divisor).item()
+        avg_list.append(avg)
+        l2avg[l] = avg
+    
+    overall_avg = torch.tensor(avg_list).mean().item()
+
+    return l2avg, overall_avg
+
+
+

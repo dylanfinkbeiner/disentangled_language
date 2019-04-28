@@ -32,38 +32,47 @@ def attachment_scoring(
             LAS - average number of correct relation predictions
     '''
 
+    device = arc_preds.device # Tensor chosen mostly arbitrarily
+    arc_targets = arc_targets.to(device)
+    rel_targets = rel_targets.to(device)
+    sent_lens = sent_lens.to(device)
+
+    # CRUCIAL to remember sentence lengths INCLUDE root token in their count
     sent_lens = sent_lens.view(-1, 1).float()
+    sent_lens = sent_lens if include_root else sent_lens - 1
     total_words = sent_lens.sum().float()
     b, l = arc_preds.shape
 
-    # To ensure padding values do not contribute to score in the .eq() calls
+    # CRUCIAL to remember that targets come with -1 padding in the ROOT position!
+    # This means that the root predictions are NEVER counted towards correct #
     arc_preds = torch.where(
             arc_targets != -1,
             arc_preds,
-            torch.zeros(arc_preds.shape).long())
+            torch.zeros(arc_preds.shape).long().to(device))
+
     rel_preds = torch.where(
             rel_targets != -1,
             rel_preds,
-            torch.zeros(rel_preds.shape).long())
+            torch.zeros(rel_preds.shape).long().to(device))
 
     correct_arcs = arc_preds.eq(arc_targets).float()
     correct_rels = rel_preds.eq(rel_targets).float()
 
-    UAS_correct = correct_heads.sum(1, True) # (b,l) -> (b,1)
-    UAS_correct = UAS_correct if include_root else F.relu(UAS_correct - 1)
+    UAS_correct = correct_arcs.sum(1, True) # (b,l) -> (b,1)
+    UAS_correct = UAS_correct + 1 if include_root else UAS_correct
     if not keep_dim:
-        UAS_correct = UAS_correct.sum() # (b,l) -> (1)
-        UAS = UAS_correct / (total_words if include_root else total_words - 1)
+        UAS_correct = UAS_correct.sum() # (b,1) -> (1)
+        UAS = UAS_correct / total_words
     else:
-        UAS = UAS_correct / (sent_lens if include_root else sent_lens - 1)
+        UAS = UAS_correct / sent_lens
 
-    LAS_correct = (correct_heads * correct_rels).sum(1, True)
-    LAS_correct = LAS_correct if include_root else F.relu(LAS_correct - 1)
+    LAS_correct = (correct_arcs * correct_rels).sum(1, True) # (b,l) -> (b,1)
+    LAS_correct = LAS_correct + 1 if include_root else LAS_correct
     if not keep_dim:
-        LAS_correct = (correct_arcs * correct_rels).sum()
-        LAS = LAS_correct / (total_words if include_root else total_words - 1)
+        LAS_correct = LAS_correct.sum() # (b,1) -> (1)
+        LAS = LAS_correct / total_words
     else:
-        LAS = LAS_correct / (sent_lens if include_root else sent_lens - 1)
+        LAS = LAS_correct / sent_lens
 
     return {'UAS': UAS,
             'LAS': LAS, 
@@ -72,7 +81,7 @@ def attachment_scoring(
             'LAS_correct' : LAS_correct}
 
 
-def average_hiddens(hiddens, sent_lens):
+def average_hiddens(hiddens, sent_lens=None):
     '''
         inputs:
             hiddens - tensor w/ shape (b, l, d)
@@ -85,7 +94,6 @@ def average_hiddens(hiddens, sent_lens):
     #NOTE WE ARE ASSUMING PAD VALUES ARE 0 IN THIS SUM (NEED TO DOUBLE CHECK)
     averaged_hiddens = hiddens.sum(dim=1) # (b,l,2*h_size) -> (b,2*h_size)
 
-    d = sent_lens.device
     sent_lens = sent_lens.view(-1, 1).float() # (b, 1)
 
     averaged_hiddens /= sent_lens
@@ -118,9 +126,9 @@ def predict_sts_score(h1, h2, h_size=None, syn_size=None):
 
     sims = F.cosine_similarity(sem_h1, sem_h2).flatten()
 
-    # Scale into 0-5 range, per SemEval STS task conventions
-    sims += 1
-    sims *= 2.5
+    # Scale into 0-5 range, per SemEval STS task conventions (commented out since R invariant to linear transformations)
+    #sims += 1
+    #sims *= 2.5
 
     return sims.tolist()
 
