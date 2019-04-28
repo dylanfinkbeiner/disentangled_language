@@ -120,35 +120,36 @@ def eval_sts(args, parser, data, exp_path_base=None):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     exp_path = '_'.join([exp_path_base, 'semeval'])
-    exp_file = open(exp_path, 'a')
-    exp_file.write(f'Semantic evaluation for model : {args.model}')
 
-    for year in YEARS:
-        curr_data = data['semeval'][year]
-        predictions = []
-        for s1, s2 in tqdm(curr_data['sent_pairs'], ascii=True, desc=f'Progress for {year} task', ncols=80):
-            w1, p1, sl1 = prepare_batch_ss([s1])
-            w2, p2, sl2 = prepare_batch_ss([s2])
-            h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1.to(device))
-            h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2.to(device))
+    parser.eval()
 
-            prediction = predict_sts_score(
-                    average_hiddens(h1, sl1.to(device)), 
-                    average_hiddens(h2, sl2.to(device)), 
-                    h_size=args.h_size, 
-                    syn_size=args.syn_size)
-            predictions.extend(prediction)
+    with open(exp_path, 'a') as exp_file:
+        exp_file.write(f'Semantic evaluation for model : {args.model}\n\n')
+        with torch.no_grad():
+            for year in YEARS:
+                curr_data = data['semeval'][year]
+                predictions = []
+                
+                w1, p1, sl1 = prepare_batch_ss([s1 for s1, s2 in curr_data['sent_pairs']])
+                w2, p2, sl2 = prepare_batch_ss([s2 for s1, s2 in curr_data['sent_pairs']])
+                h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1.to(device))
+                h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2.to(device))
 
-        correlation = sts_scoring(predictions, curr_data['targets'])
+                predictions = predict_sts_score(
+                        average_hiddens(h1, sl1.to(device)), 
+                        average_hiddens(h2, sl2.to(device)), 
+                        h_size=args.h_size, 
+                        syn_size=args.syn_size)
 
-        info = 'Pearson R * 100 for {} task: {:10.2f}\n'.format(
-            year,
-            100 * correlation
-            )
-        exp_file.write(info)
+                correlation = sts_scoring(predictions, curr_data['targets'])
 
-    exp_file.close()
+                info = 'Pearson R * 100 for {} task: {:10.2f}\n'.format(
+                    year,
+                    100 * correlation
+                    )
+                exp_file.write(info)
 
+    print('Finished!')
 
 
 def print_results(evaluation, name):

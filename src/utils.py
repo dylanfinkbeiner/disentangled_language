@@ -74,7 +74,6 @@ def attachment_scoring(
     else:
         LAS = LAS_correct / sent_lens
 
-
     return {'UAS': UAS,
             'LAS': LAS, 
             'total_words' : total_words, 
@@ -82,7 +81,7 @@ def attachment_scoring(
             'LAS_correct' : LAS_correct}
 
 
-def average_hiddens(hiddens, sent_lens):
+def average_hiddens(hiddens, sent_lens=None):
     '''
         inputs:
             hiddens - tensor w/ shape (b, l, d)
@@ -95,7 +94,6 @@ def average_hiddens(hiddens, sent_lens):
     #NOTE WE ARE ASSUMING PAD VALUES ARE 0 IN THIS SUM (NEED TO DOUBLE CHECK)
     averaged_hiddens = hiddens.sum(dim=1) # (b,l,2*h_size) -> (b,2*h_size)
 
-    d = sent_lens.device
     sent_lens = sent_lens.view(-1, 1).float() # (b, 1)
 
     averaged_hiddens /= sent_lens
@@ -128,9 +126,9 @@ def predict_sts_score(h1, h2, h_size=None, syn_size=None):
 
     sims = F.cosine_similarity(sem_h1, sem_h2).flatten()
 
-    # Scale into 0-5 range, per SemEval STS task conventions
-    sims += 1
-    sims *= 2.5
+    # Scale into 0-5 range, per SemEval STS task conventions (commented out since R invariant to linear transformations)
+    #sims += 1
+    #sims *= 2.5
 
     return sims.tolist()
 

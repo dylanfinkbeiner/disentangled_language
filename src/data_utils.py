@@ -212,14 +212,13 @@ def length_to_results(data_sorted, l2c=None, device=None) -> dict:
                     s1_batch.append(data_sorted[idx_i])
                     s2_batch.append(data_sorted[idx_j])
             
-            print('Fetching syntactic scores')
             results = get_syntactic_scores(
                     prepare_batch_sdp(s1_batch),
                     prepare_batch_sdp(s2_batch),
                     device=device)
 
-            UAS_tensors.append(results['UAS'])
-            LAS_tensors.append(results['LAS'])
+            UAS_tensors.append(results['UAS'].flatten())
+            LAS_tensors.append(results['LAS'].flatten())
 
         UAS_t = torch.cat(UAS_tensors, dim=0)
         LAS_t = torch.cat(LAS_tensors, dim=0)
@@ -395,17 +394,6 @@ def prepare_batch_sdp(batch):
         arc_targets[i] = torch.LongTensor(resized_np[:,2])
         rel_targets[i] = torch.LongTensor(resized_np[:,3])
 
-        #for j, _ in enumerate(s):
-        #    '''
-        #    Casting as ints because for some stupid reason
-        #    you cannot set a value in torch long tensor using
-        #    numpy's 64 bit ints
-        #    '''
-        #    words[i,j] = int(s[j,0])
-        #    pos[i,j] = int(s[j,1])
-        #    arc_targets[i,j] = int(s[j,2])
-        #    rel_targets[i,j] = int(s[j,3])
-
     return {'words': words, 
             'pos' : pos, 
             'sent_lens' : sent_lens, 
@@ -427,20 +415,17 @@ def prepare_batch_ss(batch):
     batch_size = len(batch)
 
     sent_lens = torch.LongTensor([s.shape[0] for s in batch])
-    length_longest = max(sent_lens)
+    l_longest = max(sent_lens)
 
-    words = torch.zeros((batch_size, length_longest)).long()
-    pos = torch.zeros((batch_size, length_longest)).long()
+    words = torch.zeros((batch_size, l_longest)).long()
+    pos = torch.zeros((batch_size, l_longest)).long()
 
     for i, s in enumerate(batch):
-        for j, _ in enumerate(s):
-            '''
-            Casting as ints because for some stupid reason
-            you cannot set a value in torch long tensor using
-            numpy's 64 bit ints
-            '''
-            words[i,j] = int(s[j,0])
-            pos[i,j] = int(s[j,1])
+        dt = np.dtype(int)
+        resized_np = np.zeros((l_longest, s.shape[1]), dtype=dt)
+        resized_np[:s.shape[0]] = s
+        words[i] = torch.LongTensor(resized_np[:,0])
+        pos[i] = torch.LongTensor(resized_np[:,1])
 
     return words, pos, sent_lens
 
@@ -569,7 +554,7 @@ def numericalize_sdp(sents_list, x2i):
     return sents_numericalized
 
 
-def decode_sdp_sents(sents=[], i2x=None):
+def decode_sdp_sents(sents=[], i2x=None) -> list:
     i2w = i2x['word']
     i2p = i2x['pos']
     i2r = i2x['rel']
@@ -624,34 +609,38 @@ def megabatch_breakdown(megabatch, minibatch_size, parser, device):
 
         outputs:
             s1 - list of orig. sentence instances
-            s2 - list of paraphrase instances
-            negs - list of neg sample instances
+            mb_para2 - list of paraphrase instances
+            mb_neg1 - list of neg sample instances
     '''
-    s1 = []
-    s2 = []
+    mb_para1 = []
+    mb_para2 = []
     
-    for batch in megabatch:
-        s1.append(batch[0]) # Does this allocate new memory?
-        s2.append(batch[1])
+    for para1, para2 in megabatch:
+        mb_para1.append(para1) # Does this allocate new memory?
+        mb_para2.append(para2)
 
-    minibatches = [s1[i:i + minibatch_size] for i in range(0, len(s1), minibatch_size)]
+    minibatches = [mb_para1[i:i+minibatch_size] for i in range(0, len(mb_para1), minibatch_size)]
+
+    if len(minibatches) * minibatch_size != len(megabatch):
+        raise Exception
 
     megabatch_of_reps = [] # (megabatch_size, )
     for b in minibatches:
         words, pos, sent_lens = prepare_batch_ss(b)
         sent_lens = sent_lens.to(device)
         b_reps, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
-        megabatch_of_reps.append(utils.average_hiddens(b_reps, sent_lens))
+        b_reps_avg = utils.average_hiddens(b_reps, sent_lens)
+        megabatch_of_reps.append(b_reps_avg)
 
     megabatch_of_reps = torch.cat(megabatch_of_reps)
 
-    # Get negative samples with respect to s1
-    negs = get_negative_samps(megabatch, megabatch_of_reps)
+    # Get negative samples with respect to mb_para1
+    mb_neg1 = get_negative_samps(mb_para1, megabatch_of_reps)
 
-    return s1, s2, negs
+    return mb_para1, mb_para2, mb_neg1
 
 
-def get_negative_samps(megabatch, megabatch_of_reps):
+def get_negative_samps(mb_para1, megabatch_of_reps):
     '''
         inputs:
             megabatch - a megabatch (list) of sentences
@@ -665,24 +654,26 @@ def get_negative_samps(megabatch, megabatch_of_reps):
 
     reps = []
     sents = []
-    for i in range(len(megabatch)):
-        (s1, _) = megabatch[i]
-        reps.append(megabatch_of_reps[i].cpu().numpy())
-        sents.append(s1)
+    for para1, rep in zip(mb_para1, megabatch_of_reps): 
+    #for i in range(len(megabatch)):
+        #(s1, _) = megabatch[i]
+        #reps.append(megabatch_of_reps[i].cpu().numpy())
+        reps.append(rep.cpu().numpy())
+        sents.append(para1)
 
-    arr = pdist(reps, 'cosine')
-    arr = squareform(arr)
+    dists = pdist(reps, 'cosine') # cosine distance, as (1 - normalized inner product)
+    dists = squareform(dists) # Symmetric 2-D matrix of pairwise distances
 
-    for i in range(len(arr)):
-        arr[i,i] = 0
+    # Don't risk pairing a sentence with itself
+    # Wieting's code looks different here, as they must cleverly deal with 2x as many indices
+    np.fill_diagonal(dists, 0)
 
-    arr = np.argmax(arr, axis=1)
+    # For each sentence, get index of sentence 'farthest' from it
+    neg_idxs = np.argmax(dists, axis=1)
 
-    for i in range(len(megabatch)):
-        t = None
-        t = sents[arr[i]]
-
-        negs.append(t)
+    for idx in neg_idxs:
+        neg = sents[idx]
+        negs.append(neg)
 
     return negs
 

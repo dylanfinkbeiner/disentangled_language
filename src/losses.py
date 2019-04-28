@@ -45,6 +45,7 @@ def loss_sem_rep(h1, h2, hn, margin=None, h_size=None, syn_size=None):
     return losses.mean()
 
 
+#TODO Needs rethinking
 def loss_syn_rep(h_batch, h_paired, scores, h_size=None, syn_size=None):
     '''
         inputs:

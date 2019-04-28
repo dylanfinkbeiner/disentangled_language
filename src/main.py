@@ -220,7 +220,7 @@ if __name__ == '__main__':
                     'vocabs': vocabs}
             eval.eval_sdp(args, parser, data, exp_path_base=exp_path_base)
 
-        if sem_eval:
+        if args.evaluate_semantic:
             data = {'semeval': data_ss['test'],
                     'device': device,
                     'vocabs': vocabs}
