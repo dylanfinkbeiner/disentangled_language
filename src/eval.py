@@ -9,7 +9,7 @@ import torch
 import conll17_ud_eval
 from conll17_ud_eval import evaluate, load_conllu
 
-from data_utils import conllu_to_sents, sdp_data_loader, build_sdp_dataset, prepare_batch_ss
+#from data_utils import conllu_to_sents, sdp_data_loader, build_sdp_dataset, prepare_batch_ss
 from utils import predict_relations, predict_sts_score, sts_scoring, average_hiddens
 
 #CORPORA_DIR = '/corpora'

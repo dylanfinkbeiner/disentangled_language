@@ -12,8 +12,8 @@ from torch.optim import Adam
 from torch.autograd import Variable
 import torch.nn.functional as F
 
-from data_utils import sdp_data_loader, idx_loader, prepare_batch_ss, megabatch_breakdown, get_syntactic_scores
-from data_utils import prepare_batch_sdp, decode_sdp_sents
+#from data_utils import sdp_data_loader_custom, idx_loader, prepare_batch_ss, megabatch_breakdown, get_syntactic_scores
+#from data_utils import prepare_batch_sdp, decode_sdp_sents
 import data_utils
 from losses import loss_arcs, loss_rels, loss_sem_rep, loss_syn_rep
 import utils 

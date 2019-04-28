@@ -315,6 +315,7 @@ def sdp_data_loader_custom(data, batch_size=1):
         #num_buckets = len(buckets)
 
         for bucket in buckets:
+            pass
             #from bucket rando-grab batch_size/num_buckets many indices
             #idx.extend(batch)
 
@@ -472,13 +473,18 @@ def paraphrase_to_sents(f: str):
         lines = para_file.readlines()
 
     sent_pairs = []
-    for line in lines:
-        sents = line.split('\t')
-        s1 = sents[0].strip().split(' ')
-        s2 = sents[1].strip().split(' ')
-        s1 = np.array(tagger.tag(s1))
-        s2 = np.array(tagger.tag(s2))
-        sent_pairs.append( (s1,s2) )
+    for line in tqdm(lines, ascii=True, desc=f'Paraphrase file to sentences', ncols=80):
+        try:
+            sents = line.split('\t')
+            s1 = sents[0].strip().split(' ')
+            s2 = sents[1].strip().split(' ')
+            s1 = np.array(tagger.tag(s1))
+            s2 = np.array(tagger.tag(s2))
+            sent_pairs.append( (s1,s2) )
+        except Exception:
+            print(f'Problem pair is:\n{s1}\n{s2}')
+            breakpoint()
+            continue
 
     return sent_pairs
 
@@ -577,7 +583,8 @@ def numericalize_ss(sents_list, x2i):
     p2i = x2i['pos']
 
     sents_numericalized = []
-    for s1, s2 in sents_list:
+    #for s1, s2 in sents_list:
+    for s1, s2 in tqdm(sents_list, ascii=True, desc=f'Numericalizing SS data', ncols=80):
         new_s1 = np.zeros(s1.shape, dtype=int)
         new_s2 = np.zeros(s2.shape, dtype=int)
 

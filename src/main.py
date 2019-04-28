@@ -34,8 +34,9 @@ DEP_DIR = f'{CORPORA_DIR}/wsj/dependencies'
 BROWN_DIR = '../data/brown'
 MODEL_NAME = ''
 CONLLU_FILES = []
-PARANMT_FILE = 'para_100k.txt'
+#PARANMT_FILE = 'para_100k.txt'
 PARANMT_FILE = 'para-nmt-5m-processed.txt'
+CHUNKS_DIR = os.path.join(DATA_DIR, '5m')
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
 UNK_TOKEN = '<unk>'
@@ -131,17 +132,45 @@ if __name__ == '__main__':
     STS_INPUT = os.path.join(STS_DIR, 'input')
     STS_GS = os.path.join(STS_DIR, 'gs')
 
-    train_ss = {}
-    train_path = os.path.join(data_ss_dir, 'ss_train_{PARANMT_FILE}.pkl')
+    train_ss = { 'sent_pairs': [], 'targets': []}
+    #train_path = os.path.join(data_ss_dir, f'ss_train_{PARANMT_FILE}.pkl')
+    if not os.path.isdir(os.path.join(CHUNKS_DIR, 'pkl')):
+        os.mkdir(os.path.join(CHUNKS_DIR, 'pkl'))
     if 'train' in init_ss:
         log.info(f'Initializing SS train data.')
-        train_ss = build_ss_dataset(os.path.join(DATA_DIR, PARANMT_FILE), gs='', x2i=x2i)
-        with open(train_path, 'wb') as pkl:
-            pickle.dump(train_ss, pkl)
+        chunks = sorted(list(os.listdir(CHUNKS_DIR)))
+        #breakpoint()
+        #while chunks[0] != '50-para-nmt.txt':
+        #    chunks.pop(0)
+        #chunks_clean = []
+        #for chunk in chunks:
+        #    #if os.path.splitext(chunk)[-1] == '.txt':
+        #    if chunk == '50-para-nmt.txt':
+        #        chunks_clean.append(chunk)
+
+        for chunk in chunks:
+            print(f'Processing chunk {chunk}')
+            train_path = os.path.join(CHUNKS_DIR, 'pkl', f'{os.path.splitext(chunk)[0]}.pkl')
+            if os.path.exists(train_path):
+                if input('Path to data for chunk {chunk} exists. Overwrite? [y/n] ').lower() != 'y': 
+                    continue
+
+            train_ss = build_ss_dataset(os.path.join(CHUNKS_DIR, chunk), gs='', x2i=x2i)
+            with open(train_path, 'wb') as pkl:
+                pickle.dump(train_ss, pkl)
+
     elif args.train_mode > 0:
         log.info(f'Loading pickled SS train data.')
-        with open(train_path, 'rb') as pkl:
-            train_ss = pickle.load(pkl)
+        chunks_pkl = sorted(list(os.listdir(os.path.join(CHUNKS_DIR, 'pkl'))))
+
+        breakpoint()
+
+        for chunk_pkl in chunks_pkl[:args.n_chunks]:
+            train_path = os.path.join(CHUNKS_DIR, 'pkl', chunk_pkl)
+            with open(train_path, 'rb') as pkl:
+                curr = pickle.load(pkl)
+                train_ss['sent_pairs'].extend(curr['sent_pairs'])
+                train_ss['targets'].extend(curr['targets'])
 
     dev_ss = {}
     dev_path = os.path.join(data_ss_dir, 'ss_dev.pkl')

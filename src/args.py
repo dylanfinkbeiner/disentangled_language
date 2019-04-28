@@ -47,6 +47,7 @@ def get_args():
     sdp_eval.add_argument('-ef', help='Evaluate, and provide filename to evaluate on.')
     parser.add_argument('-es', action='store_true', dest='evaluate_semantic', default=False)
 
+    # Data initialization options
     parser.add_argument('--initsdp', action='store_true', dest='init_sdp', default=False)
     parser.add_argument('--initss', help='Initialize a part of the semantic similarity data.', dest='init_ss', nargs='*', type=str, default=[])
     parser.add_argument('--initmodel', action='store_true', dest='init_model', default=False)
@@ -64,6 +65,8 @@ def get_args():
     parser.add_argument('-M', '--megasize', help='Number of batches in a megabatch.', type=int, dest='M', default=1)
     parser.add_argument('--epochs', help='Number of epochs in training.', type=int, default=5)
     parser.add_argument('--margin', help='Margin in semantic similarity objective function.', dest='margin', type=float, default=0.4)
+    parser.add_argument('--nchunks', help='Number of 100k-sentence-pair chunks of SS data from the filtered ParaNMT-50m dataset.', type=int, dest='n_chunks', default=1)
+
 
     # Train mode
     parser.add_argument('-tm', help='Training mode setting.', dest='train_mode', type=int, default=-1)
