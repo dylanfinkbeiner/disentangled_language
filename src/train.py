@@ -12,8 +12,8 @@ from torch.optim import Adam
 from torch.autograd import Variable
 import torch.nn.functional as F
 
-#from data_utils import sdp_data_loader_custom, idx_loader, prepare_batch_ss, megabatch_breakdown, get_syntactic_scores
-#from data_utils import prepare_batch_sdp, decode_sdp_sents
+from data_utils import sdp_data_loader_original, idx_loader, prepare_batch_ss, megabatch_breakdown, get_syntactic_scores
+from data_utils import prepare_batch_sdp, decode_sdp_sents
 import data_utils
 from losses import loss_arcs, loss_rels, loss_sem_rep, loss_syn_rep
 import utils 
@@ -62,12 +62,12 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     #exit()
 
     dev_sdp = data['data_ptb']['dev']
-    loader_sdp_train = sdp_data_loader(train_sdp, batch_size=args.batch_size, shuffle_idx=True, custom_task=True)
-    loader_sdp_dev = sdp_data_loader(dev_sdp, batch_size=100, shuffle_idx=False, custom_task=False)
+    loader_sdp_train = sdp_data_loader_original(train_sdp, batch_size=args.batch_size, shuffle_idx=True, custom_task=True)
+    loader_sdp_dev = sdp_data_loader_original(dev_sdp, batch_size=100, shuffle_idx=False, custom_task=False)
     log.info(f'There are {len(train_sdp)} SDP training examples.')
     log.info(f'There are {len(dev_sdp)} SDP dev examples.')
     if args.train_mode > 0:
-        train_ss = data['data_ss']['train']['sent_pairs'][:10000]
+        train_ss = data['data_ss']['train']['sent_pairs']
         dev_ss = data['data_ss']['dev']
         idxloader_ss_train = idx_loader(num_data=len(train_ss), batch_size=args.batch_size)
         log.info(f'There are {len(train_ss)} SS training examples.')
@@ -120,7 +120,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     with torch.no_grad():
                         mb_para1, mb_para2, mb_neg1 = megabatch_breakdown(megabatch, args.batch_size, parser, data['device'])
 
-                    for x in tqdm(range(len(idxs)), ascii=True, desc=f'Megabatch {m} progress', ncols=80):
+                    for x in tqdm(range(len(idxs)), ascii=True, desc=f'Megabatch {m+1}/{n_megabatches} progress', ncols=80):
                         #log.info(f'Epoch {e+1}/{args.epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}')
 
                         if args.train_mode != 2:

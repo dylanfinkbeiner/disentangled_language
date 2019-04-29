@@ -163,8 +163,6 @@ if __name__ == '__main__':
         log.info(f'Loading pickled SS train data.')
         chunks_pkl = sorted(list(os.listdir(os.path.join(CHUNKS_DIR, 'pkl'))))
 
-        breakpoint()
-
         for chunk_pkl in chunks_pkl[:args.n_chunks]:
             train_path = os.path.join(CHUNKS_DIR, 'pkl', chunk_pkl)
             with open(train_path, 'rb') as pkl:

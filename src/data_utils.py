@@ -285,7 +285,7 @@ def get_score_tensors(data_sorted, l2c=None, l2r=None, score_type=None, device=N
     return l2t, num_duplicates
 
 
-def sdp_data_loader_original(data, batch_size=1, shuffle_idx=False):
+def sdp_data_loader_original(data, batch_size=1, shuffle_idx=False, custom_task=False):
     idx = list(range(len(data)))
 
     while True:
