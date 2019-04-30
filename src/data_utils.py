@@ -85,8 +85,10 @@ def build_sdp_dataset(conllu_files: list, x2i=None):
     return data
 
 
-def build_ss_dataset(ss_file, gs='', x2i=None):
-    raw_sent_pairs = paraphrase_to_sents(ss_file)
+#def build_ss_dataset(ss_file, gs='', x2i=None, tagging_only=False):
+def build_ss_dataset(raw_sent_pairs, gs='', x2i=None):
+    #raw_sent_pairs = paraphrase_to_sents(ss_file, )
+
     raw_sent_pairs = numericalize_ss(raw_sent_pairs, x2i)
 
     raw_targets = txt_to_sem_scores(gs) if gs else None
@@ -483,7 +485,6 @@ def paraphrase_to_sents(f: str):
             sent_pairs.append( (s1,s2) )
         except Exception:
             print(f'Problem pair is:\n{s1}\n{s2}')
-            breakpoint()
             continue
 
     return sent_pairs
