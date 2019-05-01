@@ -24,7 +24,7 @@ def loss_rels(S_rel, rel_targets, pad_idx=-1):
     return F.cross_entropy(S_rel.permute(0,2,1).cpu(), rel_targets, ignore_index=pad_idx)
 
 
-def loss_sem_rep(h1, h2, hn, margin=None, h_size=None, syn_size=None):
+def loss_sem_rep(h1, h2, hn1, hn2=None, margin=None, h_size=None, syn_size=None):
     '''
         Based on the loss function from Wieting et al (2018), where the
         BiLSTM hidden state is treated as a sentence embedding and the goal
@@ -34,13 +34,18 @@ def loss_sem_rep(h1, h2, hn, margin=None, h_size=None, syn_size=None):
 
     sem_h1 = torch.cat((h1[:,syn_size:h_size], h1[:,h_size+syn_size:]), dim=-1)
     sem_h2 = torch.cat((h2[:,syn_size:h_size], h2[:,h_size+syn_size:]), dim=-1)
-    sem_hn = torch.cat((hn[:,syn_size:h_size], hn[:,h_size+syn_size:]), dim=-1)
+    sem_hn1 = torch.cat((hn1[:,syn_size:h_size], hn1[:,h_size+syn_size:]), dim=-1)
 
     para_attract = F.cosine_similarity(sem_h1, sem_h2) # (b,sem_size), (b,sem_size) -> (b)
 
-    neg_repel = F.cosine_similarity(sem_h1, sem_hn) # (b,sem_size), (b,sem_size) -> (b)
+    neg_repel = F.cosine_similarity(sem_h1, sem_hn1) # (b,sem_size), (b,sem_size) -> (b)
 
     losses = F.relu(margin - para_attract + neg_repel) # (b)
+
+    if hn2 is not None:
+        sem_hn2 = torch.cat((hn2[:,syn_size:h_size], hn2[:,h_size+syn_size:]), dim=-1)
+        neg_repel2 = F.cosine_similarity(sem_h2, sem_hn2) # (b,sem_size), (b,sem_size) -> (b)
+        losses += F.relu(margin - para_attract + neg_repel2)
 
     return losses.mean()
 

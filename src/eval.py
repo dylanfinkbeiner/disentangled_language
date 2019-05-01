@@ -148,8 +148,8 @@ def eval_sts(args, parser, data, exp_path_base=None):
                 h2_avg = utils.average_hiddens(h2, sl2.to(device)) 
 
                 predictions = utils.predict_sts_score(
-                        h1[:,3],
-                        h2[:,3],
+                        h1_avg,
+                        h2_avg,
                         h_size=args.h_size, 
                         syn_size=args.syn_size,
                         conventional_range=True)

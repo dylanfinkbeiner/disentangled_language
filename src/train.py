@@ -119,7 +119,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                         idx += len(curr_idxs)
 
                     with torch.no_grad():
-                        mb_para1, mb_para2, mb_neg1 = megabatch_breakdown(megabatch, args.batch_size, parser, data['device'])
+                        mb_para1, mb_para2, mb_neg1, mb_neg2 = megabatch_breakdown(megabatch, args.batch_size, parser, data['device'])
 
                     for x in tqdm(range(len(idxs)), ascii=True, desc=f'Megabatch {m+1}/{n_megabatches} progress', ncols=80):
                         #log.info(f'Epoch {e+1}/{args.epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}')
@@ -154,6 +154,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                                 para1=[mb_para1[i] for i in idxs[x]],
                                 para2=[mb_para2[i] for i in idxs[x]],
                                 neg1=[mb_neg1[i] for i in idxs[x]],
+                                neg2=[mb_neg2[i] for i in idxs[x]],
                                 args=args,
                                 data=data)
                         #l2_we = lambda_w * l2(parser.BiLSTM.word_emb - parser.BiLSTM.init_we))
@@ -271,27 +272,39 @@ def forward_syntactic_custom(parser, s1, s2, scores, args=None, data=None):
     return loss
 
 
-def forward_semantic(parser, para1, para2, neg1, args=None, data=None):
+def forward_semantic(parser, para1, para2, neg1, neg2=None, args=None, data=None):
     device = data['device']
 
     parser.train()
 
     w1, p1, sl1 = prepare_batch_ss(para1)
     w2, p2, sl2 = prepare_batch_ss(para2)
-    wn, pn, sln = prepare_batch_ss(neg1)
+    wn1, pn1, sln1 = prepare_batch_ss(neg1)
     
     h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1.to(device))
     h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2.to(device))
-    hn, _ = parser.BiLSTM(wn.to(device), pn.to(device), sln.to(device))
+    hn1, _ = parser.BiLSTM(wn1.to(device), pn1.to(device), sln1.to(device))
+
+    h1_avg = utils.average_hiddens(h1, sl1.to(device))
+    h2_avg = utils.average_hiddens(h2, sl2.to(device))
+    hn1_avg = utils.average_hiddens(hn1, sln1.to(device))
+
+    if neg2 is not None:
+        wn2, pn2, sln2 = prepare_batch_ss(neg2)
+        hn2, _ = parser.BiLSTM(wn2.to(device), pn2.to(device), sln2.to(device))
+        hn2_avg = utils.average_hiddens(hn2, sln2.to(device))
+    else:
+        hn2_avg = None
     
     loss = loss_sem_rep(
-            utils.average_hiddens(h1, sl1.to(device)),
-            utils.average_hiddens(h2, sl2.to(device)),
-            utils.average_hiddens(hn, sln.to(device)),
+            h1_avg,
+            h2_avg,
+            hn1_avg,
+            hn2=hn2_avg,
             margin=args.margin,
             syn_size=args.syn_size,
             h_size=args.h_size)
-    
+
     loss *= args.lr_sem
 
     return loss

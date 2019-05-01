@@ -124,6 +124,7 @@ def predict_sts_score(h1, h2, h_size=None, syn_size=None, conventional_range=Fal
     sem_h1 = torch.cat((h1[:,syn_size:h_size], h1[:,h_size+syn_size:]), dim=-1)
     sem_h2 = torch.cat((h2[:,syn_size:h_size], h2[:,h_size+syn_size:]), dim=-1)
 
+    # Code for solving SemEval mystery  
     #sem_h1 = torch.randn(h1.shape)
     #sem_h2 = torch.randn(h2.shape)
 

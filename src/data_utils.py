@@ -619,28 +619,38 @@ def megabatch_breakdown(megabatch, minibatch_size, parser, device):
         mb_para1.append(para1) # Does this allocate new memory?
         mb_para2.append(para2)
 
-    minibatches = [mb_para1[i:i+minibatch_size] for i in range(0, len(mb_para1), minibatch_size)]
+    minibatches_para1 = [mb_para1[i:i+minibatch_size] for i in range(0, len(mb_para1), minibatch_size)]
+    minibatches_para2 = [mb_para2[i:i+minibatch_size] for i in range(0, len(mb_para2), minibatch_size)]
 
-    if len(minibatches) * minibatch_size != len(megabatch):
+    if len(minibatches_para1) * minibatch_size != len(megabatch):
         raise Exception
 
-    megabatch_of_reps = [] # (megabatch_size, )
-    for b in minibatches:
-        words, pos, sent_lens = prepare_batch_ss(b)
-        sent_lens = sent_lens.to(device)
-        b_reps, _ = parser.BiLSTM(words.to(device), pos.to(device), sent_lens)
-        b_reps_avg = utils.average_hiddens(b_reps, sent_lens)
-        megabatch_of_reps.append(b_reps_avg)
+    mb_para1_reps = [] # (megabatch_size, )
+    mb_para2_reps = [] # (megabatch_size, )
+    for b1, b2 in zip(minibatches_para1, minibatches_para2):
+        w1, p1, sl1 = prepare_batch_ss(b1)
+        w2, p2, sl2 = prepare_batch_ss(b2)
+        sl1 = sl1.to(device)
+        sl2 = sl2.to(device)
+        b1_reps, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1)
+        b2_reps, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2)
+        b1_reps_avg = utils.average_hiddens(b1_reps, sl1)
+        b2_reps_avg = utils.average_hiddens(b2_reps, sl2)
+        mb_para1_reps.append(b1_reps_avg)
+        mb_para2_reps.append(b2_reps_avg)
 
-    megabatch_of_reps = torch.cat(megabatch_of_reps)
+    # Stack all reps into torch tensors
+    mb_para1_reps = torch.cat(mb_para1_reps)
+    mb_para2_reps = torch.cat(mb_para2_reps)
 
     # Get negative samples with respect to mb_para1
-    mb_neg1 = get_negative_samps(mb_para1, megabatch_of_reps)
+    #mb_neg1 = get_negative_samps(mb_para1, megabatch_of_reps)
+    mb_neg1, mb_neg2 = get_negative_samps(megabatch, mb_para1_reps, mb_para2_reps)
 
-    return mb_para1, mb_para2, mb_neg1
+    return mb_para1, mb_para2, mb_neg1, mb_neg2
 
 
-def get_negative_samps(mb_para1, megabatch_of_reps):
+def get_negative_samps(megabatch, mb_para1_reps, mb_para2_reps):
     '''
         inputs:
             megabatch - a megabatch (list) of sentences
@@ -654,28 +664,43 @@ def get_negative_samps(mb_para1, megabatch_of_reps):
 
     reps = []
     sents = []
-    for para1, rep in zip(mb_para1, megabatch_of_reps): 
+    #for para1, rep in zip(mb_para1, megabatch_of_reps): 
+    for i, (para1, para2) in enumerate(megabatch):
     #for i in range(len(megabatch)):
         #(s1, _) = megabatch[i]
         #reps.append(megabatch_of_reps[i].cpu().numpy())
-        reps.append(rep.cpu().numpy())
+        reps.append(mb_para1_reps[i].cpu().numpy())
+        reps.append(mb_para2_reps[i].cpu().numpy())
         sents.append(para1)
+        sents.append(para2)
 
     dists = pdist(reps, 'cosine') # cosine distance, as (1 - normalized inner product)
     dists = squareform(dists) # Symmetric 2-D matrix of pairwise distances
 
     # Don't risk pairing a sentence with itself
-    # Wieting's code looks different here, as they must cleverly deal with 2x as many indices
-    np.fill_diagonal(dists, 2)
-
+    i1 = np.arange(0, dists.shape[0], 2)
+    i2 = np.arange(1, dists.shape[0], 2)
+    if len(i1) != len(i2):
+        raise Exception
+    dists[i1, i2] = 3
+    dists[i2, i1] = 3
+    np.fill_diagonal(dists, 3)
+    
     # For each sentence, get index of sentence 'closest' to it
     neg_idxs = np.argmin(dists, axis=1)
 
-    for idx in neg_idxs:
-        neg = sents[idx]
-        negs.append(neg)
+    mb_neg1 = []
+    mb_neg2 = []
+    #for idx in neg_idxs:
+    for idx in range(len(megabatch)):
+        #neg = sents[idx]
+        #negs.append(neg)
+        neg1 = sents[neg_idxs[2*idx]]
+        neg2 = sents[neg_idxs[(2*idx)+1]]
+        mb_neg1.append(neg1)
+        mb_neg2.append(neg2)
 
-    return negs
+    return mb_neg1, mb_neg2
 
 
 # From https://github.com/EelcovdW/Biaffine-Parser/blob/master/data_utils.py

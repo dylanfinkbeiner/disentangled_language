@@ -3,7 +3,7 @@ __pycache__
 TODO
 
 # Folders
-/data
+*data*
 /weights
 /config
 /experiments
@@ -13,10 +13,11 @@ TODO
 *.un~*
 *.config
 *.log
-*.pkl
+*.pkl*
 *.conllu
 *.tch
 
 # Misc
 sentence.conllu
 debug.txt
+*dumb*
