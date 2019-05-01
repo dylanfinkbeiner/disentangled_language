@@ -35,20 +35,24 @@ class BiLSTM(nn.Module):
             hidden_size=400,
             lstm_layers=3,
             lstm_dropout=0.33,
+            #lstm_dropout=0,
             embedding_dropout=0.33,
+            #embedding_dropout=0,
             padding_idx=None,
             unk_idx=None):
         super(BiLSTM, self).__init__()
 
         self.unk_idx = unk_idx
 
-        # Embeddings (words initialized to zero) 
+        # Embeddings (words initialized to zero, per Jabberwocky paper) 
         self.word_emb = nn.Embedding(
                 word_vocab_size,
                 word_e_size,
                 padding_idx=padding_idx)
-        self.word_emb.weight.data.copy_(
-                torch.zeros(word_vocab_size, word_e_size))
+        #self.word_emb.weight.data.copy_(
+        #        torch.zeros(word_vocab_size, word_e_size))
+
+        self.init_we = self.word_emb.weight.clone()
 
         self.pos_emb = nn.Embedding(
             pos_vocab_size,
@@ -66,7 +70,8 @@ class BiLSTM(nn.Module):
                 num_layers=lstm_layers,
                 bidirectional=True,
                 batch_first=True,
-                dropout=lstm_dropout)
+                dropout=lstm_dropout,
+                bias=True)
 
     def forward(self, words, pos, sent_lens):
         '''
@@ -79,8 +84,8 @@ class BiLSTM(nn.Module):
         h_size = self.hidden_size
 
         # Zero-out "unk" word at test time
-        if not self.training:
-            self.word_emb.weight.data[self.unk_idx,:] = 0.0 
+        #if not self.training:
+        #    self.word_emb.weight.data[self.unk_idx,:] = 0.0 
 
         # Sort the words, pos, sent_lens (necessary for pack_padded_sequence)
         lens_sorted = sent_lens

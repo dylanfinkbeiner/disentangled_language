@@ -51,6 +51,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
     log.info(f'Training model \"{args.model}\" for {args.epochs} epochs in training mode {args.train_mode}.')
     log.info(f'Weights will be saved to {weights_path}.')
+    log.info(f'Hidden size: {args.h_size}, Semantic: {args.h_size-args.syn_size}, Syntactic: {args.syn_size}')
     sleep(5)
 
 
@@ -155,6 +156,8 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                                 neg1=[mb_neg1[i] for i in idxs[x]],
                                 args=args,
                                 data=data)
+                        #l2_we = lambda_w * l2(parser.BiLSTM.word_emb - parser.BiLSTM.init_we))
+                        loss = loss_sem
                         loss_sem.backward()
                         opt.step()
 

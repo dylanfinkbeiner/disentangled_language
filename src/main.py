@@ -38,7 +38,8 @@ CONLLU_FILES = []
 #PARANMT_FILE = 'para_100k.txt'
 PARANMT_FILE = 'para-nmt-5m-processed.txt'
 CHUNKS_DIR = os.path.join(DATA_DIR, '5m')
-POS_ONLY = True
+POS_ONLY = False
+POS = False
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
 UNK_TOKEN = '<unk>'
@@ -214,14 +215,12 @@ if __name__ == '__main__':
         log.info(f'Initializing SS test data.')
 
         years = os.listdir(STS_INPUT)
-        years.remove('2017')
         for year in years:
             raw_sents_path = os.path.join(STS_DIR, 'tagged', f'{year}-tagged.pkl')
-            raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(STS_INPUT, year))
-
-            with open(raw_sents_path, 'wb') as pkl:
-                pickle.dump(raw_sent_pairs, pkl)
-
+            if POS:
+                raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(STS_INPUT, year))
+                with open(raw_sents_path, 'wb') as pkl:
+                    pickle.dump(raw_sent_pairs, pkl)
             if not POS_ONLY:
                 with open(raw_sents_path, 'rb') as pkl:
                     raw_sent_pairs = pickle.load(pkl)
@@ -236,8 +235,6 @@ if __name__ == '__main__':
        with open(test_path, 'rb') as pkl:
            test_ss = pickle.load(pkl)
 
-    print('Finished!')
-    exit()
 
     data_ss['train'] = train_ss
     data_ss['dev'] = dev_ss

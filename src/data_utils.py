@@ -666,10 +666,10 @@ def get_negative_samps(mb_para1, megabatch_of_reps):
 
     # Don't risk pairing a sentence with itself
     # Wieting's code looks different here, as they must cleverly deal with 2x as many indices
-    np.fill_diagonal(dists, 0)
+    np.fill_diagonal(dists, 2)
 
-    # For each sentence, get index of sentence 'farthest' from it
-    neg_idxs = np.argmax(dists, axis=1)
+    # For each sentence, get index of sentence 'closest' to it
+    neg_idxs = np.argmin(dists, axis=1)
 
     for idx in neg_idxs:
         neg = sents[idx]

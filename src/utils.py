@@ -120,15 +120,23 @@ def sts_scoring(predictions, targets) -> float:
     return r
 
 
-def predict_sts_score(h1, h2, h_size=None, syn_size=None):
+def predict_sts_score(h1, h2, h_size=None, syn_size=None, conventional_range=False):
     sem_h1 = torch.cat((h1[:,syn_size:h_size], h1[:,h_size+syn_size:]), dim=-1)
     sem_h2 = torch.cat((h2[:,syn_size:h_size], h2[:,h_size+syn_size:]), dim=-1)
 
-    sims = F.cosine_similarity(sem_h1, sem_h2).flatten()
+    #sem_h1 = torch.randn(h1.shape)
+    #sem_h2 = torch.randn(h2.shape)
+
+    #breakpoint()
+
+    sims = F.cosine_similarity(sem_h1, sem_h2, dim=-1).flatten()
+
+    #breakpoint()
 
     # Scale into 0-5 range, per SemEval STS task conventions (commented out since R invariant to linear transformations)
-    #sims += 1
-    #sims *= 2.5
+    if conventional_range:
+        sims += 1
+        sims *= 2.5
 
     return sims.tolist()
 
