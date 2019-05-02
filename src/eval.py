@@ -4,6 +4,9 @@ import subprocess
 import datetime
 from tqdm import tqdm
 
+
+import matplotlib.pyplot as plt
+
 import torch
 import numpy as np
 
@@ -152,7 +155,7 @@ def eval_sts(args, parser, data, exp_path_base=None):
                         h2_avg,
                         h_size=args.h_size, 
                         syn_size=args.syn_size,
-                        conventional_range=True)
+                        conventional_range=False)
 
                 #predictions = np.random.randn(len(curr_data['targets']))
 
@@ -160,7 +163,18 @@ def eval_sts(args, parser, data, exp_path_base=None):
                 correlation = utils.sts_scoring(predictions, targets)
 
                 scores = [score for score in zip(predictions, targets)]
+
+                #ax.scatter(x, y, alpha=0.8, c=color, edgecolors='none', s=30, label=group)
+
+                #plt.title('Matplot scatter plot')
+                #plt.legend(loc=2)
+                #plt.show()
                 #breakpoint()
+
+                plt.plot(predictions, targets)
+                plt.xlabel('Predictions')
+                plt.ylabel('Targets')
+                plt.savefig(f'{year}.png')
 
                 info = '{} task\nPearson R*100 {:5.2f}\tAverage gold score:{:5.2f}\tAverage predicted score:{:5.2f}\n'.format(
                     year,

@@ -70,7 +70,7 @@ class BiLSTM(nn.Module):
                 bidirectional=True,
                 batch_first=True,
                 dropout=lstm_dropout,
-                bias=True)
+                bias=False)
 
     def forward(self, words, pos, sent_lens):
         '''
@@ -179,7 +179,7 @@ class BiAffineAttention(nn.Module):
 
         else:  # Single-rooted, acyclic graph of head-dependency relations
             arc_preds = mst_preds(S_arc, sent_lens) # S:(b, l, l) -> [length-b list of np arrays]
-            arc_preds = pad_sequence([torch.Tensor(s).long() for s in arc_preds],
+            arc_preds = pad_sequence([torch.LongTensor(s) for s in arc_preds],
                     batch_first=True, padding_value=0) # (b, l)
 
         # head_preds should be (b,l), not (b,l-1), as head of a word might be root

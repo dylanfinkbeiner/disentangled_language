@@ -47,7 +47,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     exp_file.write(f'Training experiment for model : {args.model}')
 
     description = input('Describe this experiment: ')
-    exp_file.write('\n\nExperiment description: {description} \n\n')
+    exp_file.write(f'\n\nExperiment description: {description} \n\n')
 
     log.info(f'Training model \"{args.model}\" for {args.epochs} epochs in training mode {args.train_mode}.')
     log.info(f'Weights will be saved to {weights_path}.')
@@ -80,7 +80,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
         n_megabatches = ceil(len(train_ss) / (args.M * args.batch_size))
 
     #opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
-    opt = Adam(parser.parameters(), lr=1e-3, betas=[0.9, 0.9])
+    opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
 
 
     exp_file.write('Training results:')
@@ -172,13 +172,13 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                     correlation = ss_dev_eval(parser, dev_ss, args=args, data=data)
                     update += '''\nSemantic train loss: {:.4f}
                             Semantic dev loss: {:.4f}
-                            Correlation: {:.4f}'''.format(69, 420, correlation)
+                            Correlation: {:.4f}'''.format(-2, -2, correlation)
 
                     log.info(update)
 
             #train_loss /= (num_steps if num_steps > 0 else -1) # Just dependency parsing loss
 
-            update = f'''Update for epoch: {e+1/args.epochs}\n'''
+            update = f'''Update for epoch: {e+1}/{args.epochs}\n'''
             if args.train_mode != 2:
                 UAS, LAS, dev_loss = sdp_dev_eval(parser, args=args, data=data, loader=loader_sdp_dev, n_dev_batches=n_dev_batches)
                 update += '''\nSyntactic train loss: {:.3f}
@@ -189,7 +189,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                 correlation = ss_dev_eval(parser, dev_ss, args=args, data=data)
                 update += '''\nSemantic train loss: {:.4f}
                         Semantic dev loss: {:.4f}
-                        Correlation: {:.4f}'''.format(69, 420, correlation)
+                        Correlation: {:.4f}'''.format(-2, -2, correlation)
 
             log.info(update)
             exp_file.write(update)
@@ -197,7 +197,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
             # Early stopping heuristic from Jabberwocky paper
             if args.train_mode != 2:
                 if LAS > prev_best:
-                    print(f'LAS improved from {prev_best} on epoch {e+1/args.epochs}.')
+                    print(f'LAS improved from {prev_best} on epoch {e+1}/{args.epochs}.')
                     earlystop_counter = 0
                     prev_best = LAS
                 else:

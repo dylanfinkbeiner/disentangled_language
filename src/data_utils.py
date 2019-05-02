@@ -85,10 +85,8 @@ def build_sdp_dataset(conllu_files: list, x2i=None):
     return data
 
 
-#def build_ss_dataset(ss_file, gs='', x2i=None, tagging_only=False):
 def build_ss_dataset(raw_sent_pairs, gs='', x2i=None):
-    #raw_sent_pairs = paraphrase_to_sents(ss_file, )
-
+    x2i, i2x = build_dicts(raw_sent_pairs, is_sdp=False)
     raw_sent_pairs = numericalize_ss(raw_sent_pairs, x2i)
 
     raw_targets = txt_to_sem_scores(gs) if gs else None
@@ -522,13 +520,22 @@ def paraphrase_to_sents(f: str):
     return sent_pairs
 
 
-def build_dicts(sents_list):
+def build_dicts(sents_list, is_sdp=True):
+    if not is_sdp:
+        paired_sents_list = sents_list
+        sents_list = []
+        for s1, s2 in paired_sents_list:
+            sents_list.append(s1)
+            sents_list.append(s2)
+
+    exit()
     word, pos, rel = set(), set(), set()
     for s in sents_list:
         for line in s:
             word.add(line[0].lower())
             pos.add(line[1])
-            rel.add(line[3])
+            if is_sdp:
+                rel.add(line[3])
 
     word = sorted(word)
     pos = sorted(pos)
@@ -616,7 +623,6 @@ def numericalize_ss(sents_list, x2i):
     p2i = x2i['pos']
 
     sents_numericalized = []
-    #for s1, s2 in sents_list:
     for s1, s2 in tqdm(sents_list, ascii=True, desc=f'Numericalizing SS data', ncols=80):
         new_s1 = np.zeros(s1.shape, dtype=int)
         new_s2 = np.zeros(s2.shape, dtype=int)
