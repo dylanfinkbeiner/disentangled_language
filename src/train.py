@@ -79,7 +79,8 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     if args.train_mode > 0:
         n_megabatches = ceil(len(train_ss) / (args.M * args.batch_size))
 
-    opt = Adam(parser.parameters(), lr=1.0, betas=[0.9, 0.9])
+    #opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
+    opt = Adam(parser.parameters(), lr=1e-3, betas=[0.9, 0.9])
 
 
     exp_file.write('Training results:')
@@ -157,10 +158,23 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                                 neg2=[mb_neg2[i] for i in idxs[x]],
                                 args=args,
                                 data=data)
-                        #l2_we = lambda_w * l2(parser.BiLSTM.word_emb - parser.BiLSTM.init_we))
-                        loss = loss_sem
-                        loss_sem.backward()
+                        #l2_we = 0.5 * args.lambda_w * (parser.BiLSTM.word_emb.weight - parser.BiLSTM.init_we).norm(2)
+                        #l2_we = 0.5 * args.lambda_w * parser.BiLSTM.word_emb.weight.norm()
+                        #print('\nl2_we', l2_we)
+                        #loss = loss_sem + l2_we
+                        loss = loss_sem 
+                        #breakpoint()
+                        loss.backward()
+                        print(gradient_update(parser))
                         opt.step()
+
+                    update = f'''Update for megabatch: {m+1}\n'''
+                    correlation = ss_dev_eval(parser, dev_ss, args=args, data=data)
+                    update += '''\nSemantic train loss: {:.4f}
+                            Semantic dev loss: {:.4f}
+                            Correlation: {:.4f}'''.format(69, 420, correlation)
+
+                    log.info(update)
 
             #train_loss /= (num_steps if num_steps > 0 else -1) # Just dependency parsing loss
 
@@ -243,8 +257,8 @@ def forward_syntactic_custom(parser, s1, s2, scores, args=None, data=None):
     s1_lens = s1['sent_lens'].to(device)
     s2_lens = s2['sent_lens'].to(device)
     
-    words_d_s1 = utils.word_dropout(s1['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=s1_lens)
-    words_d_s2 = utils.word_dropout(s2['words'], w2i=w2i, i2w=i2w, counts=word_counts, lens=s2_lens)
+    words_d_s1 = utils.word_dropout(s1['words'], w2i=w2i, i2w=i2w, counts=data['word_counts'], lens=s1_lens)
+    words_d_s2 = utils.word_dropout(s2['words'], w2i=w2i, i2w=i2w, counts=data['word_counts'], lens=s2_lens)
     
     h_s1, _ = parser.BiLSTM(words_d_s1.to(device), s1['pos'].to(device), s1_lens)
     h_s2, _ = parser.BiLSTM(words_d_s2.to(device), s2['pos'].to(device), s2_lens)
@@ -262,7 +276,7 @@ def forward_syntactic_custom(parser, s1, s2, scores, args=None, data=None):
     loss_rep = loss_syn_rep(
             utils.average_hiddens(h_s1, s1_lens),
             utils.average_hiddens(h_s2, s2_lens),
-            scores_batch.to(device), 
+            scores.to(device), 
             syn_size=args.syn_size,
             h_size=args.h_size)
     
@@ -305,7 +319,7 @@ def forward_semantic(parser, para1, para2, neg1, neg2=None, args=None, data=None
             syn_size=args.syn_size,
             h_size=args.h_size)
 
-    loss *= args.lr_sem
+    #loss *= args.lr_sem
 
     return loss
 
@@ -378,5 +392,6 @@ def ss_dev_eval(parser, dev_ss, args=None, data=None):
 
 def gradient_update(parser):
     update = '\n'.join(['{:35} {:3.8f}'.format(n, p.grad.data.norm(2).item()) for n, p in list(parser.BiLSTM.named_parameters())])
+    #update = 'Norm of gradient: {:5.8f}'.format(torch.tensor([p.grad.data.norm(2) for n, p in list(parser.BiLSTM.named_parameters())]).norm(2))
 
     return update

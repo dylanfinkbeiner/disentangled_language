@@ -182,6 +182,9 @@ def get_syntactic_scores(s1_batch, s2_batch, device=None):
         outputs:
             scores - a (b,1) tensor of 'scores' for the paired sentences, weights to be used in loss function
     '''
+    if device is None:
+        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
     results = utils.attachment_scoring(
             arc_preds=s1_batch['arc_targets'].to(device), 
             rel_preds=s1_batch['rel_targets'].to(device), 
@@ -290,24 +293,47 @@ def get_score_tensors(data_sorted, l2c=None, l2r=None, score_type=None, device=N
 def sdp_data_loader_original(data, batch_size=1, shuffle_idx=False, custom_task=False):
     idx = list(range(len(data)))
 
+    if custom_task:
+        data_sorted = sorted(data, key = lambda s : s.shape[0])
+        cutoff_dicts = build_cutoff_dicts(data_sorted)
+        #l2n = cutoff_dicts['l2n']
+        #i2c = cutoff_dicts['i2c']
+        l2c = cutoff_dicts['l2c']
+
     while True:
         if shuffle_idx:
             shuffle(idx) # In-place shuffle
+        
+        if custom_task:
+            paired_idx = get_paired_idx(idx, cutoff_dicts['i2c'])
 
-        for chunk in idx_chunks(idx, batch_size):
-            batch = [data[i] for i in chunk]
-            yield prepare_batch_sdp(batch)
+            for chunk, chunk_p in zip(
+                    idx_chunks(idx, batch_size),
+                    idx_chunks(paired_idx, batch_size)):
+
+                batch = [data_sorted[i] for i in chunk]
+                paired = [data_sorted[i] for i in chunk_p]
+                prepared_batch = prepare_batch_sdp(batch)
+                prepared_paired = prepare_batch_sdp(paired)
+                #scores = None  #XXX (b, 1) tensor
+                results = get_syntactic_scores(prepared_batch, prepared_paired)  #XXX (b, 1) tensor
+                scores = results['LAS']
+                yield (prepared_batch, prepared_paired, scores)
+        else:
+            for chunk in idx_chunks(idx, batch_size):
+                batch = [data[i] for i in chunk]
+                yield prepare_batch_sdp(batch)
 
 
 def sdp_data_loader_custom(data, batch_size=1):
     raise Exception
     idx = list(range(len(data)))
 
-    data_sorted = sorted(data, key = lambda s : s.shape[0])
-    cutoff_dicts = build_cutoff_dicts(data_sorted)
-    #l2n = cutoff_dicts['l2n']
-    #i2c = cutoff_dicts['i2c']
-    l2c = cutoff_dicts['l2c']
+    #data_sorted = sorted(data, key = lambda s : s.shape[0])
+    #cutoff_dicts = build_cutoff_dicts(data_sorted)
+    ##l2n = cutoff_dicts['l2n']
+    ##i2c = cutoff_dicts['i2c']
+    #l2c = cutoff_dicts['l2c']
 
 
     while True:
@@ -316,8 +342,8 @@ def sdp_data_loader_custom(data, batch_size=1):
 
         #num_buckets = len(buckets)
 
-        for bucket in buckets:
-            pass
+        #for bucket in buckets:
+        #    pass
             #from bucket rando-grab batch_size/num_buckets many indices
             #idx.extend(batch)
 
@@ -327,11 +353,15 @@ def sdp_data_loader_custom(data, batch_size=1):
                 idx_chunks(idx, batch_size),
                 idx_chunks(paired_idx, batch_size)):
 
-            batch = [data_sorted[i] for i in chunk]
-            paired = [data_sorted[i] for i in chunk_p]
+            #batch = [data_sorted[i] for i in chunk]
+            #paired = [data_sorted[i] for i in chunk_p]
+            batch = [data[i] for i in chunk]
+            paired = [data[i] for i in chunk_p]
             prepared_batch = prepare_batch_sdp(batch)
             prepared_paired = prepare_batch_sdp(paired)
-            scores = None  #XXX (b, 1) tensor
+            #scores = None  #XXX (b, 1) tensor
+            results = get_syntactic_scores(prepared_batch, prepare_paired)  #XXX (b, 1) tensor
+            scores = results['LAS']
             yield (prepared_batch, prepared_paired, scores)
 
 
@@ -369,16 +399,18 @@ def prepare_batch_sdp(batch):
             rel_targets -
     '''
     batch_size = len(batch)
-    batch_sorted = sorted(batch, key = lambda s: s.shape[0], reverse=True)
-    sent_lens = torch.LongTensor([s.shape[0] for s in batch_sorted]) # Keep in mind, these lengths include ROOT token in each sentence
-    l_longest = sent_lens[0]
+    #batch_sorted = sorted(batch, key = lambda s: s.shape[0], reverse=True)
+    sent_lens = torch.LongTensor([s.shape[0] for s in batch]) # Keep in mind, these lengths include ROOT token in each sentence
+    #l_longest = sent_lens[0]
+    l_longest = torch.max(sent_lens).item()
 
     words = torch.zeros((batch_size, l_longest)).long()
     pos = torch.zeros((batch_size, l_longest)).long()
     arc_targets = torch.LongTensor(batch_size, l_longest).fill_(-1)
     rel_targets = torch.LongTensor(batch_size, l_longest).fill_(-1)
 
-    for i, s in enumerate(batch_sorted):
+    #for i, s in enumerate(batch_sorted):
+    for i, s in enumerate(batch):
         # s shape (length, 4)
 
         dt = np.dtype(int)
@@ -410,7 +442,7 @@ def prepare_batch_ss(batch):
     batch_size = len(batch)
 
     sent_lens = torch.LongTensor([s.shape[0] for s in batch])
-    l_longest = max(sent_lens)
+    l_longest = torch.max(sent_lens).item()
 
     words = torch.zeros((batch_size, l_longest)).long()
     pos = torch.zeros((batch_size, l_longest)).long()

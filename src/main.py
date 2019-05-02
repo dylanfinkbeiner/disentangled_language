@@ -248,8 +248,11 @@ if __name__ == '__main__':
             num_relations = len(x2i['rel']),
             hidden_size = args.h_size,
             padding_idx = x2i['word'][PAD_TOKEN],
-            unk_idx = x2i['word'][UNK_TOKEN])
-    parser.to(device)
+            unk_idx = x2i['word'][UNK_TOKEN],
+            device=device)
+    print(parser.BiLSTM.init_we.device)
+    print(parser.BiLSTM.word_emb.weight.device)
+#    breakpoint()
 
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
 

@@ -35,11 +35,10 @@ class BiLSTM(nn.Module):
             hidden_size=400,
             lstm_layers=3,
             lstm_dropout=0.33,
-            #lstm_dropout=0,
             embedding_dropout=0.33,
-            #embedding_dropout=0,
             padding_idx=None,
-            unk_idx=None):
+            unk_idx=None,
+            device=None):
         super(BiLSTM, self).__init__()
 
         self.unk_idx = unk_idx
@@ -52,7 +51,7 @@ class BiLSTM(nn.Module):
         #self.word_emb.weight.data.copy_(
         #        torch.zeros(word_vocab_size, word_e_size))
 
-        self.init_we = self.word_emb.weight.clone()
+        self.init_we = self.word_emb.weight.clone().to(device)
 
         self.pos_emb = nn.Embedding(
             pos_vocab_size,
@@ -219,7 +218,8 @@ class BiaffineParser(nn.Module):
             arc_dropout=0.33,
             rel_dropout=0.33,
             padding_idx=None,
-            unk_idx=None):
+            unk_idx=None,
+            device=None):
         super(BiaffineParser, self).__init__()
 
         self.h_size = hidden_size
@@ -234,7 +234,8 @@ class BiaffineParser(nn.Module):
                 embedding_dropout=embedding_dropout,
                 lstm_dropout=lstm_dropout,
                 padding_idx=padding_idx,
-                unk_idx=unk_idx)
+                unk_idx=unk_idx,
+                device=device).to(device)
 
         self.BiAffineAttention = BiAffineAttention(
             hidden_size=hidden_size,
@@ -242,7 +243,7 @@ class BiaffineParser(nn.Module):
             d_rel=d_rel,
             num_relations=num_relations,
             arc_dropout=arc_dropout,
-            rel_dropout=rel_dropout)
+            rel_dropout=rel_dropout).to(device)
         
     def forward(self, words, pos, sent_lens):
         '''

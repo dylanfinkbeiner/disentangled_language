@@ -56,7 +56,8 @@ def get_args():
     parser.add_argument('-H', '--hsize', help='Size of LSTM hidden state.', dest='h_size', type=int, default=400)
     parser.add_argument('--synsize', help='Number of units of hidden state dedicated to syntactic content.', dest='syn_size', type=int, default=200)
     parser.add_argument('--lrsyn', help='Learning rate for optimization during syntactic task.', dest='lr_syn', type=float, default=2e-3)
-    parser.add_argument('--lrsem', help='Learning rate for optimization during semantic task.', dest='lr_sem', type=float, default=1e-3)
+    parser.add_argument('--lrsem', help='Learning rate for optimization during semantic task.', dest='lr_sem', type=float, default=2e-3)
+    parser.add_argument('-lw', help='Tuning parameter for word embedding L2 norm cost.', dest='lambda_w', type=float, default=1000)
 
     # Training hyperparameters
     parser.add_argument('-b', '--batchsize', help='Size of batch', type=int, dest='batch_size', default=100)
