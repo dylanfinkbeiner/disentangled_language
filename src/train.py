@@ -55,7 +55,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     sleep(5)
 
 
-    torch.manual_seed(args.seed)
+    #torch.manual_seed(args.seed)
     #mode_description = MODE_DESC[args.train_mode]
 
     train_sdp = data['data_ptb']['train']
@@ -290,6 +290,9 @@ def forward_semantic(parser, para1, para2, neg1, neg2=None, args=None, data=None
     device = data['device']
 
     parser.train()
+
+    data_utils.scramble_words(para1, scramble_prob=args.scramble)
+    data_utils.scramble_words(para2, scramble_prob=args.scramble)
 
     w1, p1, sl1 = prepare_batch_ss(para1)
     w2, p2, sl2 = prepare_batch_ss(para2)

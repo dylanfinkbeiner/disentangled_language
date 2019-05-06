@@ -67,6 +67,7 @@ def get_args():
     parser.add_argument('--epochs', help='Number of epochs in training.', type=int, default=5)
     parser.add_argument('--margin', help='Margin in semantic similarity objective function.', dest='margin', type=float, default=0.4)
     parser.add_argument('--nchunks', help='Number of 100k-sentence-pair chunks of SS data from the filtered ParaNMT-50m dataset.', type=int, dest='n_chunks', default=1)
+    parser.add_argument('--scramble', help='Probably with which a given paraphrase pair will get scrambled in semantic training.', dest='scramble', type=float, default=0.3)
 
 
     # Train mode

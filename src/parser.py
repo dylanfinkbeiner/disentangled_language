@@ -57,6 +57,8 @@ class BiLSTM(nn.Module):
             pos_vocab_size,
             pos_e_size,
             padding_idx=padding_idx)
+        #self.pos_emb.weight.data.copy_(
+        #        torch.zeros(pos_vocab_size, pos_e_size))
 
         # Dropout
         self.embedding_dropout = nn.Dropout(p=embedding_dropout)
@@ -70,7 +72,7 @@ class BiLSTM(nn.Module):
                 bidirectional=True,
                 batch_first=True,
                 dropout=lstm_dropout,
-                bias=False)
+                bias=True)
 
     def forward(self, words, pos, sent_lens):
         '''

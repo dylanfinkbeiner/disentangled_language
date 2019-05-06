@@ -153,16 +153,19 @@ if __name__ == '__main__':
 
         for chunk in chunks_clean:
             print(f'Processing chunk {chunk}')
-            raw_sents_path = os.path.join(CHUNKS_DIR, 'tagged', f'{os.path.splitext(chunk)[0]}-tagged.pkl')
-
-            raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(CHUNKS_DIR, chunk))
-
-            with open(raw_sents_path, 'wb') as pkl:
-                pickle.dump(raw_sent_pairs, pkl)
-
+            if POS:
+                raw_sents_path = os.path.join(CHUNKS_DIR, 'tagged', f'{os.path.splitext(chunk)[0]}-tagged.pkl')
+    
+                raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(CHUNKS_DIR, chunk))
+    
+                with open(raw_sents_path, 'wb') as pkl:
+                    pickle.dump(raw_sent_pairs, pkl)
+    
             if not POS_ONLY:
                 with open(raw_sents_path, 'rb') as pkl:
                     raw_sent_pairs = pickle.load(pkl)
+
+                x2i, i2x = build_dicts(raw_se
 
                 train_path = os.path.join(CHUNKS_DIR, 'pkl', f'{os.path.splitext(chunk)[0]}.pkl')
                 if os.path.exists(train_path):

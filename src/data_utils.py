@@ -86,7 +86,10 @@ def build_sdp_dataset(conllu_files: list, x2i=None):
 
 
 def build_ss_dataset(raw_sent_pairs, gs='', x2i=None):
+    filtered_sent_pairs, word_counts = filter_and_count(raw_sent_pairs, filter_single=True)
+
     x2i, i2x = build_dicts(raw_sent_pairs, is_sdp=False)
+
     raw_sent_pairs = numericalize_ss(raw_sent_pairs, x2i)
 
     raw_targets = txt_to_sem_scores(gs) if gs else None
@@ -407,10 +410,7 @@ def prepare_batch_sdp(batch):
     arc_targets = torch.LongTensor(batch_size, l_longest).fill_(-1)
     rel_targets = torch.LongTensor(batch_size, l_longest).fill_(-1)
 
-    #for i, s in enumerate(batch_sorted):
     for i, s in enumerate(batch):
-        # s shape (length, 4)
-
         dt = np.dtype(int)
         resized_np = np.zeros((l_longest, s.shape[1]), dtype=dt)
         resized_np[:s.shape[0]] = s
@@ -528,7 +528,6 @@ def build_dicts(sents_list, is_sdp=True):
             sents_list.append(s1)
             sents_list.append(s2)
 
-    exit()
     word, pos, rel = set(), set(), set()
     for s in sents_list:
         for line in s:
@@ -760,21 +759,22 @@ def filter_and_count(sentences, filter_single=True):
     filtered = []
     word_counts = get_word_counts(sentences)
     one_words = set([w for w, c in word_counts.items() if c == 1])
-    for i, sentence in enumerate(sentences):
-        for j, line in enumerate(sentence):
-            word = line[0]
+    for sentence in sentences:
+        for unit in sentence:
+            word = unit[0]
             if is_url(word):
-                word = '<url>'
+                unit[0] = '<url>'
             elif is_long_punctuation(word):
-                word = '<punct>'
+                unit[0] = '<punct>'
             elif has_digits(word):
-                word = '<num>'
+                unit[0] = '<num>'
             elif filter_single and word.lower() in one_words:
-                word = UNK_TOKEN
+                unit[0] = UNK_TOKEN
 
         filtered.append(sentence)
 
     return filtered, word_counts
+
 
 def get_word_counts(sentences):
     """
@@ -901,4 +901,10 @@ def l2t_to_l2avg(l2t):
     return l2avg, overall_avg
 
 
+#According to Weiting, effective in regularization
+def scramble_words(batch, scramble_prob=0.3):
+    n = np.random.binomial(1, scramble_prob, len(batch))
 
+    for i, outcome in enumerate(n):
+        if outcome == 1:
+            np.random.shuffle(batch[i])

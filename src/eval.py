@@ -166,15 +166,16 @@ def eval_sts(args, parser, data, exp_path_base=None):
 
                 #ax.scatter(x, y, alpha=0.8, c=color, edgecolors='none', s=30, label=group)
 
-                #plt.title('Matplot scatter plot')
                 #plt.legend(loc=2)
                 #plt.show()
                 #breakpoint()
 
-                plt.plot(predictions, targets)
-                plt.xlabel('Predictions')
-                plt.ylabel('Targets')
-                plt.savefig(f'{year}.png')
+                #plt.title(f'{year} Task')
+                #plt.scatter(predictions, targets, c='blue')
+                #plt.xlabel('Predictions')
+                #plt.ylabel('Targets')
+                #plt.savefig(f'{year}.png')
+                #plt.clf()
 
                 info = '{} task\nPearson R*100 {:5.2f}\tAverage gold score:{:5.2f}\tAverage predicted score:{:5.2f}\n'.format(
                     year,
@@ -182,10 +183,12 @@ def eval_sts(args, parser, data, exp_path_base=None):
                     np.mean(targets),
                     np.mean(predictions),
                     )
-                stats = 'Std of predictions:{:5.2f}\tStd of targets:{:5.2f}\tCovariance:{:5.2f}\n'.format(
+                stats = 'Std of predictions:{:5.2f}\tStd of targets:{:5.2f}\tCovariance:{:5.2f}\tMin predictions:{:5.2f}\tMax prediction:{:5.2f}\n'.format(
                     np.std(predictions),
                     np.std(targets),
-                    np.cov(predictions,targets)[0,1])
+                    np.cov(predictions,targets)[0,1],
+                    np.min(predictions),
+                    np.max(predictions))
                 exp_file.write(info)
                 print(info)
                 print(stats)
