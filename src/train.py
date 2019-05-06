@@ -291,8 +291,8 @@ def forward_semantic(parser, para1, para2, neg1, neg2=None, args=None, data=None
 
     parser.train()
 
-    data_utils.scramble_words(para1, scramble_prob=args.scramble)
-    data_utils.scramble_words(para2, scramble_prob=args.scramble)
+    #data_utils.scramble_words(para1, scramble_prob=args.scramble)
+    #data_utils.scramble_words(para2, scramble_prob=args.scramble)
 
     w1, p1, sl1 = prepare_batch_ss(para1)
     w2, p2, sl2 = prepare_batch_ss(para2)
@@ -393,8 +393,10 @@ def ss_dev_eval(parser, dev_ss, args=None, data=None):
     return correlation
 
 
-def gradient_update(parser):
-    update = '\n'.join(['{:35} {:3.8f}'.format(n, p.grad.data.norm(2).item()) for n, p in list(parser.BiLSTM.named_parameters())])
-    #update = 'Norm of gradient: {:5.8f}'.format(torch.tensor([p.grad.data.norm(2) for n, p in list(parser.BiLSTM.named_parameters())]).norm(2))
+def gradient_update(parser, verbose=True):
+    if verbose:
+        update = '\n'.join(['{:35} {:3.8f}'.format(n, p.grad.data.norm(2).item()) for n, p in list(parser.BiLSTM.named_parameters())])
+    else: 
+        update = 'Norm of gradient: {:5.8f}'.format(torch.tensor([p.grad.data.norm(2) for n, p in list(parser.BiLSTM.named_parameters())]).norm(2))
 
     return update

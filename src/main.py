@@ -39,7 +39,6 @@ CONLLU_FILES = []
 PARANMT_FILE = 'para-nmt-5m-processed.txt'
 CHUNKS_DIR = os.path.join(DATA_DIR, '5m')
 POS_ONLY = False
-POS = False
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
 UNK_TOKEN = '<unk>'
@@ -153,29 +152,23 @@ if __name__ == '__main__':
 
         for chunk in chunks_clean:
             print(f'Processing chunk {chunk}')
-            if POS:
-                raw_sents_path = os.path.join(CHUNKS_DIR, 'tagged', f'{os.path.splitext(chunk)[0]}-tagged.pkl')
-    
+            raw_sents_path = os.path.join(CHUNKS_DIR, 'tagged', f'{os.path.splitext(chunk)[0]}-tagged.pkl')
+            if POS_ONLY:
                 raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(CHUNKS_DIR, chunk))
     
                 with open(raw_sents_path, 'wb') as pkl:
                     pickle.dump(raw_sent_pairs, pkl)
-    
-            if not POS_ONLY:
+            else:
                 with open(raw_sents_path, 'rb') as pkl:
                     raw_sent_pairs = pickle.load(pkl)
-
-                x2i, i2x = build_dicts(raw_se
 
                 train_path = os.path.join(CHUNKS_DIR, 'pkl', f'{os.path.splitext(chunk)[0]}.pkl')
                 if os.path.exists(train_path):
                     if input('Path to data for chunk {chunk} exists. Overwrite? [y/n] ').lower() != 'y': 
                         continue
-                train_ss = build_ss_dataset(raw_sent_pairs, gs='', x2i=x2i)
+                train_ss = build_ss_dataset(raw_sent_pairs, gs='', x2i=x2i, filter_single=True)
                 with open(train_path, 'wb') as pkl:
                     pickle.dump(train_ss, pkl)
-
-
     elif args.train_mode > 0:
         log.info(f'Loading pickled SS train data.')
         chunks_pkl = sorted(list(os.listdir(os.path.join(CHUNKS_DIR, 'pkl'))))
@@ -191,20 +184,21 @@ if __name__ == '__main__':
     dev_path = os.path.join(data_ss_dir, 'ss_dev.pkl')
     if 'dev' in init_ss:
         log.info(f'Initializing SS dev data.')
-        
         raw_sents_path = os.path.join(STS_DIR, 'tagged', '2017-tagged.pkl')
-        raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(STS_INPUT, '2017'))
+        
+        if POS_ONLY:
+            raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(STS_INPUT, '2017'))
 
-        with open(raw_sents_path, 'wb') as pkl:
-            pickle.dump(raw_sent_pairs, pkl)
-
-        if not POS_ONLY:
+            with open(raw_sents_path, 'wb') as pkl:
+                pickle.dump(raw_sent_pairs, pkl)
+        else:
             with open(raw_sents_path, 'rb') as pkl:
                 raw_sent_pairs = pickle.load(pkl)
             dev_ss = build_ss_dataset(
                 raw_sent_pairs,
                 gs=os.path.join(STS_GS, '2017'),
-                x2i=x2i)
+                x2i=x2i,
+                filter_single=False)
             with open(dev_path, 'wb') as pkl:
                 pickle.dump(dev_ss, pkl)
     elif args.train_mode > 0:
@@ -220,24 +214,27 @@ if __name__ == '__main__':
         years = os.listdir(STS_INPUT)
         for year in years:
             raw_sents_path = os.path.join(STS_DIR, 'tagged', f'{year}-tagged.pkl')
-            if POS:
+            if POS_ONLY:
                 raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(STS_INPUT, year))
                 with open(raw_sents_path, 'wb') as pkl:
                     pickle.dump(raw_sent_pairs, pkl)
-            if not POS_ONLY:
+            else:
                 with open(raw_sents_path, 'rb') as pkl:
                     raw_sent_pairs = pickle.load(pkl)
                 test_ss[year] = build_ss_dataset(
                     raw_sent_pairs,
                     gs=os.path.join(STS_GS, year),
-                    x2i=x2i)
+                    x2i=x2i,
+                    filter_single=False)
                 with open(test_path, 'wb') as pkl:
                     pickle.dump(test_ss, pkl)
     elif args.evaluate_semantic:
        log.info(f'Loading pickled SS test data.')
        with open(test_path, 'rb') as pkl:
            test_ss = pickle.load(pkl)
-
+    
+    print('Finished!')
+    exit()
 
     data_ss['train'] = train_ss
     data_ss['dev'] = dev_ss

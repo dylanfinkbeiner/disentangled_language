@@ -38,14 +38,14 @@ def loss_sem_rep(h1, h2, hn1, hn2=None, margin=None, h_size=None, syn_size=None)
 
     para_attract = F.cosine_similarity(sem_h1, sem_h2) # (b,sem_size), (b,sem_size) -> (b)
 
-    neg_repel = F.cosine_similarity(sem_h1, sem_hn1) # (b,sem_size), (b,sem_size) -> (b)
+    neg1_repel = F.cosine_similarity(sem_h1, sem_hn1) # (b,sem_size), (b,sem_size) -> (b)
 
-    losses = F.relu(margin - para_attract + neg_repel) # (b)
+    losses = F.relu(margin - para_attract + neg1_repel) # (b)
 
     if hn2 is not None:
         sem_hn2 = torch.cat((hn2[:,syn_size:h_size], hn2[:,h_size+syn_size:]), dim=-1)
-        neg_repel2 = F.cosine_similarity(sem_h2, sem_hn2) # (b,sem_size), (b,sem_size) -> (b)
-        losses += F.relu(margin - para_attract + neg_repel2)
+        neg2_repel = F.cosine_similarity(sem_h2, sem_hn2) # (b,sem_size), (b,sem_size) -> (b)
+        losses += F.relu(margin - para_attract + neg2_repel)
 
     return losses.mean()
 

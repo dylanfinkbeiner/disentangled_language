@@ -85,19 +85,29 @@ def build_sdp_dataset(conllu_files: list, x2i=None):
     return data
 
 
-def build_ss_dataset(raw_sent_pairs, gs='', x2i=None):
-    filtered_sent_pairs, word_counts = filter_and_count(raw_sent_pairs, filter_single=True)
+def build_ss_dataset(raw_sent_pairs, gs='', x2i=None, filter_single=False):
+    breakpoint()
+    flattened_raw = []
+    for s1, s2 in raw_sent_pairs:
+        flattened_raw.append(s1)
+        flattened_raw.append(s2)
+    word_counts = filter_and_count(flattened_raw, filter_single=filter_single)
+    #filtered_pairs = []
+    #for i in range(0, len(filtered_sents), 2):
+    #    filtered_pairs.append((filtered_sents[i], filtered_sents[i+1]))
+    breakpoint()
+    exit()
 
-    x2i, i2x = build_dicts(raw_sent_pairs, is_sdp=False)
+    #x2i, i2x = build_dicts(raw_sent_pairs, is_sdp=False)
 
-    raw_sent_pairs = numericalize_ss(raw_sent_pairs, x2i)
+    numericalized_pairs = numericalize_ss(filtered_sent_pairs, x2i)
 
     raw_targets = txt_to_sem_scores(gs) if gs else None
     
     sent_pairs = []
     targets = []
     if raw_targets != None:
-        for s, t in zip(raw_sent_pairs, raw_targets):
+        for s, t in zip(numericalized_pairs, raw_targets):
             if t != -1.0:
                 sent_pairs.append(s)
                 targets.append(t)
@@ -105,7 +115,7 @@ def build_ss_dataset(raw_sent_pairs, gs='', x2i=None):
             print('Mismatch between targets ({len(targets)}) and sents ({len(sent_pairs)})')
             raise Exception
     else:
-        sent_pairs = raw_sent_pairs
+        sent_pairs = numericalized_pairs
 
     return {'sent_pairs': sent_pairs, 'targets': targets}
 
@@ -656,6 +666,9 @@ def megabatch_breakdown(megabatch, minibatch_size, parser, device):
         mb_para1.append(para1) # Does this allocate new memory?
         mb_para2.append(para2)
 
+    scramble_words(mb_para1)
+    scramble_words(mb_para2)
+
     minibatches_para1 = [mb_para1[i:i+minibatch_size] for i in range(0, len(mb_para1), minibatch_size)]
     minibatches_para2 = [mb_para2[i:i+minibatch_size] for i in range(0, len(mb_para2), minibatch_size)]
 
@@ -756,7 +769,7 @@ def filter_and_count(sentences, filter_single=True):
         filter_single: boolean, if true replace words that occur once with UNK_TOKEN.
     Returns: List of sentences with words filtered.
     """
-    filtered = []
+    #filtered = []
     word_counts = get_word_counts(sentences)
     one_words = set([w for w, c in word_counts.items() if c == 1])
     for sentence in sentences:
@@ -771,9 +784,10 @@ def filter_and_count(sentences, filter_single=True):
             elif filter_single and word.lower() in one_words:
                 unit[0] = UNK_TOKEN
 
-        filtered.append(sentence)
+    #    filtered.append(sentence)
 
-    return filtered, word_counts
+    #return filtered, word_counts
+    return word_counts
 
 
 def get_word_counts(sentences):
@@ -907,4 +921,6 @@ def scramble_words(batch, scramble_prob=0.3):
 
     for i, outcome in enumerate(n):
         if outcome == 1:
-            np.random.shuffle(batch[i])
+            copy = batch[i].copy()
+            np.random.shuffle(copy)
+            batch[i] = copy
