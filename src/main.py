@@ -163,9 +163,9 @@ if __name__ == '__main__':
                     raw_sent_pairs = pickle.load(pkl)
 
                 train_path = os.path.join(CHUNKS_DIR, 'pkl', f'{os.path.splitext(chunk)[0]}.pkl')
-                if os.path.exists(train_path):
-                    if input('Path to data for chunk {chunk} exists. Overwrite? [y/n] ').lower() != 'y': 
-                        continue
+                #if os.path.exists(train_path):
+                #    if input(f'Path to data for chunk {chunk} exists. Overwrite? [y/n] ').lower() != 'y': 
+                #        continue
                 train_ss = build_ss_dataset(raw_sent_pairs, gs='', x2i=x2i, filter_single=True)
                 with open(train_path, 'wb') as pkl:
                     pickle.dump(train_ss, pkl)
@@ -233,9 +233,6 @@ if __name__ == '__main__':
        with open(test_path, 'rb') as pkl:
            test_ss = pickle.load(pkl)
     
-    print('Finished!')
-    exit()
-
     data_ss['train'] = train_ss
     data_ss['dev'] = dev_ss
     data_ss['test'] = test_ss

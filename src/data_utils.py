@@ -86,21 +86,14 @@ def build_sdp_dataset(conllu_files: list, x2i=None):
 
 
 def build_ss_dataset(raw_sent_pairs, gs='', x2i=None, filter_single=False):
-    breakpoint()
     flattened_raw = []
     for s1, s2 in raw_sent_pairs:
         flattened_raw.append(s1)
         flattened_raw.append(s2)
     word_counts = filter_and_count(flattened_raw, filter_single=filter_single)
-    #filtered_pairs = []
-    #for i in range(0, len(filtered_sents), 2):
-    #    filtered_pairs.append((filtered_sents[i], filtered_sents[i+1]))
-    breakpoint()
-    exit()
 
-    #x2i, i2x = build_dicts(raw_sent_pairs, is_sdp=False)
-
-    numericalized_pairs = numericalize_ss(filtered_sent_pairs, x2i)
+    # Raw sent pairs got modified within filter and count
+    numericalized_pairs = numericalize_ss(raw_sent_pairs, x2i)
 
     raw_targets = txt_to_sem_scores(gs) if gs else None
     
@@ -772,7 +765,7 @@ def filter_and_count(sentences, filter_single=True):
     #filtered = []
     word_counts = get_word_counts(sentences)
     one_words = set([w for w, c in word_counts.items() if c == 1])
-    for sentence in sentences:
+    for sentence in  tqdm(sentences, ascii=True, desc=f'Progress in filtering.', ncols=80):
         for unit in sentence:
             word = unit[0]
             if is_url(word):
