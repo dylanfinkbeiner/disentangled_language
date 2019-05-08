@@ -4,7 +4,6 @@ import subprocess
 import datetime
 from tqdm import tqdm
 
-
 import matplotlib.pyplot as plt
 
 import torch
@@ -22,6 +21,7 @@ WSJ_DIR = os.path.join(CORPORA_DIR, 'wsj/dependencies')
 #BROWN_DIR = '/corpora/brown/dependencies'
 BROWN_DIR = '../data/brown'
 DATA_DIR = '../data/'
+PREDICTED_DIR = os.path.join(DATA_DIR, 'predicted_conllu')
 
 PTB_DEV = os.path.join(WSJ_DIR, 'treebank.conllu22')
 PTB_TEST = os.path.join(WSJ_DIR, 'treebank.conllu23')
@@ -80,11 +80,11 @@ def eval_sdp(args, parser, data, exp_path_base=None):
     for name, gold, sents_list in zip(names, golds, sents):
         dataset = data[name]
         data_loader = data_utils.sdp_data_loader_original(dataset, batch_size=1, shuffle_idx=False)
-        predicted = os.path.join(DATA_DIR, name + '_predicted')
+        predicted = os.path.join(PREDICTED_DIR, name + '_predicted.conllu')
         with open(predicted, 'w') as f:
             parser.eval()
             with torch.no_grad():
-                for s in tqdm(sents_list, ascii=True, desc=f'Writing predicted file for {name} dataset', ncols=80):
+                for s in tqdm(sents_list, ascii=True, desc=f'Writing predicted conllu for {name} dataset', ncols=80):
                     batch = next(data_loader)
                     sent_len = batch['sent_lens'].to(device)
 

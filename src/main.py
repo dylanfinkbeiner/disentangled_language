@@ -83,18 +83,20 @@ if __name__ == '__main__':
 
     exp_path_base = os.path.join(day_dir, f'{d:%H%M}')
 
-    # possible?
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     log.info(f'Using device: {device}')
 
     # Filenames
-    vocabs_path = os.path.join(DATA_DIR, 'vocabs.pkl')
-    data_ptb_path = os.path.join(DATA_DIR, 'data_ptb.pkl')
-    data_brown_path = os.path.join(DATA_DIR, 'data_brown.pkl')
+    sdp_data_dir = os.path.join(DATA_DIR, 'sdp_processed')
+    ss_data_dir = os.path.join(DATA_DIR, 'ss_processed')
+    vocabs_path = os.path.join(sdp_data_dir, 'vocabs.pkl')
+    data_ptb_path = os.path.join(sdp_data_dir, 'data_ptb.pkl')
+    data_brown_path = os.path.join(sdp_data_dir, 'data_brown.pkl')
     #data_ss_path = os.path.join(DATA_DIR, 'data_ss.pkl')
-    data_ss_dir = os.path.join(DATA_DIR, 'data_ss_local')
-    if not os.path.isdir(data_ss_dir):
-        os.mkdir(data_ss_dir)
+    if not os.path.isdir(ss_data_dir):
+        os.mkdir(ss_data_dir)
+    if not os.path.isdir(sdp_data_dir):
+        os.mkdir(sdp_data_dir)
 
     #init_sdp = (not os.path.exists(vocabs_path)
     #        or not os.path.exists(data_ptb_path) 
@@ -144,17 +146,13 @@ if __name__ == '__main__':
     train_ss = {'sent_pairs': [], 'targets': []}
     if 'train' in init_ss:
         log.info(f'Initializing SS train data.')
-        chunks = sorted(list(os.listdir(CHUNKS_DIR)))
-        chunks_clean = []
-        for chunk in chunks:
-            if os.path.splitext(chunk)[-1] == '.txt':
-                chunks_clean.append(chunk)
+        txt_chunks = sorted(list(os.listdir(os.path.join(CHUNKS_DIR, 'txt'))))
 
-        for chunk in chunks_clean:
+        for chunk in txt_chunks:
             print(f'Processing chunk {chunk}')
             raw_sents_path = os.path.join(CHUNKS_DIR, 'tagged', f'{os.path.splitext(chunk)[0]}-tagged.pkl')
             if POS_ONLY:
-                raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(CHUNKS_DIR, chunk))
+                raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(CHUNKS_DIR, 'txt', chunk))
     
                 with open(raw_sents_path, 'wb') as pkl:
                     pickle.dump(raw_sent_pairs, pkl)
@@ -186,7 +184,7 @@ if __name__ == '__main__':
                 train_ss['targets'].extend(curr['targets'])
 
     dev_ss = {}
-    dev_path = os.path.join(data_ss_dir, 'ss_dev.pkl')
+    dev_path = os.path.join(ss_data_dir, 'ss_dev.pkl')
     if 'dev' in init_ss:
         log.info(f'Initializing SS dev data.')
         raw_sents_path = os.path.join(STS_DIR, 'tagged', '2017-tagged.pkl')
@@ -213,7 +211,7 @@ if __name__ == '__main__':
             dev_ss = pickle.load(pkl)
 
     test_ss = {}
-    test_path = os.path.join(data_ss_dir, 'ss_test.pkl')
+    test_path = os.path.join(ss_data_dir, 'ss_test.pkl')
     if 'test' in init_ss:
         log.info(f'Initializing SS test data.')
 

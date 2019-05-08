@@ -647,6 +647,17 @@ def numericalize_ss(sents_list, x2i):
     return sents_numericalized
 
 
+#According to Weiting, effective in regularization
+def scramble_words(batch, scramble_prob=0.3):
+    n = np.random.binomial(1, scramble_prob, len(batch))
+
+    for i, outcome in enumerate(n):
+        if outcome == 1:
+            copy = batch[i].copy()
+            np.random.shuffle(copy)
+            batch[i] = copy
+
+
 def megabatch_breakdown(megabatch, minibatch_size=None, parser=None, args=None, data=None):
     '''
         inputs:
@@ -756,23 +767,7 @@ def get_negative_samps(megabatch, mb_para1_reps, mb_para2_reps):
 
 
 # From https://github.com/EelcovdW/Biaffine-Parser/blob/master/data_utils.py
-#def filter_sentences(sentences, word_counts=None, filter_single=True):
 def filter_sentences(sentences, word_counts=None):
-    """
-    Applies a series of filter to each word in each sentence. Filters
-    are applied in this order:
-    - replace urls with an <url> tag.
-    - replace a string of more than 2 punctuations with a <punct> tag.
-    - replace strings that contain digits with a <num> tag.
-    - if filter_single, replace words that only occur once with UNK_TOKEN.
-      This step is useful when parsiline training data, to make sure the UNK_TOKEN
-      in the word embeddings gets trained.
-    Args:
-        sentences: list of sentences, from parse_conllu.
-        filter_single: boolean, if true replace words that occur once with UNK_TOKEN.
-    Returns: List of sentences with words filtered.
-    """
-    #word_counts = get_word_counts(sentences)
     if word_counts is not None:
         one_words = set([w for w, c in word_counts.items() if c == 1])
     for sentence in  tqdm(sentences, ascii=True, desc=f'Progress in filtering.', ncols=80):
@@ -789,34 +784,19 @@ def filter_sentences(sentences, word_counts=None):
 
 
 def get_word_counts(sentences):
-    """
-    Create a Counter of all words in sentences, in lowercase.
-    Args:
-        sentences: List of sentences, from parse_conllu.
-    Returns: Counter with word: count.
-    """
-    words = [line[0].lower() for sentence in sentences for line in sentence]
+    words = [unit[0].lower() for sentence in sentences for unit in sentence]
     return Counter(words)
 
 
 def is_url(word):
-    """
-    Lazy check if a word is an url. True if word contains all of {':' '/' '.'}.
-    """
     return bool(set('./:').issubset(word))
 
 
 def is_long_punctuation(word):
-    """
-    True if word is longer than 2 and only contains interpunction.
-    """
     return bool(len(word) > 2 and set(string.punctuation).issuperset(word))
 
 
 def has_digits(word):
-    """
-    True if word contains digits.
-    """
     return bool(set(string.digits).intersection(word))
 
 
@@ -913,12 +893,3 @@ def l2t_to_l2avg(l2t):
     return l2avg, overall_avg
 
 
-#According to Weiting, effective in regularization
-def scramble_words(batch, scramble_prob=0.3):
-    n = np.random.binomial(1, scramble_prob, len(batch))
-
-    for i, outcome in enumerate(n):
-        if outcome == 1:
-            copy = batch[i].copy()
-            np.random.shuffle(copy)
-            batch[i] = copy
