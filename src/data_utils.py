@@ -756,7 +756,7 @@ def sdp_corpus_stats(data, stats_dir=None, min_length=2, max_len=40, device=None
     i2c = bucket_dicts['i2c']
     l2c = bucket_dicts['l2c']
 
-    # Remove from l2c those lengths with < 2 sentences
+    # Create a copy of l2c devoid of useless lengths
     l2c_cleaned = copy.deepcopy(l2c)
     for l, n in l2n.items():
         if n < min_length:
@@ -767,6 +767,8 @@ def sdp_corpus_stats(data, stats_dir=None, min_length=2, max_len=40, device=None
     print('l2c has {len(l2c)} many keys after removal of lengths with less than 2 entries.')
 
     if init_stats:
+        distribution, i2l = get_length_distribution(l2n, l2c_cleaned)
+
         l2r = length_to_results(data_sorted, l2c=l2c, device=device)
 
         with open(os.path.join(components_dir, 'l2r.pkl'), 'wb') as pkl:
@@ -845,5 +847,32 @@ def l2t_to_l2avg(l2t):
     overall_avg = torch.tensor(avg_list).mean().item()
 
     return l2avg, overall_avg
+
+
+def get_length_distribution(l2n, l2c_cleaned):
+    i2l = np.zeros(len(l2c_cleaned))
+    distribution = np.zeros(len(l2c_cleaned))
+
+    total_sentences = 0
+    for (l, _) in l2c_cleaned.items():
+        n = l2n[l]
+        total_sentences += n
+
+    for i, (l, _) in enumerate(l2c_cleaned.items()):
+        n = l2n[l]
+        distribution[i] = n / total_sentences
+        i2l[i] = l
+
+    return distribution, i2l
+
+
+def sample_lengths(distribution, i2l, batch_size):
+    sample = np.random.multinomial(1, distribution, size=batch_size)
+
+    sample_idxs = np.argmax(sample, axis=1) # Takes one-hots to integers
+
+    sample_lengths = i2l.take(sample_idxs)
+
+    return sample_lengths
 
 
