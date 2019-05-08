@@ -879,6 +879,33 @@ def sample_lengths(distribution=None, lengths_array=None, batch_size=None):
     return sample_lengths
 
 
+def build_buckets(data_sorted, l2t=None, granularity=0.1):
+    l2b = {}
+
+    for l, c in l2c.items():
+        tuples = []
+        idxs = list(range(c[0], c[1]))
+
+            tuples.append(i,j, l2t[i,j])
+        
+        #tuples_sorted = sorted(tuples, key=lambda t: t[2])
+        tuples_copy = copy.deepcopy(tuples)
+
+        buckets = []
+        for x in np.arange(0, 1, granularity):
+            tuples_copy = copy.deepcopy(tuples)
+            bucket = []
+            for t in tuples_copy:
+                if t[2] < (x + granularity) and t[2] > x:
+                    bucket.append(t)
+                tuples.pop(t)
+
+            if bucket != []: 
+                buckets.append(bucket)
+
+        l2b[l] = buckets
+
+
 def sample_buckets(sample_lengths=None, buckets=None):
     sample_buckets = []
     for l in sample_lengths:

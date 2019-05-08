@@ -103,10 +103,9 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                 for b in tqdm(range(n_train_batches), ascii=True, desc=f'Epoch {e} progress', ncols=80):
                     opt.zero_grad()
                     batch = next(loader_sdp_train)
-                    loss = forward_syntactic_original(parser, batch, args=args, data=data)
+                    loss = forward_syntactic_parsing(parser, batch, args=args, data=data)
                     loss.backward()
                     opt.step()
-                    #num_steps += 1
 
             elif args.train_mode > 0:
                 for m in range(n_megabatches):
@@ -129,26 +128,38 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                                 data=data)
 
                     for x in tqdm(range(len(idxs)), ascii=True, desc=f'Megabatch {m+1}/{n_megabatches} progress', ncols=80):
-                        if args.train_mode != 2:
+                        if args.train_mode == 1:
                             # Syntactic step
                             opt.zero_grad()
-
-                            s1_batch, s2_batch, scores_batch = next(loader_sdp_train)
-
+                            s1_batch, s2_batch, scores_batch = next(loader_sdp)
                             loss_syn = forward_syntactic_custom(parser,
-                                    s1=s1_batch, 
-                                    s2=s2_batch, 
-                                    scores=scores_batch, args=args, data=data)
-
-                            #train_loss += loss.item()
-                            #num_steps += 1
+                                    s1=s1_batch, s2=s2_batch, 
+                                    scores=scores_batch, 
+                                    args=args, data=data)
                             loss_syn.backward()
                             opt.step()
 
-                            if x % print_grad_every == 0:
-                                update = gradient_update(parser)
-                                log.info(update)
-                                exp_file.write(update)
+                        elif args.train_mode == 3:
+                            opt_zero_grad()
+                            batch = next(loader_sdp_train)
+                            loss = forward_syntactic_parsing(parser,
+                                    batch, args=args, data=data)
+                            loss.backward()
+                            opt.step()
+
+                            opt_zero_grad()
+                            s1_batch, s2_batch, scores_batch = next(loader_syn_rep)
+                            loss_syn = forward_syntactic_rep(parser,
+                                    s1=s1_batch, s2=s2_batch, 
+                                    scores=scores_batch, 
+                                    args=args, data=data)
+                            loss_syn.backward()
+                            opt.step()
+
+                        if x % print_grad_every == 0:
+                            update = gradient_update(parser)
+                            log.info(update)
+                            exp_file.write(update)
 
                         # Sentence similarity step
                         opt.zero_grad()
@@ -176,8 +187,6 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             Correlation: {:.4f}'''.format(-2, -2, correlation)
 
                     log.info(update)
-
-            #train_loss /= (num_steps if num_steps > 0 else -1) # Just dependency parsing loss
 
             update = f'''Update for epoch: {e+1}/{args.epochs}\n'''
             if args.train_mode != 2:
@@ -224,7 +233,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
         exp_file.close()
 
 
-def forward_syntactic_original(parser, batch, args=None, data=None):
+def forward_syntactic_parsing(parser, batch, args=None, data=None):
     device = data['device']
 
     parser.train()
@@ -250,7 +259,36 @@ def forward_syntactic_original(parser, batch, args=None, data=None):
     return loss
 
 
-def forward_syntactic_custom(parser, s1, s2, scores, args=None, data=None):
+def forward_syntactic_rep(parser, s1, s2, scores, args=None, data=None):
+    parser.train()
+
+    device = data['device']
+    w2i = data['vocabs']['x2i']['word'] 
+    i2w = data['vocabs']['i2x']['word']
+
+    s1_lens = s1['sent_lens'].to(device)
+    s2_lens = s2['sent_lens'].to(device)
+    
+    h_s1, _ = parser.BiLSTM(words_d_s1.to(device), s1['pos'].to(device), s1_lens)
+    h_s2, _ = parser.BiLSTM(words_d_s2.to(device), s2['pos'].to(device), s2_lens)
+    
+    h_s1_avg = utils.average_hiddens(h_s1, s1_lens)
+    h_s2_avg = utils.average_hiddens(h_s2, s2_lens)
+    loss_rep = loss_syn_rep(
+            h_s1_avg,
+            h_s2_avg,
+            scores.to(device), 
+            syn_size=args.syn_size,
+            h_size=args.h_size)
+    
+    loss = loss_rep
+
+    #loss *= args.lr_syn
+
+    return loss
+
+
+def forward_syntactic_both(parser, s1, s2, scores, args=None, data=None):
     device = data['device']
 
     parser.train()
