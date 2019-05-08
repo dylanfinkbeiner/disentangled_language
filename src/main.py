@@ -99,20 +99,20 @@ if __name__ == '__main__':
     #init_sdp = (not os.path.exists(vocabs_path)
     #        or not os.path.exists(data_ptb_path) 
     #        or not os.path.exists(data_brown_path) or args.init_sdp)
-    init_sdp = False
+    #init_sdp = False
     #init_ss = (not os.path.exists(data_ss_path) or args.initdata) and args.train_mode > 0
     #init_ss = False # NOTE must stay this way until we get CoreNLP working on pitts
     init_ss = args.init_ss
 
-    if init_sdp:
+    if args.init_sdp:
         log.info(f'Initializing syntactic dependency parsing data (including vocabs).')
         ptb_conllus = sorted(
                 [os.path.join(DEP_DIR, f) for f in os.listdir(DEP_DIR)])
         brown_conllus = [os.path.join(BROWN_DIR, f) for f in os.listdir(BROWN_DIR)]
 
-        data_ptb, x2i, i2x, word_counts = build_ptb_dataset(ptb_conllus)
+        data_ptb, x2i, i2x, word_counts = build_ptb_dataset(ptb_conllus, filter_sents=args.filter)
 
-        data_brown = build_sdp_dataset(brown_conllus, x2i=x2i)
+        data_brown = build_sdp_dataset(brown_conllus, x2i=x2i, filter_sents=args.filter)
 
         with open(vocabs_path, 'wb') as f:
             pickle.dump((x2i, i2x), f)
@@ -166,7 +166,12 @@ if __name__ == '__main__':
                 #if os.path.exists(train_path):
                 #    if input(f'Path to data for chunk {chunk} exists. Overwrite? [y/n] ').lower() != 'y': 
                 #        continue
-                train_ss = build_ss_dataset(raw_sent_pairs, gs='', x2i=x2i, filter_single=True)
+                train_ss = build_ss_dataset(
+                        raw_sent_pairs, 
+                        gs='', 
+                        x2i=x2i, 
+                        word_counts=word_counts,
+                        filter_sents=args.filter)
                 with open(train_path, 'wb') as pkl:
                     pickle.dump(train_ss, pkl)
     elif args.train_mode > 0:
@@ -198,7 +203,8 @@ if __name__ == '__main__':
                 raw_sent_pairs,
                 gs=os.path.join(STS_GS, '2017'),
                 x2i=x2i,
-                filter_single=False)
+                word_counts=word_counts,
+                filter_sents=args.filter)
             with open(dev_path, 'wb') as pkl:
                 pickle.dump(dev_ss, pkl)
     elif args.train_mode > 0:
@@ -225,7 +231,8 @@ if __name__ == '__main__':
                     raw_sent_pairs,
                     gs=os.path.join(STS_GS, year),
                     x2i=x2i,
-                    filter_single=False)
+                    word_counts=word_counts,
+                    filter_sents=args.filter)
                 with open(test_path, 'wb') as pkl:
                     pickle.dump(test_ss, pkl)
     elif args.evaluate_semantic:
@@ -247,9 +254,6 @@ if __name__ == '__main__':
             padding_idx = x2i['word'][PAD_TOKEN],
             unk_idx = x2i['word'][UNK_TOKEN],
             device=device)
-    print(parser.BiLSTM.init_we.device)
-    print(parser.BiLSTM.word_emb.weight.device)
-#    breakpoint()
 
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
 

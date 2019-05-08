@@ -79,12 +79,12 @@ def eval_sdp(args, parser, data, exp_path_base=None):
 
     for name, gold, sents_list in zip(names, golds, sents):
         dataset = data[name]
-        data_loader = data_utils.sdp_data_loader(dataset, batch_size=1, shuffle_idx=False)
+        data_loader = data_utils.sdp_data_loader_original(dataset, batch_size=1, shuffle_idx=False)
         predicted = os.path.join(DATA_DIR, name + '_predicted')
         with open(predicted, 'w') as f:
             parser.eval()
             with torch.no_grad():
-                for s in sents_list:
+                for s in tqdm(sents_list, ascii=True, desc=f'Writing predicted file for {name} dataset', ncols=80):
                     batch = next(data_loader)
                     sent_len = batch['sent_lens'].to(device)
 
@@ -119,6 +119,8 @@ def eval_sdp(args, parser, data, exp_path_base=None):
 
     exp_file.close()
 
+    print('Finished with syntactic evaluation!')
+
 
 def eval_sts(args, parser, data, exp_path_base=None):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -126,10 +128,6 @@ def eval_sts(args, parser, data, exp_path_base=None):
     exp_path = '_'.join([exp_path_base, 'semeval'])
 
     parser.eval()
-
-    word_emb_weights = parser.BiLSTM.word_emb.weight.data
-
-    #breakpoint()
 
     with open(exp_path, 'a') as exp_file:
         exp_file.write(f'Semantic evaluation for model : {args.model}\n\n')
@@ -193,7 +191,7 @@ def eval_sts(args, parser, data, exp_path_base=None):
                 print(info)
                 print(stats)
 
-    print('Finished!')
+    print('Finished with semantic evaluation!')
 
 
 def print_results(evaluation, name):

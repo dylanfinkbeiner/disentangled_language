@@ -21,7 +21,7 @@ CONLLU_MASK = [1, 4, 6, 7]  # [word, pos, head, rel]
 CORENLP_URL = 'http://localhost:9000'
 
 
-def build_ptb_dataset(conllu_files=[]):
+def build_ptb_dataset(conllu_files=[], filter_sents=False):
     '''
         inputs:
             conllu_files - a list of sorted strings, filenames of dependencies
@@ -50,9 +50,12 @@ def build_ptb_dataset(conllu_files=[]):
     dev_list = sents_list[22]
     test_list = sents_list[23]
 
-    train_list, word_counts = filter_and_count(train_list, filter_single=True)
-    dev_list, _ = filter_and_count(dev_list, filter_single=False)
-    test_list, _ = filter_and_count(test_list, filter_single=False)
+    word_counts = get_word_counts(train_list)
+
+    if filter_sents:
+        filter_sentences(train_list, word_counts=word_counts)
+        filter_sentences(dev_list)
+        filter_sentences(test_list)
 
     x2i, i2x = build_dicts(train_list)
 
@@ -67,7 +70,7 @@ def build_ptb_dataset(conllu_files=[]):
     return data, x2i, i2x, word_counts
 
 
-def build_sdp_dataset(conllu_files: list, x2i=None):
+def build_sdp_dataset(conllu_files: list, x2i=None, filter_sents=False):
     '''
         For building a dataset from conllu files in general, once the x2i dict
         has been constructed by build_ptb_dataset.
@@ -79,18 +82,21 @@ def build_sdp_dataset(conllu_files: list, x2i=None):
         data[name] = conllu_to_sents(f)
 
     for name, sents in data.items():
-        filtered, _ = filter_and_count([s[:, CONLLU_MASK] for s in sents], filter_single=False)
-        data[name] = numericalize_sdp(filtered, x2i)
+        sents_masked = [s[:, CONLLU_MASK] for s in sents]
+        if filter_sents:
+            filter_sentences(sents_masked)
+        data[name] = numericalize_sdp(sents_masked, x2i)
 
     return data
 
 
-def build_ss_dataset(raw_sent_pairs, gs='', x2i=None, filter_single=False):
-    flattened_raw = []
-    for s1, s2 in raw_sent_pairs:
-        flattened_raw.append(s1)
-        flattened_raw.append(s2)
-    word_counts = filter_and_count(flattened_raw, filter_single=filter_single)
+def build_ss_dataset(raw_sent_pairs, gs='', x2i=None, word_counts=None, filter_sents=False):
+    if filter_sents:
+        flattened_raw = []
+        for s1, s2 in raw_sent_pairs:
+            flattened_raw.append(s1)
+            flattened_raw.append(s2)
+        filter_sentences(flattened_raw)
 
     # Raw sent pairs got modified within filter and count
     numericalized_pairs = numericalize_ss(raw_sent_pairs, x2i)
@@ -330,7 +336,7 @@ def sdp_data_loader_original(data, batch_size=1, shuffle_idx=False, custom_task=
 
 
 def sdp_data_loader_custom(data, batch_size=1):
-    raise Exception
+    raise Exception #This code is a mess, it shouldn't be called right now
     idx = list(range(len(data)))
 
     #data_sorted = sorted(data, key = lambda s : s.shape[0])
@@ -403,9 +409,7 @@ def prepare_batch_sdp(batch):
             rel_targets -
     '''
     batch_size = len(batch)
-    #batch_sorted = sorted(batch, key = lambda s: s.shape[0], reverse=True)
     sent_lens = torch.LongTensor([s.shape[0] for s in batch]) # Keep in mind, these lengths include ROOT token in each sentence
-    #l_longest = sent_lens[0]
     l_longest = torch.max(sent_lens).item()
 
     words = torch.zeros((batch_size, l_longest)).long()
@@ -415,12 +419,14 @@ def prepare_batch_sdp(batch):
 
     for i, s in enumerate(batch):
         dt = np.dtype(int)
-        resized_np = np.zeros((l_longest, s.shape[1]), dtype=dt)
-        resized_np[:s.shape[0]] = s
-        words[i] = torch.LongTensor(resized_np[:,0])
-        pos[i] = torch.LongTensor(resized_np[:,1])
-        arc_targets[i] = torch.LongTensor(resized_np[:,2])
-        rel_targets[i] = torch.LongTensor(resized_np[:,3])
+        resized_input = np.zeros((l_longest, 2), dtype=dt)
+        resized_target = np.zeros((l_longest, 2), dtype=dt) - 1
+        resized_input[:s.shape[0]] = s[:,:2]
+        resized_target[:s.shape[0]] = s[:,2:]
+        words[i] = torch.LongTensor(resized_input[:,0])
+        pos[i] = torch.LongTensor(resized_input[:,1])
+        arc_targets[i] = torch.LongTensor(resized_target[:,0])
+        rel_targets[i] = torch.LongTensor(resized_target[:,1])
 
     return {'words': words, 
             'pos' : pos, 
@@ -577,7 +583,7 @@ def numericalize_sdp(sents_list, x2i):
     r2i = x2i['rel']
 
     sents_numericalized = []
-    for s in sents_list:
+    for s in tqdm(sents_list, ascii=True, desc=f'Numericalizing SDP data', ncols=80):
         new_shape = (s.shape[0] + 1, s.shape[1])
 
         new_s = np.zeros(new_shape, dtype=int) # Making room for ROOT_TOKEN
@@ -641,7 +647,7 @@ def numericalize_ss(sents_list, x2i):
     return sents_numericalized
 
 
-def megabatch_breakdown(megabatch, minibatch_size, parser, device):
+def megabatch_breakdown(megabatch, minibatch_size=None, parser=None, args=None, data=None):
     '''
         inputs:
             megabatch - an unprepared megabatch (M many batches) of sentences
@@ -652,6 +658,8 @@ def megabatch_breakdown(megabatch, minibatch_size, parser, device):
             mb_para2 - list of paraphrase instances
             mb_neg1 - list of neg sample instances
     '''
+    device = data['device']
+
     mb_para1 = []
     mb_para2 = []
     
@@ -659,8 +667,9 @@ def megabatch_breakdown(megabatch, minibatch_size, parser, device):
         mb_para1.append(para1) # Does this allocate new memory?
         mb_para2.append(para2)
 
-    scramble_words(mb_para1)
-    scramble_words(mb_para2)
+    if args.scramble > 0:
+        scramble_words(mb_para1, scramble_prob=args.scramble)
+        scramble_words(mb_para2, scramble_prob=args.scramble)
 
     minibatches_para1 = [mb_para1[i:i+minibatch_size] for i in range(0, len(mb_para1), minibatch_size)]
     minibatches_para2 = [mb_para2[i:i+minibatch_size] for i in range(0, len(mb_para2), minibatch_size)]
@@ -669,25 +678,25 @@ def megabatch_breakdown(megabatch, minibatch_size, parser, device):
         raise Exception
 
     mb_para1_reps = [] # (megabatch_size, )
-    mb_para2_reps = [] # (megabatch_size, )
+    mb_para2_reps = [] 
     for b1, b2 in zip(minibatches_para1, minibatches_para2):
         w1, p1, sl1 = prepare_batch_ss(b1)
-        w2, p2, sl2 = prepare_batch_ss(b2)
         sl1 = sl1.to(device)
-        sl2 = sl2.to(device)
         b1_reps, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1)
-        b2_reps, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2)
         b1_reps_avg = utils.average_hiddens(b1_reps, sl1)
-        b2_reps_avg = utils.average_hiddens(b2_reps, sl2)
         mb_para1_reps.append(b1_reps_avg)
-        mb_para2_reps.append(b2_reps_avg)
+        if args.two_negs:
+            w2, p2, sl2 = prepare_batch_ss(b2)
+            sl2 = sl2.to(device)
+            b2_reps, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2)
+            b2_reps_avg = utils.average_hiddens(b2_reps, sl2)
+            mb_para2_reps.append(b2_reps_avg)
 
     # Stack all reps into torch tensors
     mb_para1_reps = torch.cat(mb_para1_reps)
-    mb_para2_reps = torch.cat(mb_para2_reps)
+    mb_para2_reps = torch.cat(mb_para2_reps) if args.two_negs else None
 
     # Get negative samples with respect to mb_para1
-    #mb_neg1 = get_negative_samps(mb_para1, megabatch_of_reps)
     mb_neg1, mb_neg2 = get_negative_samps(megabatch, mb_para1_reps, mb_para2_reps)
 
     return mb_para1, mb_para2, mb_neg1, mb_neg2
@@ -703,51 +712,52 @@ def get_negative_samps(megabatch, mb_para1_reps, mb_para2_reps):
             neg_samps - a list matching length of input megabatch consisting
                         of sentences
     '''
-    negs = []
+
+    two_negs = mb_para2_reps is not None
 
     reps = []
     sents = []
-    #for para1, rep in zip(mb_para1, megabatch_of_reps): 
     for i, (para1, para2) in enumerate(megabatch):
-    #for i in range(len(megabatch)):
-        #(s1, _) = megabatch[i]
-        #reps.append(megabatch_of_reps[i].cpu().numpy())
         reps.append(mb_para1_reps[i].cpu().numpy())
-        reps.append(mb_para2_reps[i].cpu().numpy())
         sents.append(para1)
-        sents.append(para2)
+        if two_negs:
+            reps.append(mb_para2_reps[i].cpu().numpy())
+            sents.append(para2)
 
     dists = pdist(reps, 'cosine') # cosine distance, as (1 - normalized inner product)
     dists = squareform(dists) # Symmetric 2-D matrix of pairwise distances
 
     # Don't risk pairing a sentence with itself
-    i1 = np.arange(0, dists.shape[0], 2)
-    i2 = np.arange(1, dists.shape[0], 2)
-    if len(i1) != len(i2):
-        raise Exception
-    dists[i1, i2] = 3
-    dists[i2, i1] = 3
+    if two_negs:
+        i1 = np.arange(0, dists.shape[0], 2)
+        i2 = np.arange(1, dists.shape[0], 2)
+        if len(i1) != len(i2):
+            raise Exception
+        dists[i1, i2] = 3
+        dists[i2, i1] = 3
     np.fill_diagonal(dists, 3)
     
     # For each sentence, get index of sentence 'closest' to it
     neg_idxs = np.argmin(dists, axis=1)
 
     mb_neg1 = []
-    mb_neg2 = []
-    #for idx in neg_idxs:
+    mb_neg2 = [] if two_negs else None
     for idx in range(len(megabatch)):
-        #neg = sents[idx]
-        #negs.append(neg)
-        neg1 = sents[neg_idxs[2*idx]]
-        neg2 = sents[neg_idxs[(2*idx)+1]]
-        mb_neg1.append(neg1)
-        mb_neg2.append(neg2)
+        if two_negs:
+            neg1 = sents[neg_idxs[2*idx]]
+            neg2 = sents[neg_idxs[(2*idx)+1]]
+            mb_neg1.append(neg1)
+            mb_neg2.append(neg2)
+        else:
+            neg1 = sents[neg_idxs[idx]]
+            mb_neg1.append(neg1)
 
     return mb_neg1, mb_neg2
 
 
 # From https://github.com/EelcovdW/Biaffine-Parser/blob/master/data_utils.py
-def filter_and_count(sentences, filter_single=True):
+#def filter_sentences(sentences, word_counts=None, filter_single=True):
+def filter_sentences(sentences, word_counts=None):
     """
     Applies a series of filter to each word in each sentence. Filters
     are applied in this order:
@@ -762,9 +772,9 @@ def filter_and_count(sentences, filter_single=True):
         filter_single: boolean, if true replace words that occur once with UNK_TOKEN.
     Returns: List of sentences with words filtered.
     """
-    #filtered = []
-    word_counts = get_word_counts(sentences)
-    one_words = set([w for w, c in word_counts.items() if c == 1])
+    #word_counts = get_word_counts(sentences)
+    if word_counts is not None:
+        one_words = set([w for w, c in word_counts.items() if c == 1])
     for sentence in  tqdm(sentences, ascii=True, desc=f'Progress in filtering.', ncols=80):
         for unit in sentence:
             word = unit[0]
@@ -774,13 +784,8 @@ def filter_and_count(sentences, filter_single=True):
                 unit[0] = '<punct>'
             elif has_digits(word):
                 unit[0] = '<num>'
-            elif filter_single and word.lower() in one_words:
+            elif word_counts is not None and word.lower() in one_words:
                 unit[0] = UNK_TOKEN
-
-    #    filtered.append(sentence)
-
-    #return filtered, word_counts
-    return word_counts
 
 
 def get_word_counts(sentences):

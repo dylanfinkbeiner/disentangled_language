@@ -51,6 +51,7 @@ def get_args():
     parser.add_argument('--initsdp', action='store_true', dest='init_sdp', default=False)
     parser.add_argument('--initss', help='Initialize a part of the semantic similarity data.', dest='init_ss', nargs='*', type=str, default=[])
     parser.add_argument('--initmodel', action='store_true', dest='init_model', default=False)
+    parser.add_argument('--filter', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
 
     # Model hyperparameters
     parser.add_argument('-H', '--hsize', help='Size of LSTM hidden state.', dest='h_size', type=int, default=400)
@@ -68,6 +69,7 @@ def get_args():
     parser.add_argument('--margin', help='Margin in semantic similarity objective function.', dest='margin', type=float, default=0.4)
     parser.add_argument('--nchunks', help='Number of 100k-sentence-pair chunks of SS data from the filtered ParaNMT-50m dataset.', type=int, dest='n_chunks', default=1)
     parser.add_argument('--scramble', help='Probability with which a given paraphrase pair will get scrambled in semantic training.', dest='scramble', type=float, default=0.3)
+    parser.add_argument('--2negs', help='Shall we get a negative sample for both sentences in a paraphrase pair?', action='store_true', dest='two_negs', default=False)
 
 
     # Train mode

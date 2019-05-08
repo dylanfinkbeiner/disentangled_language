@@ -46,8 +46,8 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     exp_file = open(exp_path, 'a')
     exp_file.write(f'Training experiment for model : {args.model}')
 
-    description = input('Describe this experiment: ')
-    exp_file.write(f'\n\nExperiment description: {description} \n\n')
+    #description = input('Describe this experiment: ')
+    #exp_file.write(f'\n\nExperiment description: {description} \n\n')
 
     log.info(f'Training model \"{args.model}\" for {args.epochs} epochs in training mode {args.train_mode}.')
     log.info(f'Weights will be saved to {weights_path}.')
@@ -62,8 +62,10 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     #data_utils.sdp_corpus_stats(train_sdp, device=data['device'])
     #exit()
 
+    custom = args.train_mode > 0
+
     dev_sdp = data['data_ptb']['dev']
-    loader_sdp_train = sdp_data_loader_original(train_sdp, batch_size=args.batch_size, shuffle_idx=True, custom_task=True)
+    loader_sdp_train = sdp_data_loader_original(train_sdp, batch_size=args.batch_size, shuffle_idx=True, custom_task=custom)
     loader_sdp_dev = sdp_data_loader_original(dev_sdp, batch_size=100, shuffle_idx=False, custom_task=False)
     log.info(f'There are {len(train_sdp)} SDP training examples.')
     log.info(f'There are {len(dev_sdp)} SDP dev examples.')
@@ -79,8 +81,8 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     if args.train_mode > 0:
         n_megabatches = ceil(len(train_ss) / (args.M * args.batch_size))
 
-    #opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
     opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
+    #opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9], weight_decay=1e-3)
 
 
     exp_file.write('Training results:')
@@ -94,10 +96,8 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
         for e in range(args.epochs):
             log.info(f'Entering epoch {e+1}/{args.epochs}.')
 
-            #parser.train()
             train_loss = 0
             num_steps = 0
-            #if mode_description == 'normal syntactic parsing': 
             if args.train_mode == 0:
                 for b in tqdm(range(n_train_batches), ascii=True, desc=f'Epoch {e} progress', ncols=80):
                     opt.zero_grad()
@@ -120,17 +120,17 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                         idx += len(curr_idxs)
 
                     with torch.no_grad():
-                        mb_para1, mb_para2, mb_neg1, mb_neg2 = megabatch_breakdown(megabatch, args.batch_size, parser, data['device'])
+                        mb_para1, mb_para2, mb_neg1, mb_neg2 = megabatch_breakdown(
+                                megabatch, 
+                                minibatch_size=args.batch_size, 
+                                parser=parser,
+                                args=args,
+                                data=data)
 
                     for x in tqdm(range(len(idxs)), ascii=True, desc=f'Megabatch {m+1}/{n_megabatches} progress', ncols=80):
-                        #log.info(f'Epoch {e+1}/{args.epochs}, megabatch {m+1}/{n_megabatches}, batch {x+1}/{len(idxs)}')
-
                         if args.train_mode != 2:
                             # Syntactic step
                             opt.zero_grad()
-
-                            #sample = train_sdp[100:103]
-                            #decoded = decode_sdp_sents(sents=sample, i2x=data['vocabs']['i2x'])
 
                             s1_batch, s2_batch, scores_batch = next(loader_sdp_train)
 
@@ -155,7 +155,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                                 para1=[mb_para1[i] for i in idxs[x]],
                                 para2=[mb_para2[i] for i in idxs[x]],
                                 neg1=[mb_neg1[i] for i in idxs[x]],
-                                neg2=[mb_neg2[i] for i in idxs[x]],
+                                neg2=[mb_neg2[i] for i in idxs[x]] if mb_neg2 is not None else None,
                                 args=args,
                                 data=data)
                         #l2_we = 0.5 * args.lambda_w * (parser.BiLSTM.word_emb.weight - parser.BiLSTM.init_we).norm(2)
@@ -170,7 +170,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
 
                     update = f'''Update for megabatch: {m+1}\n'''
                     correlation = ss_dev_eval(parser, dev_ss, args=args, data=data)
-                    update += '''\nSemantic train loss: {:.4f}
+                    update += '''Semantic train loss: {:.4f}
                             Semantic dev loss: {:.4f}
                             Correlation: {:.4f}'''.format(-2, -2, correlation)
 
@@ -181,13 +181,15 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
             update = f'''Update for epoch: {e+1}/{args.epochs}\n'''
             if args.train_mode != 2:
                 UAS, LAS, dev_loss = sdp_dev_eval(parser, args=args, data=data, loader=loader_sdp_dev, n_dev_batches=n_dev_batches)
-                update += '''\nSyntactic train loss: {:.3f}
+                update += '''\n
+                        Syntactic train loss: {:.3f}
                         Syntactic dev loss: {:.3f}
-                        UAS: {:.3f}
-                        LAS: {:.3f}'''.format(train_loss, dev_loss, UAS * 100, LAS * 100)
+                        UAS * 100: {:.3f}
+                        LAS * 100: {:.3f}'''.format(train_loss, dev_loss, UAS * 100, LAS * 100)
             if args.train_mode > 0:
                 correlation = ss_dev_eval(parser, dev_ss, args=args, data=data)
-                update += '''\nSemantic train loss: {:.4f}
+                update += '''\n
+                        Semantic train loss: {:.4f}
                         Semantic dev loss: {:.4f}
                         Correlation: {:.4f}'''.format(-2, -2, correlation)
 
@@ -242,7 +244,7 @@ def forward_syntactic_original(parser, batch, args=None, data=None):
     loss_r = loss_rels(S_rel, rel_targets)
     loss = loss_h + loss_r
     
-    loss *= args.lr_syn
+    #loss *= args.lr_syn
 
     return loss
 
@@ -281,7 +283,8 @@ def forward_syntactic_custom(parser, s1, s2, scores, args=None, data=None):
             h_size=args.h_size)
     
     loss = loss_s1.to(device) + loss_s2.to(device) + loss_rep
-    loss *= args.lr_syn
+
+    #loss *= args.lr_syn
 
     return loss
 
@@ -290,9 +293,6 @@ def forward_semantic(parser, para1, para2, neg1, neg2=None, args=None, data=None
     device = data['device']
 
     parser.train()
-
-    #data_utils.scramble_words(para1, scramble_prob=args.scramble)
-    #data_utils.scramble_words(para2, scramble_prob=args.scramble)
 
     w1, p1, sl1 = prepare_batch_ss(para1)
     w2, p2, sl2 = prepare_batch_ss(para2)
@@ -355,6 +355,7 @@ def sdp_dev_eval(parser, args=None, data=None, loader=None, n_dev_batches=None):
     
             results = utils.attachment_scoring(
                     arc_preds=arc_preds.cpu(),
+                    #arc_preds=arc_preds,
                     rel_preds=rel_preds,
                     arc_targets=arc_targets,
                     rel_targets=rel_targets,
