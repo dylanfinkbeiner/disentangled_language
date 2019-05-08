@@ -52,6 +52,7 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     log.info(f'Training model \"{args.model}\" for {args.epochs} epochs in training mode {args.train_mode}.')
     log.info(f'Weights will be saved to {weights_path}.')
     log.info(f'Hidden size: {args.h_size}, Semantic: {args.h_size-args.syn_size}, Syntactic: {args.syn_size}')
+    log.info(f'Scrambling probability: {args.scramble}')
     sleep(5)
 
 

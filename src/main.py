@@ -37,7 +37,7 @@ MODEL_NAME = ''
 CONLLU_FILES = []
 #PARANMT_FILE = 'para_100k.txt'
 PARANMT_FILE = 'para-nmt-5m-processed.txt'
-CHUNKS_DIR = os.path.join(DATA_DIR, '5m')
+PARANMT_DIR = os.path.join(DATA_DIR, 'paranmt_5m')
 POS_ONLY = False
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
@@ -132,27 +132,28 @@ if __name__ == '__main__':
             with open(data_brown_path, 'rb') as f:
                 data_brown = pickle.load(f)
 
+
     data_ss = {}
     STS_INPUT = os.path.join(STS_DIR, 'input')
     STS_GS = os.path.join(STS_DIR, 'gs')
 
-    if not os.path.isdir(os.path.join(CHUNKS_DIR, 'pkl')):
-        os.mkdir(os.path.join(CHUNKS_DIR, 'pkl'))
-    if not os.path.isdir(os.path.join(CHUNKS_DIR, 'tagged')):
-        os.mkdir(os.path.join(CHUNKS_DIR, 'tagged'))
+    if not os.path.isdir(os.path.join(PARANMT_DIR, 'pkl')):
+        os.mkdir(os.path.join(PARANMT_DIR, 'pkl'))
+    if not os.path.isdir(os.path.join(PARANMT_DIR, 'tagged')):
+        os.mkdir(os.path.join(PARANMT_DIR, 'tagged'))
     if not os.path.isdir(os.path.join(STS_DIR, 'tagged')):
         os.mkdir(os.path.join(STS_DIR, 'tagged'))
 
     train_ss = {'sent_pairs': [], 'targets': []}
     if 'train' in init_ss:
         log.info(f'Initializing SS train data.')
-        txt_chunks = sorted(list(os.listdir(os.path.join(CHUNKS_DIR, 'txt'))))
+        txt_chunks = sorted(list(os.listdir(os.path.join(PARANMT_DIR, 'txt'))))
 
         for chunk in txt_chunks:
             print(f'Processing chunk {chunk}')
-            raw_sents_path = os.path.join(CHUNKS_DIR, 'tagged', f'{os.path.splitext(chunk)[0]}-tagged.pkl')
+            raw_sents_path = os.path.join(PARANMT_DIR, 'tagged', f'{os.path.splitext(chunk)[0]}-tagged.pkl')
             if POS_ONLY:
-                raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(CHUNKS_DIR, 'txt', chunk))
+                raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(PARANMT_DIR, 'txt', chunk))
     
                 with open(raw_sents_path, 'wb') as pkl:
                     pickle.dump(raw_sent_pairs, pkl)
@@ -160,7 +161,7 @@ if __name__ == '__main__':
                 with open(raw_sents_path, 'rb') as pkl:
                     raw_sent_pairs = pickle.load(pkl)
 
-                train_path = os.path.join(CHUNKS_DIR, 'pkl', f'{os.path.splitext(chunk)[0]}.pkl')
+                train_path = os.path.join(PARANMT_DIR, 'pkl', f'{os.path.splitext(chunk)[0]}.pkl')
                 #if os.path.exists(train_path):
                 #    if input(f'Path to data for chunk {chunk} exists. Overwrite? [y/n] ').lower() != 'y': 
                 #        continue
@@ -174,10 +175,10 @@ if __name__ == '__main__':
                     pickle.dump(train_ss, pkl)
     elif args.train_mode > 0:
         log.info(f'Loading pickled SS train data.')
-        chunks_pkl = sorted(list(os.listdir(os.path.join(CHUNKS_DIR, 'pkl'))))
+        chunks_pkl = sorted(list(os.listdir(os.path.join(PARANMT_DIR, 'pkl'))))
 
         for chunk_pkl in chunks_pkl[:args.n_chunks]:
-            train_path = os.path.join(CHUNKS_DIR, 'pkl', chunk_pkl)
+            train_path = os.path.join(PARANMT_DIR, 'pkl', chunk_pkl)
             with open(train_path, 'rb') as pkl:
                 curr = pickle.load(pkl)
                 train_ss['sent_pairs'].extend(curr['sent_pairs'])
