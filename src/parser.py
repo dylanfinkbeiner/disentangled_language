@@ -28,8 +28,8 @@ log.setLevel(logging.DEBUG)
 class BiLSTM(nn.Module):
     def __init__(
             self,
-            word_e_size=100,
-            pos_e_size=25,  # Original Dozat/Manning paper uses 100
+            word_e_size=300,
+            pos_e_size=1,  # Original Dozat/Manning paper uses 100
             word_vocab_size=None,
             pos_vocab_size=None,
             hidden_size=400,

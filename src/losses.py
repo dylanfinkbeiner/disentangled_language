@@ -30,6 +30,8 @@ def loss_sem_rep(h1, h2, hn1, hn2=None, margin=None, h_size=None, syn_size=None)
         BiLSTM hidden state is treated as a sentence embedding and the goal
         is to maximize cosine similarity of embeddings of paraphrases
         and minimize similarity of embeddings of "negative samples".
+
+        Last checked for correctness on May 9
     '''
 
     sem_h1 = torch.cat((h1[:,syn_size:h_size], h1[:,h_size+syn_size:]), dim=-1)

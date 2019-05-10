@@ -33,6 +33,7 @@ def attachment_scoring(
     '''
 
     device = arc_preds.device # Tensor chosen mostly arbitrarily
+    rel_preds = rel_preds.to(device)
     arc_targets = arc_targets.to(device)
     rel_targets = rel_targets.to(device)
     sent_lens = sent_lens.to(device)
@@ -124,15 +125,7 @@ def predict_sts_score(h1, h2, h_size=None, syn_size=None, conventional_range=Fal
     sem_h1 = torch.cat((h1[:,syn_size:h_size], h1[:,h_size+syn_size:]), dim=-1)
     sem_h2 = torch.cat((h2[:,syn_size:h_size], h2[:,h_size+syn_size:]), dim=-1)
 
-    # Code for solving SemEval mystery  
-    #sem_h1 = torch.randn(h1.shape)
-    #sem_h2 = torch.randn(h2.shape)
-
-    #breakpoint()
-
     sims = F.cosine_similarity(sem_h1, sem_h2, dim=-1).flatten()
-
-    #breakpoint()
 
     # Scale into 0-5 range, per SemEval STS task conventions (commented out since R invariant to linear transformations)
     if conventional_range:

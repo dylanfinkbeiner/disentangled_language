@@ -2,6 +2,8 @@ from math import ceil
 import logging
 import os
 import time
+import datetime
+import pytz
 from time import sleep
 from tqdm import tqdm
 
@@ -41,18 +43,21 @@ log.addHandler(stream_handler)
 #        }
 
 
-def train(args, parser, data, weights_path=None, exp_path_base=None):
-    exp_path = '_'.join([exp_path_base, str(args.train_mode)])
-    exp_file = open(exp_path, 'a')
-    exp_file.write(f'Training experiment for model : {args.model}')
-
-    #description = input('Describe this experiment: ')
-    #exp_file.write(f'\n\nExperiment description: {description} \n\n')
+def train(args, parser, data, weights_path=None, experiment=None):
+    # Append to existing training experiment file for given day
+    exp_file = open(experiment['path'], 'a')
+    d = experiment['date']
+    prelude = '\n' * 3 + f'New training experiment for model : {args.model}'
+    prelude += f'\nStarting date/time: {d:%m %d} at {d:%H:%M:%S}'
+    description = input('Describe this experiment: ')
+    prelude += f'\nExperiment description: {description}'
 
     log.info(f'Training model \"{args.model}\" for {args.epochs} epochs in training mode {args.train_mode}.')
     log.info(f'Weights will be saved to {weights_path}.')
     log.info(f'Hidden size: {args.h_size}, Semantic: {args.h_size-args.syn_size}, Syntactic: {args.syn_size}')
     log.info(f'Scrambling probability: {args.scramble}')
+
+    exp_file.write(prelude)
     sleep(5)
 
 
@@ -82,7 +87,8 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
     if args.train_mode > 0:
         n_megabatches = ceil(len(train_ss) / (args.M * args.batch_size))
 
-    opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
+    #opt = Adam(parser.parameters(), lr=1e-3, betas=[0.9, 0.9])
+    opt = Adam(parser.parameters(), lr=1e-3)
     #opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9], weight_decay=1e-3)
 
 
@@ -156,10 +162,10 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
                             loss_syn.backward()
                             opt.step()
 
-                        if x % print_grad_every == 0:
-                            update = gradient_update(parser)
-                            log.info(update)
-                            exp_file.write(update)
+                        #if x % print_grad_every == 0:
+                        #    update = gradient_update(parser)
+                        #    log.info(update)
+                        #    exp_file.write(update)
 
                         # Sentence similarity step
                         opt.zero_grad()
@@ -230,6 +236,9 @@ def train(args, parser, data, weights_path=None, exp_path_base=None):
         exp_file.write(f'\n\nExperiment halted by keyboard interrupt. Weights saved : {response.lower()}')
 
     finally:
+        d = datetime.datetime.utcnow()
+        d = d.astimezone(pytz.timezone("America/Los_Angeles"))
+        exp_file.write('\n' * 3 + f'Experiment ended at {d:%H:%M:%S}')
         exp_file.close()
 
 

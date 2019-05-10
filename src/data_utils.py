@@ -886,7 +886,7 @@ def build_buckets(data_sorted, l2t=None, granularity=0.1):
         tuples = []
         idxs = list(range(c[0], c[1]))
 
-            tuples.append(i,j, l2t[i,j])
+        tuples.append(i,j, l2t[i,j])
         
         #tuples_sorted = sorted(tuples, key=lambda t: t[2])
         tuples_copy = copy.deepcopy(tuples)
@@ -915,7 +915,7 @@ def sample_buckets(sample_lengths=None, buckets=None):
         for b in bucket:
             total_pairs += len(b)
 
-        sample = np.random.multinomial(1, [(b / total pairs) for b in bucket])
+        sample = np.random.multinomial(1, [(b / total_pairs) for b in bucket])
 
         sample_bucket = bucket[np.argmax(sample)]
         sample_buckets.append(sample_bucket)

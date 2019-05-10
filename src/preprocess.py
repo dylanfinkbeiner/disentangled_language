@@ -1,0 +1,184 @@
+import logging
+import os
+import pickle
+
+from argparse import ArgumentParser
+
+import data_utils
+
+LOG_DIR = '../log'
+DATA_DIR = '../data'
+
+#CORPORA_DIR = '/corpora'
+CORPORA_DIR = '/home/AD/dfinkbei/corpora'
+STS_DIR = f'{DATA_DIR}/sts'
+STS_INPUT = os.path.join(STS_DIR, 'input')
+STS_GS = os.path.join(STS_DIR, 'gs')
+DEP_DIR = f'{CORPORA_DIR}/wsj/dependencies'
+#BROWN_DIR = f'{CORPORA_DIR}/brown/dependencies'
+BROWN_DIR = '../data/brown'
+PARANMT_DIR = os.path.join(DATA_DIR, 'paranmt_5m')
+
+log = logging.getLogger(__name__)
+formatter = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
+log.setLevel(logging.DEBUG)
+
+file_handler = logging.FileHandler(os.path.join(LOG_DIR, 'preprocess.log'))
+file_handler.setFormatter(formatter)
+log.addHandler(file_handler)
+
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+log.addHandler(stream_handler)
+
+
+class DataPaths:
+    def __init__(self, filtered=None):
+        fs = 'filtered' if filtered else 'unfiltered' # Filtered status
+    
+        # Directories
+        sdp_data_dir = os.path.join(DATA_DIR, 'sdp_processed')
+        ss_data_dir = os.path.join(DATA_DIR, 'ss_processed')
+        if not os.path.isdir(sdp_data_dir):
+            os.mkdir(sdp_data_dir)
+        if not os.path.isdir(ss_data_dir):
+            os.mkdir(ss_data_dir)
+        if not os.path.isdir(os.path.join(PARANMT_DIR, 'pkl')):
+            os.mkdir(os.path.join(PARANMT_DIR, 'pkl'))
+        if not os.path.isdir(os.path.join(PARANMT_DIR, 'tagged')):
+            os.mkdir(os.path.join(PARANMT_DIR, 'tagged'))
+        if not os.path.isdir(os.path.join(STS_DIR, 'tagged')):
+            os.mkdir(os.path.join(STS_DIR, 'tagged'))
+    
+        self.vocabs = os.path.join(sdp_data_dir, f'vocabs_{fs}.pkl')
+        self.data_ptb = os.path.join(sdp_data_dir, f'data_ptb_{fs}.pkl')
+        self.data_brown = os.path.join(sdp_data_dir, f'data_brown_{fs}.pkl')
+            
+        self.ss_train_base = os.path.join(PARANMT_DIR, 'pkl', f'{fs}_')
+        self.ss_dev = os.path.join(ss_data_dir, f'ss_dev_{fs}.pkl')
+        self.ss_test = os.path.join(ss_data_dir, f'ss_test_{fs}.pkl')
+    
+
+def preprocess(args):
+    fs = 'filtered' if args.filter else 'unfiltered' # Filtered status
+
+    paths = DataPaths()
+
+    if args.sdp != []:
+        if 'ptb' in args.sdp:
+            log.info(f'Initializing Penn Treebank WSJ data (including vocabs).')
+            ptb_conllus = sorted(
+                    [os.path.join(DEP_DIR, f) for f in os.listdir(DEP_DIR)])
+            data_ptb, x2i, i2x, word_counts = data_utils.build_ptb_dataset(
+                    ptb_conllus, 
+                    filter_sents=args.filter)
+            with open(paths.vocabs, 'wb') as f:
+                pickle.dump((x2i, i2x), f)
+            with open(paths.data_ptb, 'wb') as f:
+                pickle.dump((data_ptb, word_counts), f)
+
+        if 'brown' in args.sdp:
+            log.info(f'Initializing Brown corpus data.')
+            brown_conllus = [os.path.join(BROWN_DIR, f) for f in os.listdir(BROWN_DIR)]
+            with open(paths.vocabs, 'rb') as f:
+                x2i, i2x = pickle.load(f)
+            data_brown = data_utils.build_sdp_dataset(
+                    brown_conllus, 
+                    x2i=x2i, 
+                    filter_sents=args.filter)
+            with open(paths.data_brown, 'wb') as f:
+                pickle.dump(data_brown, f)
+    else: # Must load dictionaries for initializing other datasets
+        with open(paths.vocabs, 'rb') as f:
+            x2i, i2x = pickle.load(f)
+
+
+    if 'train' in args.ss:
+        log.info(f'Initializing SS train data.')
+
+        chunks_txt = sorted(list(os.listdir(os.path.join(PARANMT_DIR, 'txt'))))
+        for chunk in chunks_txt:
+            print(f'Processing chunk {chunk}')
+            raw_sents_path = os.path.join(PARANMT_DIR, 'tagged', f'{os.path.splitext(chunk)[0]}-tagged.pkl')
+            if args.pos_only:
+                raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(PARANMT_DIR, 'txt', chunk))
+
+                with open(raw_sents_path, 'wb') as pkl:
+                    pickle.dump(raw_sent_pairs, pkl)
+            else:
+                with open(raw_sents_path, 'rb') as pkl:
+                    raw_sent_pairs = pickle.load(pkl)
+
+                #train_path = os.path.join(PARANMT_DIR, 'pkl', f'{os.path.splitext(chunk)[0]}_{fs}.pkl')
+                train_path_chunk = paths.ss_train_base + f'{os.path.splitext(chunk)[0]}.pkl'
+                train_ss_chunk = data_utils.build_ss_dataset(
+                        raw_sent_pairs, 
+                        gs='', 
+                        x2i=x2i, 
+                        word_counts=word_counts,
+                        filter_sents=args.filter)
+                with open(train_path_chunk, 'wb') as pkl:
+                    pickle.dump(train_ss_chunk, pkl)
+
+    if 'dev' in args.ss:
+        log.info(f'Initializing SS dev data.')
+        raw_sents_path = os.path.join(STS_DIR, 'tagged', '2017-tagged.pkl')
+
+        if args.pos_only:
+            raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(STS_INPUT, '2017'))
+
+            with open(raw_sents_path, 'wb') as pkl:
+                pickle.dump(raw_sent_pairs, pkl)
+        else:
+            with open(raw_sents_path, 'rb') as pkl:
+                raw_sent_pairs = pickle.load(pkl)
+            dev_ss = data_utils.build_ss_dataset(
+                    raw_sent_pairs,
+                    gs=os.path.join(STS_GS, '2017'),
+                    x2i=x2i,
+                    word_counts=word_counts,
+                    filter_sents=args.filter)
+            with open(paths.ss_dev, 'wb') as pkl:
+                pickle.dump(dev_ss, pkl)
+
+    if 'test' in args.ss:
+        log.info(f'Initializing SS test data.')
+
+        test_ss = {}
+        years = os.listdir(STS_INPUT)
+        for year in years:
+            raw_sents_path = os.path.join(STS_DIR, 'tagged', f'{year}-tagged.pkl')
+            if args.pos_only:
+                raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(STS_INPUT, year))
+                with open(raw_sents_path, 'wb') as pkl:
+                    pickle.dump(raw_sent_pairs, pkl)
+            else:
+                with open(raw_sents_path, 'rb') as pkl:
+                    raw_sent_pairs = pickle.load(pkl)
+                test_ss[year] = data_utils.build_ss_dataset(
+                        raw_sent_pairs,
+                        gs=os.path.join(STS_GS, year),
+                        x2i=x2i,
+                        word_counts=word_counts,
+                        filter_sents=args.filter)
+        with open(test_path, 'wb') as pkl:
+            pickle.dump(test_ss, pkl)
+
+
+if __name__ == '__main__':
+    parser = ArgumentParser()
+
+    # SS 
+    parser.add_argument('-ss', help='Initialize a part (or all) of the semantic similarity data.', dest='ss', nargs='*', type=str, default=[])
+    parser.add_argument('--pos', action='store_true', dest='pos_only', default=False)
+
+    # SDP
+    parser.add_argument('-sdp', help='Initialize a part (or all) of the syntactic parsing data.', dest='sdp', nargs='*', type=str, default=[])
+
+    # General
+    parser.add_argument('-f', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
+
+    args = parser.parse_args()
+
+    preprocess(args)
+

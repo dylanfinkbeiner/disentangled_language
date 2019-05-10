@@ -48,10 +48,10 @@ def get_args():
     parser.add_argument('-es', action='store_true', dest='evaluate_semantic', default=False)
 
     # Data initialization options
-    parser.add_argument('--initsdp', action='store_true', dest='init_sdp', default=False)
-    parser.add_argument('--initss', help='Initialize a part of the semantic similarity data.', dest='init_ss', nargs='*', type=str, default=[])
-    parser.add_argument('--initmodel', action='store_true', dest='init_model', default=False)
-    parser.add_argument('--filter', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
+    #parser.add_argument('--initsdp', action='store_true', dest='init_sdp', default=False)
+    #parser.add_argument('--initss', help='Initialize a part of the semantic similarity data.', dest='init_ss', nargs='*', type=str, default=[])
+    #parser.add_argument('--initmodel', action='store_true', dest='init_model', default=False)
+    #parser.add_argument('--filter', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
 
     # Model hyperparameters
     parser.add_argument('-H', '--hsize', help='Size of LSTM hidden state.', dest='h_size', type=int, default=400)

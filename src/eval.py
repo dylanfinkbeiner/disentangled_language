@@ -21,7 +21,7 @@ WSJ_DIR = os.path.join(CORPORA_DIR, 'wsj/dependencies')
 #BROWN_DIR = '/corpora/brown/dependencies'
 BROWN_DIR = '../data/brown'
 DATA_DIR = '../data/'
-PREDICTED_DIR = os.path.join(DATA_DIR, 'predicted_conllu')
+PREDICTED_DIR = os.path.join(DATA_DIR, 'predicted_conllus')
 
 PTB_DEV = os.path.join(WSJ_DIR, 'treebank.conllu22')
 PTB_TEST = os.path.join(WSJ_DIR, 'treebank.conllu23')
@@ -41,7 +41,7 @@ NAMES = {
 
 YEARS = ['2012', '2013', '2014', '2015', '2016', '2017']
 
-def eval_sdp(args, parser, data, exp_path_base=None):
+def eval_sdp(args, parser, data, experiment=None):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     vocabs = data['vocabs']
@@ -71,61 +71,62 @@ def eval_sdp(args, parser, data, exp_path_base=None):
         sents = [conllu_to_sents(path)]
         data[name] = data_utils.build_sdp_dataset([path], vocabs['x2i'])[name]
 
-    exp_path = '_'.join([exp_path_base] + names)
-    exp_file = open(exp_path, 'a')
-    exp_file.write(f'Syntactic evaluation for model : {args.model}')
 
-    print(f'Evaluating on datasets: {names}')
+    with open(experiment['path'], 'a') as exp_file:
+        d = experiment['date']
+        prelude = '\n' * 3 + f'New syntactic evaluation experiment for model : {args.model}'
+        prelude += f'\nStarting date/time: {d:%m %d} at {d:%H:%M:%S}'
+        print(f'Evaluating on datasets: {names}')
+        exp_file.write(prelude)
 
-    for name, gold, sents_list in zip(names, golds, sents):
-        dataset = data[name]
-        data_loader = data_utils.sdp_data_loader_original(dataset, batch_size=1, shuffle_idx=False)
-        predicted = os.path.join(PREDICTED_DIR, name + '_predicted.conllu')
-        with open(predicted, 'w') as f:
-            parser.eval()
-            with torch.no_grad():
-                for s in tqdm(sents_list, ascii=True, desc=f'Writing predicted conllu for {name} dataset', ncols=80):
-                    batch = next(data_loader)
-                    sent_len = batch['sent_lens'].to(device)
+        print(prelude)
+        for name, gold, sents_list in zip(names, golds, sents):
+            dataset = data[name]
+            data_loader = data_utils.sdp_data_loader_original(dataset, batch_size=1, shuffle_idx=False)
+            predicted = os.path.join(PREDICTED_DIR, name + '_predicted.conllu')
+            with open(predicted, 'w') as f:
+                parser.eval()
+                with torch.no_grad():
+                    for s in tqdm(sents_list, ascii=True, desc=f'Writing predicted conllu for {name} dataset', ncols=80):
+                        batch = next(data_loader)
+                        sent_len = batch['sent_lens'].to(device)
 
-                    _, S_rel, head_preds = parser(batch['words'].to(device), batch['pos'].to(device), sent_len)
-                    rel_preds = utils.predict_relations(S_rel)
-                    rel_preds = rel_preds.view(-1)
-                    rel_preds = [i2r[rel] for rel in rel_preds.numpy()]
+                        _, S_rel, head_preds = parser(batch['words'].to(device), batch['pos'].to(device), sent_len)
+                        rel_preds = utils.predict_relations(S_rel)
+                        rel_preds = rel_preds.view(-1)
+                        rel_preds = [i2r[rel] for rel in rel_preds.numpy()]
 
-                    s[:,6] = head_preds.view(-1)[1:].cpu().numpy()
-                    s[:,7] = rel_preds[1:]
+                        s[:,6] = head_preds.view(-1)[1:].cpu().numpy()
+                        s[:,7] = rel_preds[1:]
 
-                    for line in s:
-                        f.write('\t'.join(line))
+                        for line in s:
+                            f.write('\t'.join(line))
+                            f.write('\n')
+
                         f.write('\n')
 
-                    f.write('\n')
+            with open(gold, 'r') as f:
+                gold_ud = load_conllu(f)
+            with open(predicted, 'r') as f:
+                predicted_ud = load_conllu(f)
+            evaluation = evaluate(gold_ud, predicted_ud)
 
-        with open(gold, 'r') as f:
-            gold_ud = load_conllu(f)
-        with open(predicted, 'r') as f:
-            predicted_ud = load_conllu(f)
-        evaluation = evaluate(gold_ud, predicted_ud)
+            info = '\nResults for {}:\n LAS : {:10.2f} | UAS : {:10.2f} \n'.format(
+                name,
+                100 * evaluation['UAS'].aligned_accuracy,
+                100 * evaluation['LAS'].aligned_accuracy,
+            )
+            exp_file.write(info)
 
-        info = 'Results for {}:\n LAS : {:10.2f} | UAS : {:10.2f} \n'.format(
-            name,
-            100 * evaluation['UAS'].aligned_accuracy,
-            100 * evaluation['LAS'].aligned_accuracy,
-        )
-        exp_file.write(info)
-
-        print_results(evaluation, name)
-
-    exp_file.close()
+            print_results(evaluation, name)
 
     print('Finished with syntactic evaluation!')
 
 
-def eval_sts(args, parser, data, exp_path_base=None):
+def eval_sts(args, parser, data, experiment=None):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    exp_path = '_'.join([exp_path_base, 'semeval'])
+    exp_path = experiment['path']
 
     parser.eval()
 
