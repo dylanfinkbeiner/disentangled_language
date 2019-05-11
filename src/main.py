@@ -86,7 +86,7 @@ if __name__ == '__main__':
             data_brown = pickle.load(f)
 
     if args.sl999:
-        with open(paths.sl999_data) as pkl:
+        with open(paths.sl999_data, 'rb') as pkl:
             sl999_data = pickle.load(pkl)
         x2i['word'] = sl999_data['w2i']
         i2x['word'] = sl999_data['i2w']
@@ -125,7 +125,7 @@ if __name__ == '__main__':
     # Prepare parser
     parser = BiaffineParser(
             word_e_size = 300 if args.sl999 else args.we,
-            pos_e_size = args.pe
+            pos_e_size = args.pe,
             pretrained_e = sl999_data['word_e'] if args.sl999 else None,
             word_vocab_size = len(x2i['word']),
             pos_vocab_size = len(x2i['pos']),

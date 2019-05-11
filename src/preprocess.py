@@ -1,8 +1,10 @@
 import logging
 import os
 import pickle
+from tqdm import tqdm
 
 from argparse import ArgumentParser
+from collections import Counter
 
 import data_utils
 
@@ -55,7 +57,9 @@ class DataPaths:
         self.data_brown = os.path.join(sdp_data_dir, f'data_brown_{fs}.pkl')
             
         self.ss_train_base = os.path.join(PARANMT_DIR, 'pkl', f'{fs}_')
-        self.sl999_data = os.path.join(ss_data_dir, f'sl999_data')
+        self.paranmt_counts = os.path.join(ss_data_dir, f'paranmt_counts.pkl')
+        self.sl999_data = os.path.join(ss_data_dir, f'sl999_data.pkl')
+        self.sl999_w2v = os.path.join(ss_data_dir, f'sl999_w2v.pkl')
         self.ss_dev = os.path.join(ss_data_dir, f'ss_dev_{fs}.pkl')
         self.ss_test = os.path.join(ss_data_dir, f'ss_test_{fs}.pkl')
     
@@ -94,14 +98,52 @@ def preprocess(args):
             x2i, i2x = pickle.load(f)
 
 
-    if args.sl999:
-        sl999_data = data_utils.build_sl999_data()
+    if args.paranmt_counts:
+        word_counts = Counter()
+        chunks_txt = sorted(list(os.listdir(os.path.join(PARANMT_DIR, 'txt'))))
+        for chunk in tqdm(chunks_txt, ascii=True, desc=f'Getting word counts for ParaNMT corpus', ncols=80):
+            raw_sents_path = os.path.join(PARANMT_DIR, 'tagged', f'{os.path.splitext(chunk)[0]}-tagged.pkl')
+            with open(raw_sents_path, 'rb') as pkl:
+                raw_sent_pairs = pickle.load(pkl)
 
-        with open(paths.sl999_data) as pkl:
+            flattened_raw = []
+            for s1, s2 in raw_sent_pairs:
+                flattened_raw.append(s1)
+                flattened_raw.append(s2)
+            wc_chunk = data_utils.get_word_counts(flattened_raw)
+            word_counts.update(wc_chunk)
+
+        with open(paths.paranmt_counts, 'wb') as pkl:
+            pickle.dump(word_counts, pkl)
+
+
+    if args.sl999:
+        w2v = data_utils.build_sl999_w2v(word_v_file='../data/paranmt_5m/paragram_300_sl999_top100k.txt')
+        with open(paths.sl999_w2v, 'wb') as pkl:
+            pickle.dump(w2v, pkl)
+        with open(paths.paranmt_counts, 'rb') as pkl:
+            word_counts = pickle.load(pkl)
+
+        n_removed = 0
+        w2v_cleaned = {}
+        for w, v in w2v.items():
+            if word_counts[w] != 0:
+                w2v_cleaned[w] = v
+            else:
+                n_removed += 1
+        print(f'Removed {n_removed} words from w2v.') 
+        
+        sl999_data = data_utils.build_sl999_data(w2v_cleaned)
+        with open(paths.sl999_data, 'wb') as pkl:
             pickle.dump(sl999_data, pkl)
 
-        x2i['word'] = sl999_data['w2i']
-        i2x['word'] = sl999_data['i2w']
+
+    if args.use_paragram:
+        with open(paths.sl999_data, 'rb') as pkl:
+            sl999_data = pickle.load(pkl)
+
+            x2i['word'] = sl999_data['w2i']
+            i2x['word'] = sl999_data['i2w']
 
 
     if 'train' in args.ss:
@@ -120,16 +162,15 @@ def preprocess(args):
                 with open(raw_sents_path, 'rb') as pkl:
                     raw_sent_pairs = pickle.load(pkl)
 
-                #train_path = os.path.join(PARANMT_DIR, 'pkl', f'{os.path.splitext(chunk)[0]}_{fs}.pkl')
                 train_path_chunk = paths.ss_train_base + f'{os.path.splitext(chunk)[0]}.pkl'
                 train_ss_chunk = data_utils.build_ss_dataset(
                         raw_sent_pairs, 
                         gs='', 
-                        x2i=x2i, 
-                        #word_counts=word_counts,
+                        x2i=x2i,
                         filter_sents=args.filter)
                 with open(train_path_chunk, 'wb') as pkl:
                     pickle.dump(train_ss_chunk, pkl)
+
 
     if 'dev' in args.ss:
         log.info(f'Initializing semantic similarity dev data.')
@@ -147,7 +188,6 @@ def preprocess(args):
                     raw_sent_pairs,
                     gs=os.path.join(STS_GS, '2017'),
                     x2i=x2i,
-                    #word_counts=word_counts,
                     filter_sents=args.filter)
             with open(paths.ss_dev, 'wb') as pkl:
                 pickle.dump(dev_ss, pkl)
@@ -170,7 +210,6 @@ def preprocess(args):
                         raw_sent_pairs,
                         gs=os.path.join(STS_GS, year),
                         x2i=x2i,
-                        #word_counts=word_counts,
                         filter_sents=args.filter)
         with open(paths.ss_test, 'wb') as pkl:
             pickle.dump(test_ss, pkl)
@@ -185,6 +224,8 @@ if __name__ == '__main__':
     parser.add_argument('--pos', action='store_true', dest='pos_only', default=False)
     parser.add_argument('-sdp', help='Initialize a part (or all) of the syntactic parsing data.', dest='sdp', nargs='*', type=str, default=[])
     parser.add_argument('-sl999', action='store_true', help='Initialize data corresponding to sl999 word embeddings.', dest='sl999', default=False)
+    parser.add_argument('-counts', action='store_true', help='Get counts of word ocurrences in ParaNMT corpus.', dest='paranmt_counts', default=False)
+    parser.add_argument('--paragram', action='store_true', help='Shall we use the word vocabulary derived from the paragram word vectors?', dest='use_paragram', default=False)
 
     parser.add_argument('-f', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
 

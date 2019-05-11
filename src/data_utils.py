@@ -91,13 +91,15 @@ def build_sdp_dataset(conllu_files: list, x2i=None, filter_sents=False):
     return data
 
 
-def build_ss_dataset(raw_sent_pairs, gs='', x2i=None, word_counts=None, filter_sents=False):
+def build_ss_dataset(raw_sent_pairs, gs='', x2i=None, filter_sents=False):
+    word_counts = None
     if filter_sents:
         flattened_raw = []
         for s1, s2 in raw_sent_pairs:
             flattened_raw.append(s1)
             flattened_raw.append(s2)
         filter_sentences(flattened_raw)
+        word_counts = get_word_counts(flattened_raw)
 
     # Raw sent pairs got modified within filter and count
     numericalized_pairs = numericalize_ss(raw_sent_pairs, x2i)
@@ -117,7 +119,7 @@ def build_ss_dataset(raw_sent_pairs, gs='', x2i=None, word_counts=None, filter_s
     else:
         sent_pairs = numericalized_pairs
 
-    return {'sent_pairs': sent_pairs, 'targets': targets}
+    return {'sent_pairs': sent_pairs, 'targets': targets, 'word_counts': word_counts}
 
 
 def txt_to_sem_scores(txt: str) -> list:
@@ -517,11 +519,32 @@ def build_dicts(sents_list, is_sdp=True):
     return x2i, i2x
 
 
-def build_sl999_data(word_e_file='../data/paranmt_5m/paragram_300_sl999.txt'):
+def build_sl999_w2v(word_v_file=None):
+    w2v = {}
+
+    with open(word_v_file, 'r', errors='ignore') as f:
+        lines = f.readlines()
+
+        if len(lines[0].split()) == 2:
+            lines.pop(0)
+
+        for i, line in tqdm(enumerate(lines), ascii=True, desc=f'Building sl999 w2v dict', ncols=80):
+            line = line.split()
+            word = line[0].lower()
+            try:
+                word_vector = [float(value) for value in line[1:]]
+                w2v[word] = word_vector
+            except Exception:
+                print(f'Word is: {word}, line is {i}')
+
+    return w2v
+
+
+def build_sl999_data(w2e):
     w2i = defaultdict(lambda : len(w2i))
     i2w = {}
     word_e_list = []
-
+    
     i2w[w2i[PAD_TOKEN]] = PAD_TOKEN
     word_e_list.append([0] * 300)
     i2w[w2i[UNK_TOKEN]] = UNK_TOKEN
@@ -529,24 +552,15 @@ def build_sl999_data(word_e_file='../data/paranmt_5m/paragram_300_sl999.txt'):
     i2w[w2i[ROOT_TOKEN]] = ROOT_TOKEN # May or may not be important
     word_e_list.append([0] * 300)
 
-    with open(word_e_files, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-
-        if len(lines[0].split()) == 2:
-            lines.pop(0)
-
-        for i, line in enumerate(lines):
-            line = line.split()
-            word = line[0]
-            i2w[w2i[word]] = word.lower()
-            word_vector = [float(value) for value in line[1:]]
-            word_e_list.append(word_vector)
+    for word, embedding in tqdm(w2e.items(), ascii=True, desc=f'Building sl999 data', ncols=80):
+        i2w[w2i[word]] = word
+        word_e_list.append(embedding)
 
     word_e = np.array(word_e_list)
 
-    return {'w2i' = dict(w2i),
-            'i2w' = i2w,
-            'word_e' = word_e}
+    return {'w2i': dict(w2i),
+            'i2w': i2w,
+            'word_e': word_e}
 
 
 def numericalize_sdp(sents_list, x2i):
