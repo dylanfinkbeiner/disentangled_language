@@ -82,7 +82,7 @@ def attachment_scoring(
             'LAS_correct' : LAS_correct}
 
 
-def average_hiddens(hiddens, sent_lens=None):
+def average_hiddens(hiddens, sent_lens=None, sum_f_b=False):
     '''
         inputs:
             hiddens - tensor w/ shape (b, l, d)
@@ -98,6 +98,11 @@ def average_hiddens(hiddens, sent_lens=None):
     sent_lens = sent_lens.view(-1, 1).float() # (b, 1)
 
     averaged_hiddens /= sent_lens
+
+    if sum_f_b:
+        halfway = averaged_hiddens.shape[1] // 2
+        averaged_hiddens = averaged_hiddens[:,:halfway] + averaged_hiddens[:,halfway:]
+        averaged_hiddens /= 2
 
     return averaged_hiddens
 

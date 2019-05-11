@@ -28,8 +28,9 @@ log.setLevel(logging.DEBUG)
 class BiLSTM(nn.Module):
     def __init__(
             self,
-            word_e_size=300,
-            pos_e_size=1,  # Original Dozat/Manning paper uses 100
+            word_e_size=100,
+            pos_e_size=25,  # Original Dozat/Manning paper uses 100
+            pretrained_e=None,
             word_vocab_size=None,
             pos_vocab_size=None,
             hidden_size=400,
@@ -50,6 +51,10 @@ class BiLSTM(nn.Module):
                 padding_idx=padding_idx)
         #self.word_emb.weight.data.copy_(
         #        torch.zeros(word_vocab_size, word_e_size))
+        if pretrained_e is not None:
+            print('Using pretrained word embeddings!')
+            self.word_emb.weight.data.copy_(
+                    torch.Tensor(pretrained_e))
 
         self.init_we = self.word_emb.weight.clone().to(device)
 
@@ -208,15 +213,16 @@ class BiaffineParser(nn.Module):
             self,
             word_e_size=100,
             pos_e_size=25,  # Original Dozat/Manning paper uses 100
+            pretrained_e=None,
             word_vocab_size=None,
             pos_vocab_size=None,
             hidden_size=400,
             lstm_layers=3,
+            embedding_dropout=0.33,
+            lstm_dropout=0.33,
             d_arc=500,
             d_rel=100,
             num_relations=None,
-            embedding_dropout=0.33,
-            lstm_dropout=0.33,
             arc_dropout=0.33,
             rel_dropout=0.33,
             padding_idx=None,
@@ -231,6 +237,7 @@ class BiaffineParser(nn.Module):
                 pos_e_size=pos_e_size,
                 word_vocab_size=word_vocab_size,
                 pos_vocab_size=pos_vocab_size,
+                pretrained_e=pretrained_e,
                 hidden_size=hidden_size,
                 lstm_layers=lstm_layers,
                 embedding_dropout=embedding_dropout,

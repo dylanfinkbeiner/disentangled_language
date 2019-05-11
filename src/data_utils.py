@@ -517,6 +517,38 @@ def build_dicts(sents_list, is_sdp=True):
     return x2i, i2x
 
 
+def build_sl999_data(word_e_file='../data/paranmt_5m/paragram_300_sl999.txt'):
+    w2i = defaultdict(lambda : len(w2i))
+    i2w = {}
+    word_e_list = []
+
+    i2w[w2i[PAD_TOKEN]] = PAD_TOKEN
+    word_e_list.append([0] * 300)
+    i2w[w2i[UNK_TOKEN]] = UNK_TOKEN
+    word_e_list.append([0] * 300)
+    i2w[w2i[ROOT_TOKEN]] = ROOT_TOKEN # May or may not be important
+    word_e_list.append([0] * 300)
+
+    with open(word_e_files, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+
+        if len(lines[0].split()) == 2:
+            lines.pop(0)
+
+        for i, line in enumerate(lines):
+            line = line.split()
+            word = line[0]
+            i2w[w2i[word]] = word.lower()
+            word_vector = [float(value) for value in line[1:]]
+            word_e_list.append(word_vector)
+
+    word_e = np.array(word_e_list)
+
+    return {'w2i' = dict(w2i),
+            'i2w' = i2w,
+            'word_e' = word_e}
+
+
 def numericalize_sdp(sents_list, x2i):
     w2i = x2i['word']
     p2i = x2i['pos']
@@ -632,13 +664,13 @@ def megabatch_breakdown(megabatch, minibatch_size=None, parser=None, args=None, 
         w1, p1, sl1 = prepare_batch_ss(b1)
         sl1 = sl1.to(device)
         b1_reps, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1)
-        b1_reps_avg = utils.average_hiddens(b1_reps, sl1)
+        b1_reps_avg = utils.average_hiddens(b1_reps, sl1, sum_f_b=True)
         mb_para1_reps.append(b1_reps_avg)
         if args.two_negs:
             w2, p2, sl2 = prepare_batch_ss(b2)
             sl2 = sl2.to(device)
             b2_reps, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2)
-            b2_reps_avg = utils.average_hiddens(b2_reps, sl2)
+            b2_reps_avg = utils.average_hiddens(b2_reps, sl2, sum_f_b=True)
             mb_para2_reps.append(b2_reps_avg)
 
     # Stack all reps into torch tensors
@@ -708,7 +740,7 @@ def get_negative_samps(megabatch, mb_para1_reps, mb_para2_reps):
 def filter_sentences(sentences, word_counts=None):
     if word_counts is not None:
         one_words = set([w for w, c in word_counts.items() if c == 1])
-    for sentence in  tqdm(sentences, ascii=True, desc=f'Progress in filtering.', ncols=80):
+    for sentence in tqdm(sentences, ascii=True, desc=f'Progress in filtering.', ncols=80):
         for unit in sentence:
             word = unit[0]
             if is_url(word):
@@ -934,4 +966,3 @@ def sample_pairs(sample_buckets=None):
         sample_pairs.append(sample_pair)
 
     return sample_pairs
-

@@ -55,6 +55,7 @@ class DataPaths:
         self.data_brown = os.path.join(sdp_data_dir, f'data_brown_{fs}.pkl')
             
         self.ss_train_base = os.path.join(PARANMT_DIR, 'pkl', f'{fs}_')
+        self.sl999_data = os.path.join(ss_data_dir, f'sl999_data')
         self.ss_dev = os.path.join(ss_data_dir, f'ss_dev_{fs}.pkl')
         self.ss_test = os.path.join(ss_data_dir, f'ss_test_{fs}.pkl')
     
@@ -93,8 +94,18 @@ def preprocess(args):
             x2i, i2x = pickle.load(f)
 
 
+    if args.sl999:
+        sl999_data = data_utils.build_sl999_data()
+
+        with open(paths.sl999_data) as pkl:
+            pickle.dump(sl999_data, pkl)
+
+        x2i['word'] = sl999_data['w2i']
+        i2x['word'] = sl999_data['i2w']
+
+
     if 'train' in args.ss:
-        log.info(f'Initializing SS train data.')
+        log.info(f'Initializing semantic similarity train data.')
 
         chunks_txt = sorted(list(os.listdir(os.path.join(PARANMT_DIR, 'txt'))))
         for chunk in chunks_txt:
@@ -115,13 +126,13 @@ def preprocess(args):
                         raw_sent_pairs, 
                         gs='', 
                         x2i=x2i, 
-                        word_counts=word_counts,
+                        #word_counts=word_counts,
                         filter_sents=args.filter)
                 with open(train_path_chunk, 'wb') as pkl:
                     pickle.dump(train_ss_chunk, pkl)
 
     if 'dev' in args.ss:
-        log.info(f'Initializing SS dev data.')
+        log.info(f'Initializing semantic similarity dev data.')
         raw_sents_path = os.path.join(STS_DIR, 'tagged', '2017-tagged.pkl')
 
         if args.pos_only:
@@ -136,13 +147,13 @@ def preprocess(args):
                     raw_sent_pairs,
                     gs=os.path.join(STS_GS, '2017'),
                     x2i=x2i,
-                    word_counts=word_counts,
+                    #word_counts=word_counts,
                     filter_sents=args.filter)
             with open(paths.ss_dev, 'wb') as pkl:
                 pickle.dump(dev_ss, pkl)
 
     if 'test' in args.ss:
-        log.info(f'Initializing SS test data.')
+        log.info(f'Initializing semantic similarity test data.')
 
         test_ss = {}
         years = os.listdir(STS_INPUT)
@@ -159,23 +170,22 @@ def preprocess(args):
                         raw_sent_pairs,
                         gs=os.path.join(STS_GS, year),
                         x2i=x2i,
-                        word_counts=word_counts,
+                        #word_counts=word_counts,
                         filter_sents=args.filter)
-        with open(test_path, 'wb') as pkl:
+        with open(paths.ss_test, 'wb') as pkl:
             pickle.dump(test_ss, pkl)
+
+
 
 
 if __name__ == '__main__':
     parser = ArgumentParser()
 
-    # SS 
     parser.add_argument('-ss', help='Initialize a part (or all) of the semantic similarity data.', dest='ss', nargs='*', type=str, default=[])
     parser.add_argument('--pos', action='store_true', dest='pos_only', default=False)
-
-    # SDP
     parser.add_argument('-sdp', help='Initialize a part (or all) of the syntactic parsing data.', dest='sdp', nargs='*', type=str, default=[])
+    parser.add_argument('-sl999', action='store_true', help='Initialize data corresponding to sl999 word embeddings.', dest='sl999', default=False)
 
-    # General
     parser.add_argument('-f', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
 
     args = parser.parse_args()

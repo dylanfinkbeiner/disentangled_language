@@ -48,13 +48,14 @@ def get_args():
     parser.add_argument('-es', action='store_true', dest='evaluate_semantic', default=False)
 
     # Data initialization options
-    #parser.add_argument('--initsdp', action='store_true', dest='init_sdp', default=False)
-    #parser.add_argument('--initss', help='Initialize a part of the semantic similarity data.', dest='init_ss', nargs='*', type=str, default=[])
-    #parser.add_argument('--initmodel', action='store_true', dest='init_model', default=False)
-    #parser.add_argument('--filter', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
+    parser.add_argument('--filter', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
+    parser.add_argument('--sl999', action='store_true', help='Should we use sl999 data?', dest='sl999', default=False)
 
     # Model hyperparameters
     parser.add_argument('-H', '--hsize', help='Size of LSTM hidden state.', dest='h_size', type=int, default=400)
+    parser.add_argument('-we', help='Size of word embeddings.', dest='we', type=int, default=100)
+    parser.add_argument('-pe', help='Size of pos embeddings.', dest='pe', type=int, default=25)
+    parser.add_argument('--layers', help='Number of LSTM layers.', dest='lstm_layers', type=int, default=3)
     parser.add_argument('--synsize', help='Number of units of hidden state dedicated to syntactic content.', dest='syn_size', type=int, default=200)
     parser.add_argument('--lrsyn', help='Learning rate for optimization during syntactic task.', dest='lr_syn', type=float, default=2e-3)
     parser.add_argument('--lrsem', help='Learning rate for optimization during semantic task.', dest='lr_sem', type=float, default=2e-3)

@@ -350,14 +350,14 @@ def forward_semantic(parser, para1, para2, neg1, neg2=None, args=None, data=None
     h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2.to(device))
     hn1, _ = parser.BiLSTM(wn1.to(device), pn1.to(device), sln1.to(device))
 
-    h1_avg = utils.average_hiddens(h1, sl1.to(device))
-    h2_avg = utils.average_hiddens(h2, sl2.to(device))
-    hn1_avg = utils.average_hiddens(hn1, sln1.to(device))
+    h1_avg = utils.average_hiddens(h1, sl1.to(device), sum_f_b=True)
+    h2_avg = utils.average_hiddens(h2, sl2.to(device), sum_f_b=True)
+    hn1_avg = utils.average_hiddens(hn1, sln1.to(device), sum_f_b=True)
 
     if neg2 is not None:
         wn2, pn2, sln2 = prepare_batch_ss(neg2)
         hn2, _ = parser.BiLSTM(wn2.to(device), pn2.to(device), sln2.to(device))
-        hn2_avg = utils.average_hiddens(hn2, sln2.to(device))
+        hn2_avg = utils.average_hiddens(hn2, sln2.to(device), sum_f_b=True)
     else:
         hn2_avg = None
     
@@ -432,8 +432,8 @@ def ss_dev_eval(parser, dev_ss, args=None, data=None):
         h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2.to(device))
 
         predictions = utils.predict_sts_score(
-                utils.average_hiddens(h1, sl1.to(device)), 
-                utils.average_hiddens(h2, sl2.to(device)),
+                utils.average_hiddens(h1, sl1.to(device), sum_f_b=True), 
+                utils.average_hiddens(h2, sl2.to(device), sum_f_b=True),
                 h_size=args.h_size,
                 syn_size=args.syn_size)
         
