@@ -55,6 +55,7 @@ def get_args():
     parser.add_argument('-H', '--hsize', help='Size of LSTM hidden state.', dest='h_size', type=int, default=400)
     parser.add_argument('-we', help='Size of word embeddings.', dest='we', type=int, default=100)
     parser.add_argument('-pe', help='Size of pos embeddings.', dest='pe', type=int, default=25)
+    parser.add_argument('-sumfb', help='Should we sum the averaged forward and backward hiddens in average_hiddens()?', action='store_true', dest='sum_f_b', default=False)
     parser.add_argument('--layers', help='Number of LSTM layers.', dest='lstm_layers', type=int, default=3)
     parser.add_argument('--synsize', help='Number of units of hidden state dedicated to syntactic content.', dest='syn_size', type=int, default=200)
     parser.add_argument('--lrsyn', help='Learning rate for optimization during syntactic task.', dest='lr_syn', type=float, default=2e-3)

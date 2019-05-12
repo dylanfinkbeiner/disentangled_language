@@ -678,13 +678,13 @@ def megabatch_breakdown(megabatch, minibatch_size=None, parser=None, args=None, 
         w1, p1, sl1 = prepare_batch_ss(b1)
         sl1 = sl1.to(device)
         b1_reps, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1)
-        b1_reps_avg = utils.average_hiddens(b1_reps, sl1, sum_f_b=True)
+        b1_reps_avg = utils.average_hiddens(b1_reps, sl1, sum_f_b=args.sum_f_b)
         mb_para1_reps.append(b1_reps_avg)
         if args.two_negs:
             w2, p2, sl2 = prepare_batch_ss(b2)
             sl2 = sl2.to(device)
             b2_reps, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2)
-            b2_reps_avg = utils.average_hiddens(b2_reps, sl2, sum_f_b=True)
+            b2_reps_avg = utils.average_hiddens(b2_reps, sl2, sum_f_b=args.sum_f_b)
             mb_para2_reps.append(b2_reps_avg)
 
     # Stack all reps into torch tensors

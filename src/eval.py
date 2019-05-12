@@ -146,8 +146,8 @@ def eval_sts(args, parser, data, experiment=None):
 
                 #breakpoint()
 
-                h1_avg = utils.average_hiddens(h1, sl1.to(device)) 
-                h2_avg = utils.average_hiddens(h2, sl2.to(device)) 
+                h1_avg = utils.average_hiddens(h1, sl1.to(device), sum_f_b=args.sum_f_b) 
+                h2_avg = utils.average_hiddens(h2, sl2.to(device), sum_f_b=args.sum_f_b) 
 
                 predictions = utils.predict_sts_score(
                         h1_avg,

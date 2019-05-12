@@ -35,8 +35,9 @@ log.addHandler(stream_handler)
 
 
 class DataPaths:
-    def __init__(self, filtered=None):
+    def __init__(self, filtered=False, use_paragram=False):
         fs = 'filtered' if filtered else 'unfiltered' # Filtered status
+        par = 'paragramvocab' if use_paragram else 'ptbvocab' # Filtered status
     
         # Directories
         sdp_data_dir = os.path.join(DATA_DIR, 'sdp_processed')
@@ -56,18 +57,15 @@ class DataPaths:
         self.data_ptb = os.path.join(sdp_data_dir, f'data_ptb_{fs}.pkl')
         self.data_brown = os.path.join(sdp_data_dir, f'data_brown_{fs}.pkl')
             
-        self.ss_train_base = os.path.join(PARANMT_DIR, 'pkl', f'{fs}_')
+        self.ss_train_base = os.path.join(PARANMT_DIR, 'pkl', f'{fs}_{par}_')
         self.paranmt_counts = os.path.join(ss_data_dir, f'paranmt_counts.pkl')
         self.sl999_data = os.path.join(ss_data_dir, f'sl999_data.pkl')
         self.sl999_w2v = os.path.join(ss_data_dir, f'sl999_w2v.pkl')
-        self.ss_dev = os.path.join(ss_data_dir, f'ss_dev_{fs}.pkl')
-        self.ss_test = os.path.join(ss_data_dir, f'ss_test_{fs}.pkl')
+        self.ss_test = os.path.join(ss_data_dir, f'ss_test_{fs}_{par}.pkl')
     
 
 def preprocess(args):
-    fs = 'filtered' if args.filter else 'unfiltered' # Filtered status
-
-    paths = DataPaths()
+    paths = DataPaths(filtered=args.filter, use_paragram=args.use_paragram)
 
     if args.sdp != []:
         if 'ptb' in args.sdp:
@@ -171,26 +169,6 @@ def preprocess(args):
                 with open(train_path_chunk, 'wb') as pkl:
                     pickle.dump(train_ss_chunk, pkl)
 
-
-    if 'dev' in args.ss:
-        log.info(f'Initializing semantic similarity dev data.')
-        raw_sents_path = os.path.join(STS_DIR, 'tagged', '2017-tagged.pkl')
-
-        if args.pos_only:
-            raw_sent_pairs = data_utils.paraphrase_to_sents(os.path.join(STS_INPUT, '2017'))
-
-            with open(raw_sents_path, 'wb') as pkl:
-                pickle.dump(raw_sent_pairs, pkl)
-        else:
-            with open(raw_sents_path, 'rb') as pkl:
-                raw_sent_pairs = pickle.load(pkl)
-            dev_ss = data_utils.build_ss_dataset(
-                    raw_sent_pairs,
-                    gs=os.path.join(STS_GS, '2017'),
-                    x2i=x2i,
-                    filter_sents=args.filter)
-            with open(paths.ss_dev, 'wb') as pkl:
-                pickle.dump(dev_ss, pkl)
 
     if 'test' in args.ss:
         log.info(f'Initializing semantic similarity test data.')

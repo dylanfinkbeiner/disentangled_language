@@ -73,7 +73,7 @@ if __name__ == '__main__':
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     log.info(f'Using device: {device}')
 
-    paths = DataPaths(filtered=args.filter)
+    paths = DataPaths(filtered=args.filter, use_paragram=args.sl999)
 
     # Populate syntactic dependency parsing data
     log.info(f'Loading pickled syntactic dependency parsing data.')
@@ -99,27 +99,21 @@ if __name__ == '__main__':
         log.info(f'Loading pickled SS train data.')
 
         chunks_txt = sorted(list(os.listdir(os.path.join(PARANMT_DIR, 'txt'))))
-        for chunk in chunks_txt[3:args.n_chunks]:
+        for chunk in chunks_txt[0:args.n_chunks]:
             train_path_chunk = paths.ss_train_base + f'{os.path.splitext(chunk)[0]}.pkl'
             with open(train_path_chunk, 'rb') as pkl:
                 curr = pickle.load(pkl)
                 ss_train['sent_pairs'].extend(curr['sent_pairs'])
                 ss_train['targets'].extend(curr['targets'])
 
-    ss_dev = {}
-    if args.train_mode > 0:
-        log.info(f'Loading pickled SS dev data.')
-        with open(paths.ss_dev, 'rb') as pkl:
-            ss_dev = pickle.load(pkl)
-
     ss_test = {}
-    if args.evaluate_semantic:
+    if args.evaluate_semantic or args.train_mode > 0:
        log.info(f'Loading pickled SS test data.')
        with open(paths.ss_test, 'rb') as pkl:
            ss_test = pickle.load(pkl)
     
     data_ss['train'] = ss_train
-    data_ss['dev'] = ss_dev
+    data_ss['dev'] = ss_test['2017']
     data_ss['test'] = ss_test
 
     # Prepare parser
@@ -141,6 +135,7 @@ if __name__ == '__main__':
     if os.path.exists(weights_path):
         log.info(f'Loading state dict from: \"{weights_path}\"')
         parser.load_state_dict(torch.load(weights_path))
+        args.init_model = False
     else:
         log.info(f'Model will have randomly initialized parameters.')
         args.init_model = True
