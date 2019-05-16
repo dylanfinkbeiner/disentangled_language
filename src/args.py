@@ -49,7 +49,9 @@ def get_args():
 
     # Data initialization options
     parser.add_argument('--filter', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
-    parser.add_argument('--sl999', action='store_true', help='Should we use sl999 data?', dest='sl999', default=False)
+    pretrained_emb = parser.add_mutually_exclusive_group()
+    pretrained_emb.add_argument('--sl999', action='store_true', help='Should we use sl999 data?', dest='sl999', default=False)
+    pretrained_emb.add_argument('--gloved', help='Should we use glove data, and if so what size embeddings?', dest='glove_d', type=int, default=None)
 
     # Model hyperparameters
     parser.add_argument('-H', '--hsize', help='Size of LSTM hidden state.', dest='h_size', type=int, default=400)

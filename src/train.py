@@ -17,8 +17,8 @@ import torch.nn.functional as F
 from data_utils import sdp_data_loader_original, idx_loader, prepare_batch_ss, megabatch_breakdown, get_syntactic_scores
 from data_utils import prepare_batch_sdp, decode_sdp_sents
 import data_utils
-from losses import loss_arcs, loss_rels, loss_sem_rep, loss_syn_rep
 import utils 
+import losses 
 
 
 LOG_DIR = '../log'
@@ -87,15 +87,15 @@ def train(args, parser, data, weights_path=None, experiment=None):
     if args.train_mode > 0:
         n_megabatches = ceil(len(train_ss) / (args.M * args.batch_size))
 
-    #opt = Adam(parser.parameters(), lr=1e-3, betas=[0.9, 0.9])
-    opt = Adam(parser.parameters(), lr=1e-3)
+    opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9])
+    #opt = Adam(parser.parameters(), lr=1e-3)
     #opt = Adam(parser.parameters(), lr=2e-3, betas=[0.9, 0.9], weight_decay=1e-3)
 
 
     exp_file.write('Training results:')
     earlystop_counter = 0
     prev_best = 0
-    if not args.init_model and args.train_mode != -1:
+    if args.init_model and args.train_mode != -1:
         _, prev_best, _ = sdp_dev_eval(parser, args=args, data=data, loader=loader_sdp_dev, n_dev_batches=n_dev_batches)
 
     print_grad_every = 10
@@ -106,7 +106,7 @@ def train(args, parser, data, weights_path=None, experiment=None):
             train_loss = 0
             num_steps = 0
             if args.train_mode == 0:
-                for b in tqdm(range(n_train_batches), ascii=True, desc=f'Epoch {e} progress', ncols=80):
+                for b in tqdm(range(n_train_batches), ascii=True, desc=f'Epoch {e+1}/{args.epochs} progress', ncols=80):
                     opt.zero_grad()
                     batch = next(loader_sdp_train)
                     loss = forward_syntactic_parsing(parser, batch, args=args, data=data)
@@ -259,8 +259,8 @@ def forward_syntactic_parsing(parser, batch, args=None, data=None):
     
     S_arc, S_rel, _ = parser(words_d.to(device), batch['pos'].to(device), sent_lens)
     
-    loss_h = loss_arcs(S_arc, arc_targets)
-    loss_r = loss_rels(S_rel, rel_targets)
+    loss_h = losses.loss_arcs(S_arc, arc_targets)
+    loss_r = losses.loss_rels(S_rel, rel_targets)
     loss = loss_h + loss_r
     
     #loss *= args.lr_syn
@@ -283,7 +283,7 @@ def forward_syntactic_rep(parser, s1, s2, scores, args=None, data=None):
     
     h_s1_avg = utils.average_hiddens(h_s1, s1_lens, sum_f_b=args.sum_f_b)
     h_s2_avg = utils.average_hiddens(h_s2, s2_lens, sum_f_b=args.sum_f_b)
-    loss_rep = loss_syn_rep(
+    loss_rep = losses.loss_syn_rep(
             h_s1_avg,
             h_s2_avg,
             scores.to(device), 
@@ -316,14 +316,14 @@ def forward_syntactic_both(parser, s1, s2, scores, args=None, data=None):
     S_arc_s1, S_rel_s1, _ = parser.BiAffineAttention(h_s1.to(device), s1_lens)
     S_arc_s2, S_rel_s2, _ = parser.BiAffineAttention(h_s2.to(device), s2_lens)
     
-    loss_h_s1 = loss_arcs(S_arc_s1, s1['arc_targets'])
-    loss_r_s1 = loss_rels(S_rel_s1, s1['rel_targets'])
+    loss_h_s1 = losses.loss_arcs(S_arc_s1, s1['arc_targets'])
+    loss_r_s1 = losses.loss_rels(S_rel_s1, s1['rel_targets'])
     loss_s1 = loss_h_s1 + loss_r_s1
-    loss_h_s2 = loss_arcs(S_arc_s2, s2['arc_targets'])
-    loss_r_s2 = loss_rels(S_rel_s2, s2['rel_targets'])
+    loss_h_s2 = losses.loss_arcs(S_arc_s2, s2['arc_targets'])
+    loss_r_s2 = losses.loss_rels(S_rel_s2, s2['rel_targets'])
     loss_s2 = loss_h_s2 + loss_r_s2
     
-    loss_rep = loss_syn_rep(
+    loss_rep = losses.loss_syn_rep(
             utils.average_hiddens(h_s1, s1_lens, sum_f_b=args.sum_f_b),
             utils.average_hiddens(h_s2, s2_lens, sum_f_b=args.sum_f_b),
             scores.to(device), 
@@ -361,7 +361,7 @@ def forward_semantic(parser, para1, para2, neg1, neg2=None, args=None, data=None
     else:
         hn2_avg = None
     
-    loss = loss_sem_rep(
+    loss = losses.loss_sem_rep(
             h1_avg,
             h2_avg,
             hn1_avg,
@@ -397,8 +397,8 @@ def sdp_dev_eval(parser, args=None, data=None, loader=None, n_dev_batches=None):
                     sent_lens)
             rel_preds = utils.predict_relations(S_rel)
     
-            loss_h = loss_arcs(S_arc, arc_targets)
-            loss_r = loss_rels(S_rel, rel_targets)
+            loss_h = losses.loss_arcs(S_arc, arc_targets)
+            loss_r = losses.loss_rels(S_rel, rel_targets)
             dev_loss += loss_h.item() + loss_r.item()
     
             results = utils.attachment_scoring(

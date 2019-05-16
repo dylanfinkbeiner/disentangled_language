@@ -519,8 +519,10 @@ def build_dicts(sents_list, is_sdp=True):
     return x2i, i2x
 
 
-def build_sl999_w2v(word_v_file=None):
+def build_pretrained_w2v(word_v_file=None):
     w2v = {}
+
+    print(f'Building w2v from file: {word_v_file}')
 
     with open(word_v_file, 'r', errors='ignore') as f:
         lines = f.readlines()
@@ -528,7 +530,7 @@ def build_sl999_w2v(word_v_file=None):
         if len(lines[0].split()) == 2:
             lines.pop(0)
 
-        for i, line in tqdm(enumerate(lines), ascii=True, desc=f'Building sl999 w2v dict', ncols=80):
+        for i, line in tqdm(enumerate(lines), ascii=True, desc=f'w2v Progress', ncols=80):
             line = line.split()
             word = line[0].lower()
             try:
@@ -540,23 +542,25 @@ def build_sl999_w2v(word_v_file=None):
     return w2v
 
 
-def build_sl999_data(w2e):
+def build_embedding_data(w2v):
     w2i = defaultdict(lambda : len(w2i))
     i2w = {}
-    word_e_list = []
+    word_v_list = []
+
+    e_size = len(w2v['the'])
     
     i2w[w2i[PAD_TOKEN]] = PAD_TOKEN
-    word_e_list.append([0] * 300)
+    word_v_list.append([0] * e_size)
     i2w[w2i[UNK_TOKEN]] = UNK_TOKEN
-    word_e_list.append([0] * 300)
+    word_v_list.append([0] * e_size)
     i2w[w2i[ROOT_TOKEN]] = ROOT_TOKEN # May or may not be important
-    word_e_list.append([0] * 300)
+    word_v_list.append([0] * e_size)
 
-    for word, embedding in tqdm(w2e.items(), ascii=True, desc=f'Building sl999 data', ncols=80):
+    for word, embedding in tqdm(w2v.items(), ascii=True, desc=f'Building embedding data', ncols=80):
         i2w[w2i[word]] = word
-        word_e_list.append(embedding)
+        word_v_list.append(embedding)
 
-    word_e = np.array(word_e_list)
+    word_e = np.array(word_v_list)
 
     return {'w2i': dict(w2i),
             'i2w': i2w,

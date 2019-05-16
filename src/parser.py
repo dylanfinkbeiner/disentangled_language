@@ -28,15 +28,15 @@ log.setLevel(logging.DEBUG)
 class BiLSTM(nn.Module):
     def __init__(
             self,
-            word_e_size=100,
-            pos_e_size=25,  # Original Dozat/Manning paper uses 100
+            word_e_size=None,
+            pos_e_size=None,  # Original Dozat/Manning paper uses 100
             pretrained_e=None,
             word_vocab_size=None,
             pos_vocab_size=None,
-            hidden_size=400,
-            lstm_layers=3,
-            lstm_dropout=0.33,
-            embedding_dropout=0.33,
+            hidden_size=None,
+            lstm_layers=None,
+            lstm_dropout=None,
+            embedding_dropout=None,
             padding_idx=None,
             unk_idx=None,
             device=None):
@@ -127,12 +127,12 @@ class BiLSTM(nn.Module):
 class BiAffineAttention(nn.Module):
     def __init__(
             self,
-            hidden_size=400,
-            d_arc=500,
-            d_rel=100,
+            hidden_size=None,
+            d_arc=None,
+            d_rel=None,
             num_relations=None,
-            arc_dropout=0.33,
-            rel_dropout=0.33):
+            arc_dropout=None,
+            rel_dropout=None):
         super(BiAffineAttention, self).__init__()
 
         # Arc-scoring MLPs

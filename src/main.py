@@ -73,23 +73,30 @@ if __name__ == '__main__':
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     log.info(f'Using device: {device}')
 
-    paths = DataPaths(filtered=args.filter, use_paragram=args.sl999)
+    paths = DataPaths(filtered=args.filter,
+            use_paragram=args.sl999, 
+            glove_d=args.glove_d)
 
     # Populate syntactic dependency parsing data
     log.info(f'Loading pickled syntactic dependency parsing data.')
-    with open(paths.data_ptb, 'rb') as f:
-        data_ptb, word_counts = pickle.load(f)
-    with open(paths.vocabs, 'rb') as f:
-        x2i, i2x = pickle.load(f)
+    with open(paths.data_ptb, 'rb') as pkl:
+        data_ptb, word_counts = pickle.load(pkl)
+    with open(paths.vocabs, 'rb') as pkl:
+        x2i, i2x = pickle.load(pkl)
     if evaluating:
-        with open(paths.data_brown, 'rb') as f:
-            data_brown = pickle.load(f)
+        with open(paths.data_brown, 'rb') as pkl:
+            data_brown = pickle.load(pkl)
 
-    if args.sl999:
-        with open(paths.sl999_data, 'rb') as pkl:
-            sl999_data = pickle.load(pkl)
-        x2i['word'] = sl999_data['w2i']
-        i2x['word'] = sl999_data['i2w']
+    args.using_pretrained = False
+    if args.sl999 or args.glove_d:
+        args.using_pretrained = True
+        path = paths.sl999_data if args.sl999 else paths.glove_data
+        log.info(f'Loading pretrained embedding data from {path}')
+        with open(path, 'rb') as pkl:
+            embedding_data = pickle.load(pkl)
+        x2i['word'] = embedding_data['w2i']
+        i2x['word'] = embedding_data['i2w']
+        pretrained_e = embedding_data['word_e']
 
     # Populate semantic similarity data
     data_ss = {}
@@ -99,28 +106,27 @@ if __name__ == '__main__':
         log.info(f'Loading pickled SS train data.')
 
         chunks_txt = sorted(list(os.listdir(os.path.join(PARANMT_DIR, 'txt'))))
-        for chunk in chunks_txt[0:args.n_chunks]:
+        for chunk in chunks_txt[3:args.n_chunks]:
             train_path_chunk = paths.ss_train_base + f'{os.path.splitext(chunk)[0]}.pkl'
             with open(train_path_chunk, 'rb') as pkl:
                 curr = pickle.load(pkl)
                 ss_train['sent_pairs'].extend(curr['sent_pairs'])
                 ss_train['targets'].extend(curr['targets'])
+        data_ss['train'] = ss_train
 
     ss_test = {}
     if args.evaluate_semantic or args.train_mode > 0:
        log.info(f'Loading pickled SS test data.')
        with open(paths.ss_test, 'rb') as pkl:
            ss_test = pickle.load(pkl)
-    
-    data_ss['train'] = ss_train
-    data_ss['dev'] = ss_test['2017']
-    data_ss['test'] = ss_test
+       data_ss['dev'] = ss_test['2017']
+       data_ss['test'] = ss_test
 
     # Prepare parser
     parser = BiaffineParser(
-            word_e_size = 300 if args.sl999 else args.we,
+            word_e_size = pretrained_e.shape[-1] if args.using_pretrained else args.we,
             pos_e_size = args.pe,
-            pretrained_e = sl999_data['word_e'] if args.sl999 else None,
+            pretrained_e = pretrained_e if args.using_pretrained else None,
             word_vocab_size = len(x2i['word']),
             pos_vocab_size = len(x2i['pos']),
             num_relations = len(x2i['rel']),
@@ -128,7 +134,7 @@ if __name__ == '__main__':
             lstm_layers = args.lstm_layers,
             padding_idx = x2i['word'][PAD_TOKEN],
             unk_idx = x2i['word'][UNK_TOKEN],
-            device=device)
+            device = device)
 
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
 
