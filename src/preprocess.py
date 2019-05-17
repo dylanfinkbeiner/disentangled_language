@@ -35,14 +35,14 @@ log.addHandler(stream_handler)
 
 
 class DataPaths:
-    def __init__(self, filtered=False, use_paragram=False, glove_d=300):
+    def __init__(self, filtered=False, use_paragram=False, glove_d=None):
         fs = 'filtered' if filtered else 'unfiltered' # Filtered status
 
         voc = 'ptbvocab'
         if use_paragram:
             voc = 'paragramvocab'
         elif glove_d is not None:
-            voc = 'glovevocab'
+            voc = f'glove{glove_d}vocab'
     
         # Directories
         sdp_data_dir = os.path.join(DATA_DIR, 'sdp_processed')
@@ -58,51 +58,69 @@ class DataPaths:
         if not os.path.isdir(os.path.join(STS_DIR, 'tagged')):
             os.mkdir(os.path.join(STS_DIR, 'tagged'))
     
-        self.vocabs = os.path.join(sdp_data_dir, f'vocabs_{fs}.pkl')
-        self.data_ptb = os.path.join(sdp_data_dir, f'data_ptb_{fs}.pkl')
-        self.data_brown = os.path.join(sdp_data_dir, f'data_brown_{fs}.pkl')
+        self.ptb_vocabs = os.path.join(sdp_data_dir, f'vocabs_{fs}.pkl')
+        self.data_ptb = os.path.join(sdp_data_dir, f'data_ptb_{fs}_{voc}.pkl')
+        self.data_brown = os.path.join(sdp_data_dir, f'data_brown_{fs}_{voc}.pkl')
             
-        self.ss_train_base = os.path.join(PARANMT_DIR, 'pkl', f'{fs}_{voc}_')
         self.paranmt_counts = os.path.join(ss_data_dir, f'paranmt_counts.pkl')
         self.sl999_data = os.path.join(ss_data_dir, f'sl999_data.pkl')
         self.sl999_w2v = os.path.join(ss_data_dir, f'sl999_w2v.pkl')
         self.glove_data = os.path.join(DATA_DIR, 'glove', f'glove_{glove_d}_data.pkl')
         self.glove_w2v = os.path.join(DATA_DIR, 'glove', f'glove_{glove_d}_w2v.pkl')
+        self.ss_train_base = os.path.join(PARANMT_DIR, 'pkl', f'{fs}_{voc}_')
         self.ss_test = os.path.join(ss_data_dir, f'ss_test_{fs}_{voc}.pkl')
     
 
 def preprocess(args):
     paths = DataPaths(filtered=args.filter, 
-            use_paragram=args.use_paragram, 
+            use_paragram=(args.sl999 and args.pretrained_voc), 
             glove_d=args.glove_d)
+
+    x2i, i2x = {}, {}
+    if os.path.exists(paths.ptb_vocabs):
+        with open(paths.ptb_vocabs, 'rb') as f:
+            x2i, i2x = pickle.load(f)
+
+    if args.pretrained_voc:
+        path = paths.sl999_data if args.sl999 else paths.glove_data
+        with open(path, 'rb') as pkl:
+            embedding_data = pickle.load(pkl)
+
+        x2i['word'] = embedding_data['w2i']
+        i2x['word'] = embedding_data['i2w']
+
 
     if args.sdp != []:
         if 'ptb' in args.sdp:
             log.info(f'Initializing Penn Treebank WSJ data (including vocabs).')
             ptb_conllus = sorted(
                     [os.path.join(DEP_DIR, f) for f in os.listdir(DEP_DIR)])
-            data_ptb, x2i, i2x, word_counts = data_utils.build_ptb_dataset(
+            raw_data_ptb, x2i_ptb, i2x_ptb, word_counts = data_utils.build_ptb_dataset(
                     ptb_conllus, 
                     filter_sents=args.filter)
-            with open(paths.vocabs, 'wb') as f:
-                pickle.dump((x2i, i2x), f)
+            with open(paths.ptb_vocabs, 'wb') as f:
+                pickle.dump((x2i_ptb, i2x_ptb), f)
+            x2i.update(x2i_ptb)
+            i2x.update(i2x_ptb)
+            if args.pretrained_voc:
+                x2i['word'] = embedding_data['w2i']
+                i2x['word'] = embedding_data['i2w']
+
+            data_ptb = {}
+            for split, raw_data in raw_data_ptb.items():
+                data_ptb[split] = data_utils.numericalize_sdp(raw_data, x2i)
             with open(paths.data_ptb, 'wb') as f:
                 pickle.dump((data_ptb, word_counts), f)
 
         if 'brown' in args.sdp:
             log.info(f'Initializing Brown corpus data.')
             brown_conllus = [os.path.join(BROWN_DIR, f) for f in os.listdir(BROWN_DIR)]
-            with open(paths.vocabs, 'rb') as f:
-                x2i, i2x = pickle.load(f)
             data_brown = data_utils.build_sdp_dataset(
                     brown_conllus, 
                     x2i=x2i, 
                     filter_sents=args.filter)
             with open(paths.data_brown, 'wb') as f:
                 pickle.dump(data_brown, f)
-    else: # Must load dictionaries for initializing other datasets
-        with open(paths.vocabs, 'rb') as f:
-            x2i, i2x = pickle.load(f)
 
 
     if args.paranmt_counts:
@@ -124,7 +142,7 @@ def preprocess(args):
             pickle.dump(word_counts, pkl)
 
 
-    if args.sl999:
+    if args.sl999 and not args.pretrained_voc:
         w2v = data_utils.build_pretrained_w2v(word_v_file='../data/paranmt_5m/paragram_300_sl999_top100k.txt')
         with open(paths.sl999_w2v, 'wb') as pkl:
             pickle.dump(w2v, pkl)
@@ -145,7 +163,7 @@ def preprocess(args):
             pickle.dump(sl999_data, pkl)
 
 
-    if args.glove_d:
+    if args.glove_d and not args.pretrained_voc:
         w2v = data_utils.build_pretrained_w2v(word_v_file=f'../data/glove/glove.6B.{args.glove_d}d.top100k.txt')
         with open(paths.glove_w2v, 'wb') as pkl:
             pickle.dump(w2v, pkl)
@@ -164,15 +182,6 @@ def preprocess(args):
         glove_data = data_utils.build_embedding_data(w2v_cleaned)
         with open(paths.glove_data, 'wb') as pkl:
             pickle.dump(glove_data, pkl)
-
-
-    if args.use_paragram or args.use_glove:
-        path = paths.sl999_data if args.sl999 else paths.glove_data
-        with open(path, 'rb') as pkl:
-            embedding_data = pickle.load(pkl)
-
-        x2i['word'] = embedding_data['w2i']
-        i2x['word'] = embedding_data['i2w']
 
 
     if 'train' in args.ss:
@@ -224,20 +233,21 @@ def preprocess(args):
             pickle.dump(test_ss, pkl)
 
 
-
-
 if __name__ == '__main__':
     parser = ArgumentParser()
 
     parser.add_argument('-ss', help='Initialize a part (or all) of the semantic similarity data.', dest='ss', nargs='*', type=str, default=[])
     parser.add_argument('--pos', action='store_true', dest='pos_only', default=False)
     parser.add_argument('-sdp', help='Initialize a part (or all) of the syntactic parsing data.', dest='sdp', nargs='*', type=str, default=[])
-    parser.add_argument('-sl999', action='store_true', help='Initialize data corresponding to sl999 word embeddings.', dest='sl999', default=False)
+    pretrained_emb = parser.add_mutually_exclusive_group()
+    pretrained_emb.add_argument('-sl999', action='store_true', help='Initialize data corresponding to sl999 word embeddings.', dest='sl999', default=False)
+    pretrained_emb.add_argument('-g', help='Initialize data corresponding to glove word .', dest='glove_d', type=int, default=None)
+    parser.add_argument('--pevoc', action='store_true', help='Shall we use the word vocabulary derived from the chosen pretrained embeddings?', dest='pretrained_voc', default=False)
+
     #parser.add_argument('-g', action='store_true', help='Initialize data corresponding to glove word embeddings.', dest='glove', default=False)
-    parser.add_argument('-g', help='Initialize data corresponding to glove word embeddings.', dest='glove_d', type=int, default=None)
     parser.add_argument('-counts', action='store_true', help='Get counts of word ocurrences in ParaNMT corpus.', dest='paranmt_counts', default=False)
-    parser.add_argument('--paragram', action='store_true', help='Shall we use the word vocabulary derived from the paragram word vectors?', dest='use_paragram', default=False)
-    parser.add_argument('--glove', action='store_true', help='Shall we use the word vocabulary derived from the paragram word vectors?', dest='use_glove', default=False)
+    #parser.add_argument('--paragram', action='store_true', help='Shall we use the word vocabulary derived from the paragram word vectors?', dest='use_paragram', default=False)
+    #parser.add_argument('--gloved', help='Dimension of glove vectors being used, to tell us which vocab to use in numericalizing other data.', dest='glove_d', type=int, default=None)
 
     parser.add_argument('-f', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
 

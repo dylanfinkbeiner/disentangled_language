@@ -81,7 +81,7 @@ if __name__ == '__main__':
     log.info(f'Loading pickled syntactic dependency parsing data.')
     with open(paths.data_ptb, 'rb') as pkl:
         data_ptb, word_counts = pickle.load(pkl)
-    with open(paths.vocabs, 'rb') as pkl:
+    with open(paths.ptb_vocabs, 'rb') as pkl:
         x2i, i2x = pickle.load(pkl)
     if evaluating:
         with open(paths.data_brown, 'rb') as pkl:

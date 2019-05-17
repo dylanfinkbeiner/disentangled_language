@@ -58,17 +58,13 @@ def build_ptb_dataset(conllu_files=[], filter_sents=False):
         filter_sentences(dev_list)
         filter_sentences(test_list)
 
-    x2i, i2x = build_dicts(train_list)
+    x2i_ptb, i2x_ptb = build_dicts(train_list)
 
-    train_list = numericalize_sdp(train_list, x2i)
-    dev_list = numericalize_sdp(dev_list, x2i)
-    test_list = numericalize_sdp(test_list, x2i)
-
-    data = {'train': train_list,
+    raw_data = {'train': train_list,
             'dev': dev_list,
             'test': test_list}
 
-    return data, x2i, i2x, word_counts
+    return raw_data, x2i_ptb, i2x_ptb, word_counts
 
 
 def build_sdp_dataset(conllu_files: list, x2i=None, filter_sents=False):
@@ -547,7 +543,7 @@ def build_embedding_data(w2v):
     i2w = {}
     word_v_list = []
 
-    e_size = len(w2v['the'])
+    e_size = len(w2v['the']) # Should be the same length as any other word vector
     
     i2w[w2i[PAD_TOKEN]] = PAD_TOKEN
     word_v_list.append([0] * e_size)
