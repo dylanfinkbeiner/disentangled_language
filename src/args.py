@@ -47,22 +47,23 @@ def get_args():
     sdp_eval.add_argument('-ef', help='Evaluate, and provide filename to evaluate on.')
     parser.add_argument('-es', action='store_true', dest='evaluate_semantic', default=False)
 
-    # Data initialization options
+    # Data options
     parser.add_argument('--filter', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
     pretrained_emb = parser.add_mutually_exclusive_group()
     pretrained_emb.add_argument('--sl999', action='store_true', help='Should we use sl999 data?', dest='sl999', default=False)
     pretrained_emb.add_argument('--gloved', help='Should we use glove data, and if so what size embeddings?', dest='glove_d', type=int, default=None)
 
     # Model hyperparameters
-    parser.add_argument('-H', '--hsize', help='Size of LSTM hidden state.', dest='h_size', type=int, default=400)
     parser.add_argument('-we', help='Size of word embeddings.', dest='we', type=int, default=100)
     parser.add_argument('-pe', help='Size of pos embeddings.', dest='pe', type=int, default=25)
     parser.add_argument('-sumfb', help='Should we sum the averaged forward and backward hiddens in average_hiddens()?', action='store_true', dest='sum_f_b', default=False)
-    parser.add_argument('--layers', help='Number of LSTM layers.', dest='lstm_layers', type=int, default=3)
-    parser.add_argument('--synsize', help='Number of units of hidden state dedicated to syntactic content.', dest='syn_size', type=int, default=200)
-    parser.add_argument('--lrsyn', help='Learning rate for optimization during syntactic task.', dest='lr_syn', type=float, default=2e-3)
-    parser.add_argument('--lrsem', help='Learning rate for optimization during semantic task.', dest='lr_sem', type=float, default=2e-3)
-    parser.add_argument('-lw', help='Tuning parameter for word embedding L2 norm cost.', dest='lambda_w', type=float, default=1000)
+    parser.add_argument('-synh', help='Number of units of hidden state dedicated to syntactic content.', dest='syn_h', type=int, default=200)
+    parser.add_argument('-semh', help='Number of units of hidden state dedicated to semantic content.', dest='sem_h', type=int, default=200)
+    parser.add_argument('-synl', help='Number of syntactic LSTM layers.', dest='syn_nlayers', type=int, default=3)
+    parser.add_argument('-seml', help='Number of semantic LSTM layers.', dest='sem_nlayers', type=int, default=1)
+    parser.add_argument('-finl', help='Number of final LSTM layers.', dest='final_nlayers', type=int, default=1)
+    #parser.add_argument('--lrsyn', help='Learning rate for optimization during syntactic task.', dest='lr_syn', type=float, default=2e-3)
+    #parser.add_argument('--lrsem', help='Learning rate for optimization during semantic task.', dest='lr_sem', type=float, default=2e-3)
 
     # Training hyperparameters
     parser.add_argument('-b', '--batchsize', help='Size of batch', type=int, dest='batch_size', default=100)
@@ -74,7 +75,6 @@ def get_args():
     parser.add_argument('--nchunks', help='Number of 100k-sentence-pair chunks of SS data from the filtered ParaNMT-50m dataset.', type=int, dest='n_chunks', default=1)
     parser.add_argument('--scramble', help='Probability with which a given paraphrase pair will get scrambled in semantic training.', dest='scramble', type=float, default=0.3)
     parser.add_argument('--2negs', help='Shall we get a negative sample for both sentences in a paraphrase pair?', action='store_true', dest='two_negs', default=False)
-
 
     # Train mode
     parser.add_argument('-tm', help='Training mode setting.', dest='train_mode', type=int, default=-1)

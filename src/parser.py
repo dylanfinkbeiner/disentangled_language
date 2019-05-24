@@ -25,22 +25,20 @@ stream_handler.setFormatter(formatter)
 log.setLevel(logging.DEBUG)
 
 
-class BiLSTM(nn.Module):
+class Embeddings(nn.Module):
     def __init__(
             self,
             word_e_size=None,
-            pos_e_size=None,  # Original Dozat/Manning paper uses 100
+            pos_e_size=None,
             pretrained_e=None,
             word_vocab_size=None,
             pos_vocab_size=None,
             hidden_size=None,
-            lstm_layers=None,
-            lstm_dropout=None,
             embedding_dropout=None,
             padding_idx=None,
             unk_idx=None,
             device=None):
-        super(BiLSTM, self).__init__()
+        super(Embeddings, self).__init__()
 
         self.unk_idx = unk_idx
 
@@ -68,23 +66,7 @@ class BiLSTM(nn.Module):
         # Dropout
         self.embedding_dropout = nn.Dropout(p=embedding_dropout)
 
-        # LSTM
-        self.hidden_size = hidden_size
-        self.lstm = nn.LSTM(
-                input_size=(word_e_size + pos_e_size),
-                hidden_size=hidden_size,
-                num_layers=lstm_layers,
-                bidirectional=True,
-                batch_first=True,
-                dropout=lstm_dropout,
-                bias=True)
-
     def forward(self, words, pos, sent_lens):
-        '''
-            input will be words, pos, sent_lens (NOT IN ORDER)
-            except that words, pos will be tensors whose size depends on the
-            maximum length
-        '''
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
         h_size = self.hidden_size
@@ -97,6 +79,7 @@ class BiLSTM(nn.Module):
         lens_sorted = sent_lens
         words_sorted = words
         pos_sorted = pos
+        indices = None
         if(sent_lens.shape[0] > 1):
             lens_sorted, indices = torch.sort(lens_sorted, descending=True)
             indices = indices.to(device)
@@ -108,16 +91,43 @@ class BiLSTM(nn.Module):
         w_embs = self.word_emb(words_sorted) # (b, l, w_e)
         p_embs = self.pos_emb(pos_sorted) # (b, l, p_e)
 
-        lstm_input = self.embedding_dropout(torch.cat([w_embs, p_embs], -1))
+        lstm_input = self.embedding_dropout(torch.cat([w_embs, p_embs], -1)) # (b, l, w_e + p_e)
+        packed_lstm_input = pack_padded_sequence(
+                lstm_input, lens_sorted, batch_first=True)  
 
-        packed_input = pack_padded_sequence(
-                lstm_input, lens_sorted, batch_first=True)
+        return packed_lstm_input, indices, lens_sorted
 
-        outputs, (h_n, c_n) = self.lstm(packed_input)
-        outputs, _ = pad_packed_sequence(outputs, batch_first=True) # (b, l, 2*hidden_size)
+
+class BiLSTM(nn.Module):
+    def __init__(
+            self,
+            word_e_size=None,
+            pos_e_size=None,  # Original Dozat/Manning paper uses 100
+            hidden_size=None,
+            lstm_layers=None,
+            lstm_dropout=None,
+            device=None):
+        super(BiLSTM, self).__init__()
+
+        # LSTM
+        self.hidden_size = hidden_size
+        self.lstm = nn.LSTM(
+                input_size=(word_e_size + pos_e_size),
+                hidden_size=hidden_size,
+                num_layers=lstm_layers,
+                bidirectional=True,
+                batch_first=True,
+                dropout=lstm_dropout,
+                bias=True)
+
+    #def forward(self, words, pos, sent_lens):
+    def forward(self, packed_lstm_input, indices):
+        outputs, (h_n, c_n) = self.lstm(packed_lstm_input)
+
+        outputs, _ = pad_packed_sequence(outputs, batch_first=True) 
 
         # Un-sort
-        if(sent_lens.shape[0] > 1):
+        if(outputs.shape[0] > 1):
             indices_inverted = torch.argsort(indices)
             outputs = outputs.index_select(0, indices_inverted)
 
@@ -211,20 +221,20 @@ class BiAffineAttention(nn.Module):
 class BiaffineParser(nn.Module):
     def __init__(
             self,
-            word_e_size=100,
-            pos_e_size=25,  # Original Dozat/Manning paper uses 100
+            word_e_size=None,
+            pos_e_size=None,  # Original Dozat/Manning paper uses 100
             pretrained_e=None,
             word_vocab_size=None,
             pos_vocab_size=None,
-            hidden_size=400,
-            lstm_layers=3,
-            embedding_dropout=0.33,
-            lstm_dropout=0.33,
-            d_arc=500,
-            d_rel=100,
+            syn_h=None, sem_h=None,
+            syn_nlayers=None, sem_nlayers=None, final_nlayers=None,
+            embedding_dropout=None,
+            lstm_dropout=None,
+            d_arc=None,
+            d_rel=None,
             num_relations=None,
-            arc_dropout=0.33,
-            rel_dropout=0.33,
+            arc_dropout=None,
+            rel_dropout=None,
             padding_idx=None,
             unk_idx=None,
             device=None):
@@ -232,19 +242,44 @@ class BiaffineParser(nn.Module):
 
         self.h_size = hidden_size
 
-        self.BiLSTM = BiLSTM(
+        self.Embeddings = Embeddings(
                 word_e_size=word_e_size,
                 pos_e_size=pos_e_size,
                 word_vocab_size=word_vocab_size,
                 pos_vocab_size=pos_vocab_size,
                 pretrained_e=pretrained_e,
-                hidden_size=hidden_size,
-                lstm_layers=lstm_layers,
                 embedding_dropout=embedding_dropout,
-                lstm_dropout=lstm_dropout,
                 padding_idx=padding_idx,
                 unk_idx=unk_idx,
                 device=device).to(device)
+
+        self.SyntacticRNN = nn.LSTM(
+                input_size=(word_e_size + pos_e_size),
+                hidden_size=syntactic_h,
+                num_layers=syntactic_nlayers,
+                bidirectional=True,
+                batch_first=True,
+                dropout=lstm_dropout,
+                bias=True
+                ).to(device)
+
+        self.SemanticRNN = nn.LSTM(
+                input_size=(word_e_size + pos_e_size),
+                hidden_size=semantic_h,
+                num_layers=semantic_nlayers,
+                bidirectional=True,
+                batch_first=True,
+                dropout=lstm_dropout,
+                bias=True
+                ).to(device)
+
+        self.FinalRNN = BiLSTM(
+                input_size=(semantic_h + syntactic_h),
+                hidden_size=hidden_size
+                num_layers=final_nlayers,
+                bidirectional=True,
+                device=device
+                ).to(device)
 
         self.BiAffineAttention = BiAffineAttention(
             hidden_size=hidden_size,
@@ -267,8 +302,23 @@ class BiaffineParser(nn.Module):
             arc_preds - Tensor of predicted arcs
         '''
 
-        outputs, (h_n, c_n) = self.BiLSTM(words, pos, sent_lens)
-        return self.BiAffineAttention(outputs, sent_lens)
+        packed_lstm_input, indices, lens_sorted = self.Embeddings(words, pos, sent_lens)
+
+        #Packed outputs
+        syntactic_outputs, _ = self.SyntacticRNN(packed_lstm_input)
+        semantic_outputs, _ = self.SemanticRNN(packed_lstm_input)
+
+        #Unpack, concatenate, repack
+        syntactic_outputs = pad_packed_sequence(syntactic_outputs, batch_first=True) 
+        semantic_outputs = pad_packed_sequence(semantic_outputs, batch_first=True)
+        final_inputs = torch.cat([syntactic_outputs, semantic_outputs], dim=-1)
+        final_inputs = pack_padded_sequence(final_inputs, lens_sorted, batch_first=True)
+        
+        final_outputs, _ = self.FinalRNN(final_inputs, indices)
+
+        S_arc, S_rel, arc_preds = self.BiAffineAttention(final_outputs, sent_lens)
+
+        return S_arc, S_rel, arc_preds
 
 
 ## From https://github.com/chantera/biaffineparser/blob/master/pytorch_model.py#L86
