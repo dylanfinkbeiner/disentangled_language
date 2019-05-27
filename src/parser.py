@@ -347,7 +347,6 @@ class BiaffineParser(nn.Module):
         syntactic_outputs = self.SyntacticRNN(packed_lstm_input)
         semantic_outputs = self.SemanticRNN(packed_lstm_input)
 
-
         syn_h = syntactic_outputs.shape[-1] // 2
         sem_h = semantic_outputs.shape[-1] // 2
         forward = torch.cat([syntactic_outputs[:,:,:syn_h], semantic_outputs[:,:,:sem_h]], dim=-1)
@@ -371,6 +370,7 @@ def unsort(batch, indices):
     indices_inverted = torch.argsort(indices)
     batch = batch.index_select(0, indices_inverted)
     return batch
+
 
 ## From https://github.com/chantera/biaffineparser/blob/master/pytorch_model.py#L86
 def mst_preds(S_arc, sent_lens):

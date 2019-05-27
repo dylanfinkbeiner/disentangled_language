@@ -241,7 +241,7 @@ if __name__ == '__main__':
     parser.add_argument('-sdp', help='Initialize a part (or all) of the syntactic parsing data.', dest='sdp', nargs='*', type=str, default=[])
     pretrained_emb = parser.add_mutually_exclusive_group()
     pretrained_emb.add_argument('-sl999', action='store_true', help='Initialize data corresponding to sl999 word embeddings.', dest='sl999', default=False)
-    pretrained_emb.add_argument('-g', help='Initialize data corresponding to glove word .', dest='glove_d', type=int, default=None)
+    pretrained_emb.add_argument('-g', help='Initialize data corresponding to glove word embeddings.', dest='glove_d', type=int, default=None)
     parser.add_argument('--pevoc', action='store_true', help='Shall we use the word vocabulary derived from the chosen pretrained embeddings?', dest='pretrained_voc', default=False)
 
     #parser.add_argument('-g', action='store_true', help='Initialize data corresponding to glove word embeddings.', dest='glove', default=False)

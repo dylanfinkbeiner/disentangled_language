@@ -19,6 +19,7 @@ from data_utils import prepare_batch_sdp, decode_sdp_sents
 import data_utils
 import utils 
 import losses 
+from parser import unsort
 
 
 LOG_DIR = '../log'
@@ -361,9 +362,9 @@ def forward_semantic(parser, para1, para2, neg1, neg2=None, args=None, data=None
     packed_s2, idx_s2, _ = parser.Embeddings(w2.to(device), p2.to(device), sl2)
     packed_n1, idx_n1, _ = parser.Embeddings(wn1.to(device), pn1.to(device), sln1)
 
-    h1 = parser.unpack(parser.SemanticRNN(packed_s1), idx_s1)
-    h2 = parser.unpack(parser.SemanticRNN(packed_s2), idx_s2)
-    hn1 = parser.unpack(parser.SemanticRNN(packed_n1), idx_n1)
+    h1 = unsort(parser.SemanticRNN(packed_s1), idx_s1)
+    h2 = unsort(parser.SemanticRNN(packed_s2), idx_s2)
+    hn1 = unsort(parser.SemanticRNN(packed_n1), idx_n1)
 
     h1_avg = utils.average_hiddens(h1, sl1.to(device), sum_f_b=args.sum_f_b)
     h2_avg = utils.average_hiddens(h2, sl2.to(device), sum_f_b=args.sum_f_b)
@@ -372,7 +373,7 @@ def forward_semantic(parser, para1, para2, neg1, neg2=None, args=None, data=None
     if neg2 is not None:
         wn2, pn2, sln2 = prepare_batch_ss(neg2)
         packed_n2, idx_n2 = parser.Embeddings(wn2.to(device), pn2.to(device), sln2.to(device))
-        hn2 = parser.unpack(parser.SemanticRNN(packed_n2), idx_n2)
+        hn2 = unsort(parser.SemanticRNN(packed_n2), idx_n2)
         hn2_avg = utils.average_hiddens(hn2, sln2.to(device), sum_f_b=args.sum_f_b)
     else:
         hn2_avg = None
@@ -381,10 +382,8 @@ def forward_semantic(parser, para1, para2, neg1, neg2=None, args=None, data=None
             h1_avg,
             h2_avg,
             hn1_avg,
-            hn2=hn2_avg,
-            margin=args.margin,
-            syn_size=args.syn_size,
-            h_size=args.h_size)
+            sem_hn2=hn2_avg,
+            margin=args.margin)
 
     #loss *= args.lr_sem
 
@@ -444,14 +443,15 @@ def ss_dev_eval(parser, dev_ss, args=None, data=None):
     with torch.no_grad():
         w1, p1, sl1 = prepare_batch_ss([s1 for s1, _ in dev_ss['sent_pairs']])
         w2, p2, sl2 = prepare_batch_ss([s2 for _, s2 in dev_ss['sent_pairs']])
-        h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1.to(device))
-        h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2.to(device))
+
+        packed_s1, idx_s1, _ = parser.Embeddings(w1.to(device), p1.to(device), sl1)
+        packed_s2, idx_s2, _ = parser.Embeddings(w2.to(device), p2.to(device), sl2)
+        h1 = unsort(parser.SemanticRNN(packed_s1), idx_s1)
+        h2 = unsort(parser.SemanticRNN(packed_s2), idx_s2)
 
         predictions = utils.predict_sts_score(
                 utils.average_hiddens(h1, sl1.to(device), sum_f_b=args.sum_f_b), 
-                utils.average_hiddens(h2, sl2.to(device), sum_f_b=args.sum_f_b),
-                h_size=args.h_size,
-                syn_size=args.syn_size)
+                utils.average_hiddens(h2, sl2.to(device), sum_f_b=args.sum_f_b))
         
         correlation = utils.sts_scoring(predictions, dev_ss['targets'])
 
@@ -459,10 +459,13 @@ def ss_dev_eval(parser, dev_ss, args=None, data=None):
 
 
 def gradient_update(parser, verbose=True):
+    update = ''
     if verbose:
         #update = '\n'.join(['{:35} {:3.8f}'.format(n, p.grad.data.norm(2).item()) for n, p in list(parser.BiLSTM.named_parameters())])
-        update = '\n'.join(['{:35} {:3.8f}'.format(n, p.grad.data.norm(2).item()) for n, p in list(parser.named_parameters())])
+        #update = '\n'.join(['{:35} {:3.8f}'.format(n, p.grad.data.norm(2).item()) for n, p in list(parser.named_parameters())])
+        pass
     else: 
-        update = 'Norm of gradient: {:5.8f}'.format(torch.tensor([p.grad.data.norm(2) for n, p in list(parser.BiLSTM.named_parameters())]).norm(2))
+        pass
+        #update = 'Norm of gradient: {:5.8f}'.format(torch.tensor([p.grad.data.norm(2) for n, p in list(parser.BiLSTM.named_parameters())]).norm(2))
 
     return update
