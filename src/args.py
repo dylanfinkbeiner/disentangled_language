@@ -59,6 +59,7 @@ def get_args():
     parser.add_argument('-sumfb', help='Should we sum the averaged forward and backward hiddens in average_hiddens()?', action='store_true', dest='sum_f_b', default=False)
     parser.add_argument('-synh', help='Number of units of hidden state dedicated to syntactic content.', dest='syn_h', type=int, default=200)
     parser.add_argument('-semh', help='Number of units of hidden state dedicated to semantic content.', dest='sem_h', type=int, default=200)
+    parser.add_argument('-finh', help='Size of hidden state in final LSTM.', dest='final_h', type=int, default=400)
     parser.add_argument('-synl', help='Number of syntactic LSTM layers.', dest='syn_nlayers', type=int, default=3)
     parser.add_argument('-seml', help='Number of semantic LSTM layers.', dest='sem_nlayers', type=int, default=1)
     parser.add_argument('-finl', help='Number of final LSTM layers.', dest='final_nlayers', type=int, default=1)

@@ -51,9 +51,6 @@ if __name__ == '__main__':
     log.info(f'New session: {d}\n')
 
     args = get_args()
-    if args.syn_size > args.h_size:
-        print('Syn/hidden mismatch')
-        exit()
 
     syn_eval = args.e != None or args.ef != None
     evaluating = syn_eval or args.evaluate_semantic
@@ -131,6 +128,7 @@ if __name__ == '__main__':
             pos_vocab_size = len(x2i['pos']),
             syn_h = args.syn_h,
             sem_h = args.sem_h,
+            final_h = args.final_h,
             syn_nlayers = args.syn_nlayers,
             sem_nlayers = args.sem_nlayers,
             final_nlayers = args.final_nlayers,
