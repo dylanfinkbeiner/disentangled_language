@@ -14,6 +14,7 @@ from conll17_ud_eval import evaluate, load_conllu
 
 import data_utils
 import utils
+from parser import unsort
 
 #CORPORA_DIR = '/corpora'
 CORPORA_DIR = '/home/AD/dfinkbei/corpora'
@@ -140,11 +141,10 @@ def eval_sts(args, parser, data, experiment=None):
                 
                 w1, p1, sl1 = data_utils.prepare_batch_ss([s1 for s1, s2 in curr_data['sent_pairs']])
                 w2, p2, sl2 = data_utils.prepare_batch_ss([s2 for s1, s2 in curr_data['sent_pairs']])
-                #breakpoint()
-                h1, _ = parser.BiLSTM(w1.to(device), p1.to(device), sl1.to(device))
-                h2, _ = parser.BiLSTM(w2.to(device), p2.to(device), sl2.to(device))
-
-                #breakpoint()
+                packed_s1, idx_s1, _ = parser.Embeddings(w1.to(device), p1.to(device), sl1)
+                packed_s2, idx_s2, _ = parser.Embeddings(w2.to(device), p2.to(device), sl2)
+                h1 = unsort(parser.SemanticRNN(packed_s1), idx_s1)
+                h2 = unsort(parser.SemanticRNN(packed_s2), idx_s2)
 
                 h1_avg = utils.average_hiddens(h1, sl1.to(device), sum_f_b=args.sum_f_b) 
                 h2_avg = utils.average_hiddens(h2, sl2.to(device), sum_f_b=args.sum_f_b) 
@@ -152,13 +152,10 @@ def eval_sts(args, parser, data, experiment=None):
                 predictions = utils.predict_sts_score(
                         h1_avg,
                         h2_avg,
-                        h_size=args.h_size, 
-                        syn_size=args.syn_size,
                         conventional_range=False)
 
                 #predictions = np.random.randn(len(curr_data['targets']))
 
-                #breakpoint()
                 correlation = utils.sts_scoring(predictions, targets)
 
                 scores = [score for score in zip(predictions, targets)]

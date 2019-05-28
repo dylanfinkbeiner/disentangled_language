@@ -299,9 +299,8 @@ def sdp_data_loader_original(data, batch_size=1, shuffle_idx=False, custom_task=
                 yield prepare_batch_sdp(batch)
 
 
-def sdp_data_loader_custom(data, batch_size=1):
+def sdp_data_loader_custom(data, batch_size=None):
     raise Exception #This code is a mess, it shouldn't be called right now
-    idx = list(range(len(data)))
 
     #data_sorted = sorted(data, key = lambda s : s.shape[0])
     #cutoff_dicts = build_cutoff_dicts(data_sorted)
@@ -309,34 +308,27 @@ def sdp_data_loader_custom(data, batch_size=1):
     ##i2c = cutoff_dicts['i2c']
     #l2c = cutoff_dicts['l2c']
 
+    sents_sorted = data['sents_sorted']
+    cleaned_l2n = clean_l2n(l2n=data['l2n'])
+    len_dist, len_array = get_lengths_distribution(l2n=cleaned_l2n)
 
+    # NOTE Currently, we have no way of ensuring that every sentence is seen during training
     while True:
-        if shuffle_idx:
-            shuffle(idx) # In-place shuffle
+        batch_lengths = sample_lengths(distribution=len_dist, lengths_array=len_array, batch_size=batch_size)
+        batch_pairs = sample_pairs(sample_lengths=batch_lengths, l2b=data['l2b'])
 
-        #num_buckets = len(buckets)
+        s1 = []
+        s2 = []
+        for i, j, score in batch_pairs:
+            s1.append(sents_sorted[i])
+            s2.append(sents_sorted[j])
+            scores.append(score)
 
-        #for bucket in buckets:
-        #    pass
-            #from bucket rando-grab batch_size/num_buckets many indices
-            #idx.extend(batch)
+        prepared_s1 = prepare_batch_sdp(s1)
+        prepared_s2 = prepare_batch_sdp(s2)
+        scores = torch.Tensor(scores)
 
-        paired_idx = get_paired_idx(idx, cutoff_dicts['i2c'])
-
-        for chunk, chunk_p in zip(
-                idx_chunks(idx, batch_size),
-                idx_chunks(paired_idx, batch_size)):
-
-            #batch = [data_sorted[i] for i in chunk]
-            #paired = [data_sorted[i] for i in chunk_p]
-            batch = [data[i] for i in chunk]
-            paired = [data[i] for i in chunk_p]
-            prepared_batch = prepare_batch_sdp(batch)
-            prepared_paired = prepare_batch_sdp(paired)
-            #scores = None  #XXX (b, 1) tensor
-            results = get_syntactic_scores(prepared_batch, prepare_paired)  #XXX (b, 1) tensor
-            scores = results['LAS']
-            yield (prepared_batch, prepared_paired, scores)
+        yield (prepared_batch, prepared_paired, scores)
 
 
 def idx_loader(num_data=None, batch_size=None):
@@ -816,7 +808,7 @@ def sdp_corpus_stats(data, stats_dir=None, min_length=2, max_len=40, device=None
     print('l2c has {len(l2c)} many keys after removal of lengths with less than 2 entries.')
 
     if init_stats:
-        distribution, lengths_array = get_length_distribution(l2n, l2c_cleaned)
+        distribution, lengths_array = get_lengths_distribution(l2n, l2c_cleaned)
 
         l2r = length_to_results(data_sorted, l2c=l2c, device=device)
 
@@ -898,37 +890,7 @@ def l2t_to_l2avg(l2t):
     return l2avg, overall_avg
 
 
-def get_length_distribution(l2n, l2c_cleaned):
-    lengths_array = np.zeros(len(l2c_cleaned))
-    distribution = np.zeros(len(l2c_cleaned))
-
-    total_sentences = 0
-    for (l, _) in l2c_cleaned.items():
-        n = l2n[l]
-        total_sentences += n
-
-    for i, (l, _) in enumerate(l2c_cleaned.items()):
-        n = l2n[l]
-        distribution[i] = n / total_sentences
-        lengths_array[i] = l
-
-    return distribution, lengths_array
-
-
-def sample_lengths(distribution=None, lengths_array=None, batch_size=None):
-    sample = np.random.multinomial(1, distribution, size=batch_size)
-    #XXX we could possibly skip a step in terms of "collecting" duplicate sentence lengths this way?
-    #XXX then we could simply get s_i many samples for length i in the ensuing steps
-    #sample = np.random.multinomial(size=batch_size, distribution)
-
-    sample_idxs = np.argmax(sample, axis=1) # Takes one-hots to integers
-
-    sample_lengths = lengths_array.take(sample_idxs)
-
-    return sample_lengths
-
-
-def build_buckets(data_sorted, l2t=None, granularity=0.1):
+def build_l2b(sents_sorted, l2t=None, granularity=None):
     l2b = {}
 
     for l, c in l2c.items():
@@ -954,32 +916,50 @@ def build_buckets(data_sorted, l2t=None, granularity=0.1):
 
         l2b[l] = buckets
 
-
-def sample_buckets(sample_lengths=None, buckets=None):
-    sample_buckets = []
-    for l in sample_lengths:
-        #get "buckets" for length
-        bucket = buckets[l]
-        total_pairs = 0
-        for b in bucket:
-            total_pairs += len(b)
-
-        sample = np.random.multinomial(1, [(b / total_pairs) for b in bucket])
-
-        sample_bucket = bucket[np.argmax(sample)]
-        sample_buckets.append(sample_bucket)
-
-    return sample_bucket
+    return l2b
 
 
-def sample_pairs(sample_buckets=None):
+def get_lengths_distribution(l2n=None):
+    distribution = np.zeros(len(l2n))
+    lengths_array = np.zeros(len(l2n))
+
+    total_sentences = 0
+    for n in l2n.values():
+        total_sentences += n
+
+    for i, (l,n) in enumerate(l2n.items()):
+        distribution[i] = n / total_sentences
+        lengths_array[i] = l
+
+    idx = np.argsort(lengths_array)
+    lengths_array = lengths_array[idx]
+    distribution = distribution[idx]
+
+    return distribution, lengths_array
+
+
+def sample_lengths(distribution=None, lengths_array=None, batch_size=None):
+    sample = np.random.multinomial(1, distribution, size=batch_size)
+
+    sample_idxs = np.argmax(sample, axis=1) # Takes one-hots to integers
+
+    sample_lengths = lengths_array.take(sample_idxs)
+
+    return sample_lengths
+
+
+def sample_pairs(sample_lengths=None, l2b=None):
     sample_pairs = []
+    quartiles = [0.0, 0.25, 0.5, 0.75]
+    quart_samples = np.random.multinomial(1, 0.25*4, size=len(sample_lengths))
+    quart_samples = np.argmax(sample, axis=1) # Takes one-hots to integers
 
-    for b in sample_buckets:
+    for l, q in zip(sample_lengths, quart_samples):
+        bucket = l2b[l][q]
 
-        sample = np.random.multinomial(1, [1 / len(b)] * len(b))
+        sample = np.random.multinomial(1, [1/len(bucket)]*len(bucket))
+        sample_pair = bucket[np.argmax(sample)]
 
-        sample_pair = b[np.argmax(sample)]
         sample_pairs.append(sample_pair)
 
     return sample_pairs
