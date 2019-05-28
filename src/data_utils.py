@@ -127,7 +127,7 @@ def txt_to_sem_scores(txt: str) -> list:
     return sem_scores
 
 
-def build_cutoff_dicts(data_sorted: list) -> dict:
+def build_cutoff_dicts(sents_sorted: list) -> dict:
     '''
         inputs:
             data_sorted - list of np arrays (conllu-formatted sentences)
@@ -200,68 +200,90 @@ def get_syntactic_scores(s1_batch, s2_batch, device=None):
     return results
 
 
-def length_to_results(data_sorted, l2c=None, device=None, chunk_size=100) -> dict:
-    ''' 'results', here, refers to the output of my get_syntactic_scores function '''
+#def length_to_results(data_sorted, l2c=None, device=None, chunk_size=100) -> dict:
+#    ''' 'results', here, refers to the output of my get_syntactic_scores function '''
+#
+#    l2r = {}
+#
+#    for l, c in tqdm(l2c.items(), ascii=True, desc=f'Progress in building l2r', ncols=80):
+#        idxs = list(range(c[0], c[1]))
+#        n = len(idxs)
+#
+#        UAS_chunks = []
+#        LAS_chunks = []
+#        for i, idx_i in enumerate(idxs[:-2]):
+#            s1_batch = []
+#            s2_batch = []
+#            for idx_j in idxs[i+1:]:
+#                s1_batch.append(data_sorted[idx_i])
+#                s2_batch.append(data_sorted[idx_j])
+#        
+#            results = get_syntactic_scores(
+#                    prepare_batch_sdp(s1_batch),
+#                    prepare_batch_sdp(s2_batch),
+#                    device=device)
+#
+#            UAS_chunks.append(results['UAS'].flatten()) # (chunk_size) shaped tensor
+#            LAS_chunks.append(results['LAS'].flatten())
+#
+#        # Stack up results from batched attachment scoring
+#        UAS_l = torch.cat(UAS_chunks, dim=0)
+#        LAS_l = torch.cat(LAS_chunks, dim=0)
+#        expected_len = (n * (n-1)) / 2
+#        if UAS_l.shape[0] != expected_len:
+#            print(f'Expected len: {expected_len}, UAS_l len: {UAS_l.shape[0]}')
+#            raise Exception
+#        elif LAS_l.shape[0] != expected_len:
+#            print(f'Expected len: {expected_len}, LAS_l len: {LAS_l.shape[0]}')
+#            raise Exception
+#
+#        l2r[l] = {'UAS': UAS_l, 'LAS': LAS_l}
+#
+#    return l2r
 
-    l2r = {}
+
+def build_l2p(sents_sorted, l2c=None):
+    l2p = {}
 
     for l, c in tqdm(l2c.items(), ascii=True, desc=f'Progress in building l2r', ncols=80):
         idxs = list(range(c[0], c[1]))
-        n = len(idxs)
+        pairs = []
 
-        UAS_chunks = []
-        LAS_chunks = []
-        for i, idx_i in enumerate(idxs[:-2]):
-            s1_batch = []
-            s2_batch = []
-            for idx_j in idxs[i+1:]:
-                s1_batch.append(data_sorted[idx_i])
-                s2_batch.append(data_sorted[idx_j])
-        
-            results = get_syntactic_scores(
-                    prepare_batch_sdp(s1_batch),
-                    prepare_batch_sdp(s2_batch),
-                    device=device)
+        for i in idxs[:-2]:
+            for j in idxs[i+1:]:
+                hey
 
-            UAS_chunks.append(results['UAS'].flatten()) # (chunk_size) shaped tensor
-            LAS_chunks.append(results['LAS'].flatten())
+            s1 = 
+            s2 = 
 
-        # Stack up results from batched attachment scoring
-        UAS_l = torch.cat(UAS_chunks, dim=0)
-        LAS_l = torch.cat(LAS_chunks, dim=0)
-        expected_len = (n * (n-1)) / 2
-        if UAS_l.shape[0] != expected_len:
-            print(f'Expected len: {expected_len}, UAS_l len: {UAS_l.shape[0]}')
-            raise Exception
-        elif LAS_l.shape[0] != expected_len:
-            print(f'Expected len: {expected_len}, LAS_l len: {LAS_l.shape[0]}')
-            raise Exception
+            pairs.append( (i, j, results) )
 
-        l2r[l] = {'UAS': UAS_l, 'LAS': LAS_l}
+        l2p[l] = pairs
 
-    return l2r
+    return l2p
 
 
-def get_score_tensors(data_sorted, l2c=None, l2r=None, score_type=None, device=None) -> dict:
-    l2t = {}
-    num_duplicates = 0 # Of interest for corpus statistics
-
-    for l, c in tqdm(l2c.items(), ascii=True, desc=f'Progress in building {score_type} l2t', ncols=80):
-        idxs = list(range(c[0], c[1]))
-        n = len(idxs)
-        t = torch.zeros(n, n)
-        
-        scores = l2r[l][score_type]
-
-        for i, idx_i in enumerate(idxs):
-            for j, idx_j in enumerate(range(idx_i + 1, c[1])):
-                t[i,j] = scores[i+j]
-                if scores[i+j] == 1.0:
-                    num_duplicates += 1
-
-        l2t[l] = t
-
-    return l2t, num_duplicates
+#def build_l2t(sents_sorted, l2c=None, l2r=None, score_type=None, device=None) -> dict:
+#    l2t = {}
+#    num_duplicates = 0 # Of interest for corpus statistics
+#
+#    for l, c in tqdm(l2c.items(), ascii=True, desc=f'Progress in building {score_type} l2t', ncols=80):
+#        idxs = list(range(c[0], c[1]))
+#        n = len(idxs)
+#        t = torch.zeros(n, n)
+#        
+#        scores = l2r[l][score_type]
+#
+#        for i, idx_i in enumerate(idxs):
+#            for j, idx_j in enumerate(range(idx_i + 1, c[1])):
+#                t[i,j] = scores[i+j]
+#                if scores[i+j] == 1.0:
+#                    num_duplicates += 1
+#
+#        l2t[l] = t
+#
+#    #return l2t, num_duplicates
+#    return l2t
 
 
 def sdp_data_loader_original(data, batch_size=1, shuffle_idx=False, custom_task=False):
@@ -911,7 +933,7 @@ def build_l2b(sents_sorted, l2t=None, granularity=None):
                     bucket.append(t)
                 tuples.pop(t)
 
-            if bucket != []: 
+            if bucket != []:
                 buckets.append(bucket)
 
         l2b[l] = buckets
