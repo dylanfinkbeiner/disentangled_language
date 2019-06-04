@@ -130,36 +130,36 @@ def txt_to_sem_scores(txt: str) -> list:
 def build_cutoff_dicts(sents_sorted: list) -> dict:
     '''
         inputs:
-            data_sorted - list of np arrays (conllu-formatted sentences)
+            sents_sorted - list of np arrays (conllu-formatted sentences)
 
         returns:
             a dictionary i2c, keys are indices in sorted data, values are lists with 2 elements,
-            the first index in data_sorted of a sentence of that length and the 
+            the first index in sents_sorted of a sentence of that length and the 
             (non-inclusive) final index
     '''
     i2c = dict()
     l2c = defaultdict(list)
     l2n = defaultdict(int)
 
-    l_prev = data_sorted[0].shape[0]
-    l_max = data_sorted[-1].shape[0]
+    l_prev = sents_sorted[0].shape[0]
+    l_max = sents_sorted[-1].shape[0]
     l2c[l_prev].append(0)
     l2n[l_prev] += 1
-    for i, s in enumerate(data_sorted[1:], start=1):
+    for i, s in enumerate(sents_sorted[1:], start=1):
         l = s.shape[0]
         l2n[l] += 1
         if l > l_prev:
             l2c[l_prev].append(i)
             l2c[l].append(i)
         l_prev = l
-    l2c[l_max].append(len(data_sorted))
+    l2c[l_max].append(len(sents_sorted))
 
     for c in l2c.values():
         for i in range(c[0], c[1]):
             i2c[i] = c
 
-    if len(i2c) != len(data_sorted):
-        print(f'i2c {len(i2c)} != data_sorted {len(data_sorted)}')
+    if len(i2c) != len(sents_sorted):
+        print(f'i2c {len(i2c)} != sents_sorted {len(sents_sorted)}')
         raise Exception
 
 
@@ -245,20 +245,29 @@ def get_syntactic_scores(s1_batch, s2_batch, device=None):
 def build_l2p(sents_sorted, l2c=None):
     l2p = {}
 
-    for l, c in tqdm(l2c.items(), ascii=True, desc=f'Progress in building l2r', ncols=80):
+    for l, c in tqdm(l2c.items(), ascii=True, desc=f'Progress in building l2p', ncols=80):
         idxs = list(range(c[0], c[1]))
         pairs = []
 
-        for i in idxs[:-2]:
-            for j in idxs[i+1:]:
-                hey
+        for i, idx_i in enumerate(idxs[:-2]):
+            s1_batch = []
+            s2_batch = []
+            for idx_j in idxs[i+1:]:
+                s1_batch.append(sents_sorted[idx_i])
+                s2_batch.append(sents_sorted[idx_j])
 
-            s1 = 
-            s2 = 
+            results = get_syntactic_scores(
+                    prepare_batch_sdp(s1_batch),
+                    prepare_batch_sdp(s2_batch))
 
-            pairs.append( (i, j, results) )
+            uas_batch = results['UAS'].flatten().tolist() # (chunk_size) shaped tensor
+            las_batch = results['LAS'].flatten().tolist()
+
+            for idx_j, uas, las in zip(idxs[i+1:], uas_batch, las_batch):
+                pairs.append( (idx_i, idx_j, uas, las) )
 
         l2p[l] = pairs
+        print(f'Pairs size is {len(pairs)}')
 
     return l2p
 
@@ -286,71 +295,42 @@ def build_l2p(sents_sorted, l2c=None):
 #    return l2t
 
 
-def sdp_data_loader_original(data, batch_size=1, shuffle_idx=False, custom_task=False):
+def sdp_data_loader(data, batch_size=None, shuffle_idx=False):
     idx = list(range(len(data)))
-
-    if custom_task:
-        data_sorted = sorted(data, key = lambda s : s.shape[0])
-        cutoff_dicts = build_cutoff_dicts(data_sorted)
-        #l2n = cutoff_dicts['l2n']
-        #i2c = cutoff_dicts['i2c']
-        l2c = cutoff_dicts['l2c']
 
     while True:
         if shuffle_idx:
             shuffle(idx) # In-place shuffle
         
-        if custom_task:
-            paired_idx = get_paired_idx(idx, cutoff_dicts['i2c'])
-
-            for chunk, chunk_p in zip(
-                    idx_chunks(idx, batch_size),
-                    idx_chunks(paired_idx, batch_size)):
-
-                batch = [data_sorted[i] for i in chunk]
-                paired = [data_sorted[i] for i in chunk_p]
-                prepared_batch = prepare_batch_sdp(batch)
-                prepared_paired = prepare_batch_sdp(paired)
-                #scores = None  #XXX (b, 1) tensor
-                results = get_syntactic_scores(prepared_batch, prepared_paired)  #XXX (b, 1) tensor
-                scores = results['LAS']
-                yield (prepared_batch, prepared_paired, scores)
-        else:
-            for chunk in idx_chunks(idx, batch_size):
-                batch = [data[i] for i in chunk]
-                yield prepare_batch_sdp(batch)
+        for chunk in idx_chunks(idx, batch_size):
+            batch = [data[i] for i in chunk]
+            yield prepare_batch_sdp(batch)
 
 
-def sdp_data_loader_custom(data, batch_size=None):
-    raise Exception #This code is a mess, it shouldn't be called right now
-
-    #data_sorted = sorted(data, key = lambda s : s.shape[0])
-    #cutoff_dicts = build_cutoff_dicts(data_sorted)
-    ##l2n = cutoff_dicts['l2n']
-    ##i2c = cutoff_dicts['i2c']
-    #l2c = cutoff_dicts['l2c']
-
-    sents_sorted = data['sents_sorted']
-    cleaned_l2n = clean_l2n(l2n=data['l2n'])
-    len_dist, len_array = get_lengths_distribution(l2n=cleaned_l2n)
+def syn_task_loader(syn_data, batch_size=None):
+    sents_sorted = syn_data['sents_sorted']
+    l2n = syn_data['l2n']
+    l2b = syn_data['l2b']
 
     # NOTE Currently, we have no way of ensuring that every sentence is seen during training
+    len_dist, len_array = get_lengths_distribution(l2n=l2n)
     while True:
         batch_lengths = sample_lengths(distribution=len_dist, lengths_array=len_array, batch_size=batch_size)
-        batch_pairs = sample_pairs(sample_lengths=batch_lengths, l2b=data['l2b'])
+        batch_pairs = sample_pairs(sample_lengths=batch_lengths, l2b=l2b, granularity=syn_data['granularity'])
 
         s1 = []
         s2 = []
+        target_scores = []
         for i, j, score in batch_pairs:
             s1.append(sents_sorted[i])
             s2.append(sents_sorted[j])
-            scores.append(score)
+            target_scores.append(score)
 
         prepared_s1 = prepare_batch_sdp(s1)
         prepared_s2 = prepare_batch_sdp(s2)
-        scores = torch.Tensor(scores)
+        target_scores = torch.Tensor(target_scores)
 
-        yield (prepared_batch, prepared_paired, scores)
+        yield (prepared_s1, prepared_s2, target_scores)
 
 
 def idx_loader(num_data=None, batch_size=None):
@@ -690,16 +670,17 @@ def megabatch_breakdown(megabatch, minibatch_size=None, parser=None, args=None, 
     mb_para1_reps = [] # (megabatch_size, )
     mb_para2_reps = [] 
     for b1, b2 in zip(minibatches_para1, minibatches_para2):
-        w1, p1, sl1 = prepare_batch_ss(b1)
+        w1, _, sl1 = prepare_batch_ss(b1)
         sl1 = sl1.to(device)
-        packed_b1, idx_b1, _ = parser.Embeddings(w1.to(device), p1.to(device), sl1)
+        #packed_b1, idx_b1, _ = parser.Embeddings(w1.to(device), p1.to(device), sl1)
+        packed_b1, idx_b1, _ = parser.Embeddings(w1.to(device), sl1)
         b1_reps = unsort(parser.SemanticRNN(packed_b1), idx_b1)
         b1_reps_avg = utils.average_hiddens(b1_reps, sl1, sum_f_b=args.sum_f_b)
         mb_para1_reps.append(b1_reps_avg)
         if args.two_negs:
-            w2, p2, sl2 = prepare_batch_ss(b2)
+            w2, _, sl2 = prepare_batch_ss(b2)
             sl2 = sl2.to(device)
-            packed_b2, idx_b2, _ = parser.Embeddings(w2.to(device), p2.to(device), sl2)
+            packed_b2, idx_b2, _ = parser.Embeddings(w2.to(device), sl2)
             b2_reps = unsort(parser.SemanticRNN(packed_b2), idx_b2)
             b2_reps_avg = utils.average_hiddens(b2_reps, sl2, sum_f_b=args.sum_f_b)
             mb_para2_reps.append(b2_reps_avg)
@@ -912,29 +893,25 @@ def l2t_to_l2avg(l2t):
     return l2avg, overall_avg
 
 
-def build_l2b(sents_sorted, l2t=None, granularity=None):
+def build_l2b(sents_sorted, l2p=None, granularity=None, score_type=None, include_zeros=None):
     l2b = {}
 
-    for l, c in l2c.items():
-        tuples = []
-        idxs = list(range(c[0], c[1]))
+    score_idx = 2 if score_type == 'UAS' else 3
 
-        tuples.append(i,j, l2t[i,j])
-        
-        #tuples_sorted = sorted(tuples, key=lambda t: t[2])
-        tuples_copy = copy.deepcopy(tuples)
-
-        buckets = []
+    for l, pair_list in tqdm(l2p.items(), ascii=True, desc=f'Progress in building l2b', ncols=80):
+        buckets = {}
+        sorted_pair_list = sorted(pair_list, key = lambda p: p[score_idx], reverse=True)
         for x in np.arange(0, 1, granularity):
-            tuples_copy = copy.deepcopy(tuples)
             bucket = []
-            for t in tuples_copy:
-                if t[2] < (x + granularity) and t[2] > x:
-                    bucket.append(t)
-                tuples.pop(t)
+            while(sorted_pair_list != [] 
+                    and sorted_pair_list[-1][score_idx] <= x + granularity):
+                curr_p = sorted_pair_list[-1]
+                if curr_p[score_idx] != 0 or include_zeros:
+                    bucket.append((curr_p[0], curr_p[1], curr_p[score_idx]))
 
-            if bucket != []:
-                buckets.append(bucket)
+                sorted_pair_list.pop(-1)
+
+            buckets[x] = bucket
 
         l2b[l] = buckets
 
@@ -970,14 +947,15 @@ def sample_lengths(distribution=None, lengths_array=None, batch_size=None):
     return sample_lengths
 
 
-def sample_pairs(sample_lengths=None, l2b=None):
+def sample_pairs(sample_lengths=None, l2b=None, granularity=None):
     sample_pairs = []
-    quartiles = [0.0, 0.25, 0.5, 0.75]
-    quart_samples = np.random.multinomial(1, 0.25*4, size=len(sample_lengths))
-    quart_samples = np.argmax(sample, axis=1) # Takes one-hots to integers
+    quartiles = np.arange(0, 1, granularity)
+    quart_samples = np.random.multinomial(1, [0.25]*4, size=len(sample_lengths))
+    quart_samples = np.argmax(quart_samples, axis=1) # Takes one-hots to integers
 
     for l, q in zip(sample_lengths, quart_samples):
-        bucket = l2b[l][q]
+        quartile = quartiles[q]
+        bucket = l2b[l][quartile]
 
         sample = np.random.multinomial(1, [1/len(bucket)]*len(bucket))
         sample_pair = bucket[np.argmax(sample)]

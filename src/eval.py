@@ -5,7 +5,6 @@ import datetime
 from tqdm import tqdm
 
 import matplotlib.pyplot as plt
-
 import torch
 import numpy as np
 
@@ -83,7 +82,7 @@ def eval_sdp(args, parser, data, experiment=None):
         print(prelude)
         for name, gold, sents_list in zip(names, golds, sents):
             dataset = data[name]
-            data_loader = data_utils.sdp_data_loader_original(dataset, batch_size=1, shuffle_idx=False)
+            data_loader = data_utils.sdp_data_loader(dataset, batch_size=1, shuffle_idx=False)
             predicted = os.path.join(PREDICTED_DIR, name + '_predicted.conllu')
             with open(predicted, 'w') as f:
                 parser.eval()
@@ -92,7 +91,8 @@ def eval_sdp(args, parser, data, experiment=None):
                         batch = next(data_loader)
                         sent_len = batch['sent_lens'].to(device)
 
-                        _, S_rel, head_preds = parser(batch['words'].to(device), batch['pos'].to(device), sent_len)
+                        #_, S_rel, head_preds = parser(batch['words'].to(device), batch['pos'].to(device), sent_len)
+                        _, S_rel, head_preds = parser(batch['words'].to(device), sent_len)
                         rel_preds = utils.predict_relations(S_rel)
                         rel_preds = rel_preds.view(-1)
                         rel_preds = [i2r[rel] for rel in rel_preds.numpy()]
@@ -139,10 +139,12 @@ def eval_sts(args, parser, data, experiment=None):
                 targets = curr_data['targets']
                 predictions = []
                 
-                w1, p1, sl1 = data_utils.prepare_batch_ss([s1 for s1, s2 in curr_data['sent_pairs']])
-                w2, p2, sl2 = data_utils.prepare_batch_ss([s2 for s1, s2 in curr_data['sent_pairs']])
-                packed_s1, idx_s1, _ = parser.Embeddings(w1.to(device), p1.to(device), sl1)
-                packed_s2, idx_s2, _ = parser.Embeddings(w2.to(device), p2.to(device), sl2)
+                w1, _, sl1 = data_utils.prepare_batch_ss([s1 for s1, s2 in curr_data['sent_pairs']])
+                w2, _, sl2 = data_utils.prepare_batch_ss([s2 for s1, s2 in curr_data['sent_pairs']])
+                #packed_s1, idx_s1, _ = parser.Embeddings(w1.to(device), p1.to(device), sl1)
+                #packed_s2, idx_s2, _ = parser.Embeddings(w2.to(device), p2.to(device), sl2)
+                packed_s1, idx_s1, _ = parser.Embeddings(w1.to(device), sl1)
+                packed_s2, idx_s2, _ = parser.Embeddings(w2.to(device), sl2)
                 h1 = unsort(parser.SemanticRNN(packed_s1), idx_s1)
                 h2 = unsort(parser.SemanticRNN(packed_s2), idx_s2)
 

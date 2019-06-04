@@ -2,9 +2,11 @@ import logging
 import os
 import pickle
 from tqdm import tqdm
-
-from argparse import ArgumentParser
+import copy
 from collections import Counter
+
+import matplotlib.pyplot as plt
+from argparse import ArgumentParser
 
 import data_utils
 
@@ -45,13 +47,13 @@ class DataPaths:
         # Directories
         sdp_data_dir = os.path.join(DATA_DIR, 'sdp_processed')
         ss_data_dir = os.path.join(DATA_DIR, 'ss_processed')
-        syn_data_dir = os.path.join(DATA_DIR, 'syn_processed')
+        #syn_data_dir = os.path.join(DATA_DIR, 'syn_processed')
         if not os.path.isdir(sdp_data_dir):
             os.mkdir(sdp_data_dir)
         if not os.path.isdir(ss_data_dir):
             os.mkdir(ss_data_dir)
-        if not os.path.isdir(syn_data_dir):
-            os.mkdir(syn_data_dir)
+        #if not os.path.isdir(syn_data_dir):
+        #    os.mkdir(syn_data_dir)
         if not os.path.isdir(os.path.join(PARANMT_DIR, 'pkl')):
             os.mkdir(os.path.join(PARANMT_DIR, 'pkl'))
         if not os.path.isdir(os.path.join(PARANMT_DIR, 'tagged')):
@@ -63,10 +65,9 @@ class DataPaths:
         self.data_ptb = os.path.join(sdp_data_dir, f'data_ptb_{fs}_{voc}.pkl')
         self.data_brown = os.path.join(sdp_data_dir, f'data_brown_{fs}_{voc}.pkl')
 
-
-        self.cutoff_dicts = os.path.join(syn_data_dir, f'syn_cutoff_dicts_{fs}_{voc}.pkl')
-        self.l2p = os.path.join(syn_data_dir, f'syn_l2p_{fs}_{voc}.pkl')
-        self.syn_data = os.path.join(syn_data_dir, f'syn_data_{fs}_{voc}.pkl')
+        #self.cutoff_dicts = os.path.join(syn_data_dir, f'syn_cutoff_dicts_{fs}_{voc}.pkl')
+        #self.l2p = os.path.join(syn_data_dir, f'syn_l2p_{fs}_{voc}.pkl')
+        #self.syn_data = os.path.join(syn_data_dir, f'syn_data_{fs}_{voc}_{score_type}.pkl')
             
         self.glove_data = os.path.join(DATA_DIR, 'glove', f'glove_{glove_d}_data.pkl')
         self.glove_w2v = os.path.join(DATA_DIR, 'glove', f'glove_{glove_d}_w2v.pkl')
@@ -78,7 +79,10 @@ class DataPaths:
     
 
 def preprocess(args):
-    paths = DataPaths(filtered=args.filter, glove_d=args.glove_d)
+    paths = DataPaths(
+            filtered=args.filter, 
+            glove_d=args.glove_d, 
+            score_type=args.score_type)
 
     x2i, i2x = {}, {}
     if os.path.exists(paths.ptb_vocabs):
@@ -238,10 +242,9 @@ def preprocess(args):
             pickle.dump(test_ss, pkl)
 
 
-
     if args.syn:
         with open(paths.data_ptb, 'rb') as pkl:
-            data_ptb = pickle.load(pkl)
+            data_ptb, _ = pickle.load(pkl)
         sents_sorted = sorted(data_ptb['train'], key=lambda sent: sent.shape[0])
 
         if 'cutoffs' in args.syn:
@@ -252,25 +255,109 @@ def preprocess(args):
             with open(paths.cutoff_dicts, 'rb') as pkl:
                 cutoff_dicts = pickle.load(pkl)
 
+        #Cleanup
+        #min_length = 1
+        #max_length = 5
+        #l2n = cutoff_dicts['l2n']
+        #l2n_cleaned = copy.deepcopy(l2n)
+        #l2c_cleaned = copy.deepcopy(cutoff_dicts['l2c'])
+        #for l, n in l2n.items():
+        #    if l < min_length:
+        #        l2n_cleaned.pop(l)
+        #        l2c_cleaned.pop(l)
+        #    elif l > max_length:
+        #        l2n_cleaned.pop(l)
+        #        l2c_cleaned.pop(l)
+
         if 'pairs' in args.syn:
-            l2p = data_utils.build_l2p(sents_sorted, l2c=cutoff_dicts['l2c'])
+            l2p = data_utils.build_l2p(sents_sorted, l2c=l2c_cleaned)
+            #with open(paths.l2p, 'rb') as pkl:
+            #    l2p_old = pickle.load(pkl)
+            #l2p_old.update(l2p)
             with open(paths.l2p, 'wb') as pkl:
                 pickle.dump(l2p, pkl)
         else:
             with open(paths.l2p, 'rb') as pkl:
                 l2p = pickle.load(pkl)
 
+        #total_pairs = 0
+        #l2n = cutoff_dicts['l2n']
+        #for l, p in l2p.items():
+        #    n = l2n[l]
+        #    total_pairs = (n*(n-1))/2
+        #    guess = len(p)
+        #    m = sorted(p, key=lambda x: x[2])[-1]
+        #    print(f'Length {l}, Total from l2n: {total_pairs}, Total from l2p: {guess}, Max is {m}')
+
+        #exit()
+
         if 'buckets' in args.syn:
+            min_length = 1
+            max_length = 22
+            l2n = cutoff_dicts['l2n']
+            for l in list(l2n.keys()):
+                if l < min_length or l > max_length:
+                    if l in l2p:
+                        l2p.pop(l)
+                    l2n.pop(l)
+
             l2b = data_utils.build_l2b(
                     sents_sorted, 
                     l2p=l2p, 
-                    granularity=args.granularity, 
-                    score_type=args.score_type)
+                    granularity=args.granularity,
+                    score_type=args.score_type,
+                    include_zeros=args.include_zeros)
 
-            syn_data = {'l2n': cutoff_dicts['l2n'], 'l2b': l2b}
+            syn_data = {
+                    'sents_sorted': sents_sorted,
+                    'l2n': l2n,
+                    'l2b': l2b, 
+                    'granularity': args.granularity,
+                    'score_type': args.score_type
+                    }
             with open(paths.syn_data, 'wb') as pkl:
                 pickle.dump(syn_data, pkl)
+        else:
+            with open(paths.syn_data, 'rb') as pkl:
+                syn_data = pickle.load(pkl)
 
+
+
+        #Statistics!
+        if 'stats' in args.syn:
+            l2b = syn_data['l2b']
+            z = 'zeros' if args.include_zeros else 'nozeros'
+            #breakpoint()
+            for l, b in l2b.items():
+                grains = []
+                total_in_bucket = []
+                for grain, bucket in b.items():
+                    grains.append(grain)
+                    total_in_bucket.append(len(bucket))
+
+                #print(f'Length : {l}')
+                #print(grains)
+                #print(total_in_bucket)
+                plt.show()
+                plt.title(f'Distribution for length: {l}')
+                plt.bar(grains, total_in_bucket, 0.15)
+                plt.ylabel('Total pairs in bucket')
+                plt.savefig(f'../images/{args.score_type}_{z}_length_{l}.png')
+                plt.clf()
+
+        total_pairs = 0
+        min_length = 1
+        max_length = 11
+        for l, b in syn_data['l2b'].items():
+            if l >= min_length and l <= max_length:
+                curr_pairs = 0
+                for grain, bucket in b.items():
+                        curr_pairs += len(bucket)
+                print(f'Length {l} has {curr_pairs} many pairs')
+                total_pairs += curr_pairs
+        print(f'In total, {total_pairs} many pairs')
+
+    print('Finished!')
 
 
 if __name__ == '__main__':
@@ -281,9 +368,10 @@ if __name__ == '__main__':
 
     parser.add_argument('-sdp', help='Initialize a part (or all) of the syntactic parsing data.', dest='sdp', nargs='*', type=str, default=[])
 
-    parser.add_argument('-syn', help='Initialize data for special syntactic task.', action='store_true', dest='syn', default=False)
-    parser.add_argument('-gr', help='What should be the bucketing granularity for sentence scores?', type=float, dest='granularity', default=0.25)
-    parser.add_argument('-st', help='Score type', type=str, dest='score_type', default='LAS')
+    #parser.add_argument('-syn', help='Initialize data special syntactic task.', dest='syn', nargs='*', type=str, default=[])
+    #parser.add_argument('-gr', help='What should be the bucketing granularity for sentence scores?', type=float, dest='granularity', default=0.25)
+    #parser.add_argument('-st', help='Score type', type=str, dest='score_type', default='LAS')
+    #parser.add_argument('-iz', action='store_true', dest='include_zeros', default=False)
 
     pretrained_emb = parser.add_mutually_exclusive_group()
     #pretrained_emb.add_argument('-sl999', action='store_true', help='Initialize data corresponding to sl999 word embeddings.', dest='sl999', default=False)

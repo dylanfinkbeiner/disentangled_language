@@ -70,9 +70,7 @@ if __name__ == '__main__':
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     log.info(f'Using device: {device}')
 
-    paths = DataPaths(filtered=args.filter,
-            use_paragram=args.sl999, 
-            glove_d=args.glove_d)
+    paths = DataPaths(filtered=args.filter, glove_d=args.glove_d)
 
     # Populate syntactic dependency parsing data
     log.info(f'Loading pickled syntactic dependency parsing data.')
@@ -85,9 +83,11 @@ if __name__ == '__main__':
             data_brown = pickle.load(pkl)
 
     args.using_pretrained = False
-    if args.sl999 or args.glove_d:
+    #if args.sl999 or args.glove_d:
+    if args.glove_d:
         args.using_pretrained = True
-        path = paths.sl999_data if args.sl999 else paths.glove_data
+        #path = paths.sl999_data if args.sl999 else paths.glove_data
+        path = paths.glove_data
         log.info(f'Loading pretrained embedding data from {path}')
         with open(path, 'rb') as pkl:
             embedding_data = pickle.load(pkl)
@@ -119,6 +119,11 @@ if __name__ == '__main__':
        data_ss['dev'] = ss_test['2017']
        data_ss['test'] = ss_test
 
+
+    #if args.train_mode > 2:
+    #    with open(paths.syn_data, 'rb') as pkl:
+    #        syn_data = pickle.load(pkl)
+
     # Prepare parser
     parser = BiaffineParser(
             word_e_size = pretrained_e.shape[-1] if args.using_pretrained else args.we,
@@ -143,6 +148,8 @@ if __name__ == '__main__':
             unk_idx = x2i['word'][UNK_TOKEN],
             device = device)
 
+    print('Pos tags: ', len(x2i['pos']))
+
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
 
     if os.path.exists(weights_path):
@@ -163,6 +170,8 @@ if __name__ == '__main__':
                 'device': device}
         if args.train_mode > 0:
             data['data_ss'] = data_ss
+        #if args.train_mode > 2:
+        #    data['syn_data'] = syn_data
 
         train.train(args, parser, data, weights_path=weights_path, experiment=experiment)
 

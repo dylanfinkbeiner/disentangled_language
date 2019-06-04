@@ -52,26 +52,12 @@ def loss_sem_rep(sem_h1, sem_h2, sem_hn1, sem_hn2=None, margin=None):
     return losses.mean()
 
 
-#TODO Needs rethinking
-def loss_syn_rep(h_batch, h_paired, scores, h_size=None, syn_size=None):
-    '''
-        inputs:
-            h_batch - (b, 2*h_size) tensor
-            h_paired - (b, 2*h_size) tensor
-            scores - weights per sentence pair of batch, their LAS "similarity"
-            syn_size - size, in units, of syntactic representation component of hidden state
+def loss_pos(logits, target_pos, pad_idx=-1):
+    #Cross entropy
+    loss_nn = torch.nn.CrossEntropyLoss(ignore_index=pad_idx)
 
-        outputs:
-            losses, where loss for sentence pair (x,y) is 1-cos(x,y) * score(x,y)
-    '''
-    # All should be (b, l , syn_size) tensors
-    syn_batch = torch.cat((h_batch[:,0:syn_size], h_batch[:,h_size:h_size+syn_size]), dim=-1)
-    syn_paired = torch.cat((h_paired[:,0:syn_size], h_paired[:,h_size:h_size+syn_size]), dim=-1)
+    losses = loss_nn(logits.view(-1, logits.shape[-1]), target_pos.flatten())
 
-    losses = 1 - F.cosine_similarity(syn_batch, syn_paired, dim=-1)
-
-    losses *= scores.view(-1)
-
-    return losses.sum()
+    return losses.mean()
     
 

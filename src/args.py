@@ -50,7 +50,7 @@ def get_args():
     # Data options
     parser.add_argument('--filter', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
     pretrained_emb = parser.add_mutually_exclusive_group()
-    pretrained_emb.add_argument('--sl999', action='store_true', help='Should we use sl999 data?', dest='sl999', default=False)
+    #pretrained_emb.add_argument('--sl999', action='store_true', help='Should we use sl999 data?', dest='sl999', default=False)
     pretrained_emb.add_argument('--gloved', help='Should we use glove data, and if so what size embeddings?', dest='glove_d', type=int, default=None)
 
     # Model hyperparameters
@@ -63,6 +63,7 @@ def get_args():
     parser.add_argument('-synl', help='Number of syntactic LSTM layers.', dest='syn_nlayers', type=int, default=3)
     parser.add_argument('-seml', help='Number of semantic LSTM layers.', dest='sem_nlayers', type=int, default=1)
     parser.add_argument('-finl', help='Number of final LSTM layers.', dest='final_nlayers', type=int, default=1)
+    parser.add_argument('-postune', help='Tuning parameter for POS tagging loss.', dest='pos_tune', type=float, default=10)
     #parser.add_argument('--lrsyn', help='Learning rate for optimization during syntactic task.', dest='lr_syn', type=float, default=2e-3)
     #parser.add_argument('--lrsem', help='Learning rate for optimization during semantic task.', dest='lr_sem', type=float, default=2e-3)
 
