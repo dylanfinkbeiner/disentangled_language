@@ -42,6 +42,7 @@ NAMES = {
 YEARS = ['2012', '2013', '2014', '2015', '2016', '2017']
 
 def eval_sdp(args, parser, data, experiment=None):
+    pos_tag_eval = True
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     vocabs = data['vocabs']
@@ -79,6 +80,10 @@ def eval_sdp(args, parser, data, experiment=None):
         print(f'Evaluating on datasets: {names}')
         exp_file.write(prelude)
 
+        #XXX 
+        total_predictions = 0
+        total_correct = 0
+
         print(prelude)
         for name, gold, sents_list in zip(names, golds, sents):
             dataset = data[name]
@@ -91,7 +96,7 @@ def eval_sdp(args, parser, data, experiment=None):
                         batch = next(data_loader)
                         sent_len = batch['sent_lens'].to(device)
 
-                        #_, S_rel, head_preds = parser(batch['words'].to(device), batch['pos'].to(device), sent_len)
+                        #_, S_rel, head_preds = parser(batch['words'].to(device), sent_len, pos=batch['pos'].to(device))
                         _, S_rel, head_preds = parser(batch['words'].to(device), sent_len)
                         rel_preds = utils.predict_relations(S_rel)
                         rel_preds = rel_preds.view(-1)
@@ -105,6 +110,23 @@ def eval_sdp(args, parser, data, experiment=None):
                             f.write('\n')
 
                         f.write('\n')
+
+                        if pos_tag_eval:
+                            #NOTE still haven't figured out the head thing
+                            lstm_input, indices, lens_sorted = parser.Embeddings(batch['words'].to(device), sent_len)
+                            outputs = parser.SyntacticRNN(lstm_input)
+                            logits = parser.POSMLP(outputs)
+                            predictions = torch.argmax(logits, -1)
+                            #breakpoint() # Check that predictions and pos have same shape
+                            n_correct = torch.eq(predictions, batch['pos'].to(device)).sum().item()
+                            #breakpoint()
+                            total_correct += n_correct
+                            total_predictions += sent_len.item()
+
+            pos_accuracy = total_correct / total_predictions
+            pos_res = f'\nPOS tagging accuracy on {name} is {pos_accuracy * 100}\n'
+            exp_file.write(pos_res)
+            print(pos_res)
 
             with open(gold, 'r') as f:
                 gold_ud = load_conllu(f)
@@ -189,7 +211,7 @@ def eval_sts(args, parser, data, experiment=None):
                     np.max(predictions))
                 exp_file.write(info)
                 print(info)
-                print(stats)
+                #print(stats)
 
     print('Finished with semantic evaluation!')
 

@@ -54,17 +54,18 @@ class Embeddings(nn.Module):
             self.word_emb.weight.data.copy_(
                     torch.Tensor(pretrained_e))
 
-        #self.pos_emb = nn.Embedding(
-        #    pos_vocab_size,
-        #    pos_e_size,
-        #    padding_idx=padding_idx)
+        if pos_e_size is not None and pos_vocab_size is not None:
+            self.pos_emb = nn.Embedding(
+                pos_vocab_size,
+                pos_e_size,
+                padding_idx=padding_idx)
 
         # Dropout
         self.embedding_dropout = nn.Dropout(p=embedding_dropout)
 
-    #def forward(self, words, pos, sent_lens):
-    def forward(self, words, sent_lens):
+    def forward(self, words, sent_lens, pos=None):
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        pos_flag = True if pos is not None else False
 
         # Zero-out "unk" word at test time
         #if not self.training:
@@ -73,21 +74,25 @@ class Embeddings(nn.Module):
         # Sort the words, pos, sent_lens (necessary for pack_padded_sequence)
         lens_sorted = sent_lens
         words_sorted = words
-        #pos_sorted = pos
+        if pos_flag:
+            pos_sorted = pos
         indices = None
         if(sent_lens.shape[0] > 1):
             lens_sorted, indices = torch.sort(lens_sorted, descending=True)
             indices = indices.to(device)
             words_sorted = words_sorted.index_select(0, indices)
-            #pos_sorted = pos_sorted.index_select(0, indices)
             del words
-            #del pos
+            if pos_flag:
+                pos_sorted = pos_sorted.index_select(0, indices)
+                del pos
 
         w_embs = self.word_emb(words_sorted) # (b, l, w_e)
-        #p_embs = self.pos_emb(pos_sorted) # (b, l, p_e)
+        if pos_flag:
+            p_embs = self.pos_emb(pos_sorted) # (b, l, p_e)
 
-        #lstm_input = self.embedding_dropout(torch.cat([w_embs, p_embs], -1)) # (b, l, w_e + p_e)
-        lstm_input = self.embedding_dropout(w_embs) # (b, l, w_e + p_e)
+        dropout_input = w_embs if not pos_flag else torch.cat([w_embs, p_embs], -1)
+
+        lstm_input = self.embedding_dropout(dropout_input) # (b, l, w_e + p_e)
         packed_lstm_input = pack_padded_sequence(
                 lstm_input, lens_sorted, batch_first=True)
 
@@ -300,9 +305,10 @@ class BiaffineParser(nn.Module):
                 device=device
                 ).to(device)
 
+        token_e_size = (word_e_size + pos_e_size) if pos_e_size is not None else word_e_size
+
         self.SyntacticRNN = SyntacticRNN(
-                #input_size=(word_e_size + pos_e_size),
-                input_size=word_e_size,
+                input_size=token_e_size,
                 hidden_size=syn_h,
                 num_layers=syn_nlayers,
                 dropout=lstm_dropout,
@@ -314,8 +320,7 @@ class BiaffineParser(nn.Module):
                 #nn.Dropout(p=arc_dropout)
 
         self.SemanticRNN = SemanticRNN(
-                #input_size=(word_e_size + pos_e_size),
-                input_size=word_e_size,
+                input_size=token_e_size,
                 hidden_size=sem_h,
                 num_layers=sem_nlayers,
                 dropout=lstm_dropout,
@@ -337,8 +342,7 @@ class BiaffineParser(nn.Module):
             rel_dropout=rel_dropout
             ).to(device)
         
-    #def forward(self, words, pos, sent_lens):
-    def forward(self, words, sent_lens):
+    def forward(self, words, sent_lens, pos=None):
         '''
         ins:
             words - LongTensor
@@ -351,8 +355,7 @@ class BiaffineParser(nn.Module):
             arc_preds - Tensor of predicted arcs
         '''
 
-        #packed_lstm_input, indices, lens_sorted = self.Embeddings(words, pos, sent_lens)
-        packed_lstm_input, indices, lens_sorted = self.Embeddings(words, sent_lens)
+        packed_lstm_input, indices, lens_sorted = self.Embeddings(words, sent_lens, pos=pos)
 
         #Packed outputs
         syntactic_outputs = self.SyntacticRNN(packed_lstm_input)
@@ -365,7 +368,6 @@ class BiaffineParser(nn.Module):
         forward = torch.cat([syntactic_outputs[:,:,:syn_h], semantic_outputs[:,:,:sem_h]], dim=-1)
         backward = torch.cat([syntactic_outputs[:,:,syn_h:], semantic_outputs[:,:,sem_h:]], dim=-1)
 
-        #final_inputs = torch.cat([syntactic_outputs, semantic_outputs], dim=-1)
         final_inputs = torch.cat([forward, backward], dim=-1)
         final_inputs = pack_padded_sequence(final_inputs, lens_sorted, batch_first=True)
         

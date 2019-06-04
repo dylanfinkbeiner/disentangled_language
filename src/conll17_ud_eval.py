@@ -132,6 +132,7 @@ def load_conllu(file):
     ud = UDRepresentation()
 
     # Load the CoNLL-U file
+    problems = 0
     index, sentence_start = 0, None
     while True:
         line = file.readline()
@@ -147,6 +148,7 @@ def load_conllu(file):
             # Start a new sentence
             ud.sentences.append(UDSpan(index, 0))
             sentence_start = len(ud.words)
+
         if not line:
             # Add parent UDWord links and check there are no cycles
             def process_word(word):
@@ -162,8 +164,15 @@ def load_conllu(file):
                         process_word(parent)
                         word.parent = parent
 
+            problem = 0
             for word in ud.words[sentence_start:]:
-                process_word(word)
+                try:
+                    process_word(word)
+                except Exception:
+                    #print(ud.words[sentence_start:])
+                    #exit()
+                    problem = 1
+            problems += problem
 
             # Check there is a single root node
             if len([word for word in ud.words[sentence_start:] if word.parent is None]) != 1:
@@ -173,6 +182,7 @@ def load_conllu(file):
             ud.sentences[-1].end = index
             sentence_start = None
             continue
+
 
         # Read next token/word
         columns = line.split("\t")
@@ -227,6 +237,9 @@ def load_conllu(file):
 
     if sentence_start is not None:
         raise UDError("The CoNLL-U file does not end with empty line")
+
+    
+    print(f'Problems: {problems}')
 
     return ud
 

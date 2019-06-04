@@ -148,13 +148,29 @@ def train(args, parser, data, weights_path=None, experiment=None):
                         if args.train_mode >= 3:
                             opt.zero_grad()
                             batch = next(loader_sdp_train)
-                            loss, loss_pos = forward_parsing_and_pos(
+                            #loss, loss_pos = forward_parsing_and_pos(
+                            loss = forward_syntactic_parsing(
                                     parser, 
                                     batch=batch, 
                                     args=args, 
                                     data=data)
-                            print(f'POS tagging loss: {loss_pos}')
                             loss.backward()
+                            if x % print_grad_every == 0:
+                                print(f'\nParsing gradient:')
+                                print(gradient_update(parser, verbose=False))
+                            opt.step()
+                            opt.zero_grad()
+                            batch = next(loader_sdp_train)
+                            loss_pos = forward_pos(
+                                    parser,
+                                    batch=batch,
+                                    args=args,
+                                    data=data)
+                            loss_pos.backward()
+                            #print(f'\nPOS tagging loss: {loss_pos}\n')
+                            if x % print_grad_every == 0:
+                                print(f'\nPOS tagging gradient:\n')
+                                print(gradient_update(parser, verbose=False))
                             opt.step()
 
                         #if x % print_grad_every == 0:
@@ -172,14 +188,11 @@ def train(args, parser, data, weights_path=None, experiment=None):
                                 neg2=[mb_neg2[i] for i in idxs[x]] if mb_neg2 is not None else None,
                                 args=args,
                                 data=data)
-                        #l2_we = 0.5 * args.lambda_w * (parser.BiLSTM.word_emb.weight - parser.BiLSTM.init_we).norm(2)
-                        #l2_we = 0.5 * args.lambda_w * parser.BiLSTM.word_emb.weight.norm()
-                        #print('\nl2_we', l2_we)
-                        #loss = loss_sem + l2_we
                         loss = loss_sem 
-                        #breakpoint()
                         loss.backward()
-                        print(gradient_update(parser))
+                        if x % print_grad_every == 0:
+                            print(f'Semantic similarity gradient:\n')
+                            print(gradient_update(parser, verbose=False))
                         opt.step()
 
                     update = f'''Update for megabatch: {m+1}\n'''
@@ -253,7 +266,7 @@ def forward_syntactic_parsing(parser, batch, args=None, data=None):
             counts=data['word_counts'], 
             lens=sent_lens)
 
-    #S_arc, S_rel, _ = parser(words_d.to(device), batch['pos'].to(device), sent_lens)
+    #S_arc, S_rel, _ = parser(words_d.to(device), sent_lens, pos=batch['pos'].to(device))
     S_arc, S_rel, _ = parser(words_d.to(device), sent_lens)
     
     loss_h = losses.loss_arcs(S_arc, arc_targets)
@@ -264,6 +277,31 @@ def forward_syntactic_parsing(parser, batch, args=None, data=None):
 
     return loss
 
+def forward_pos(parser, batch, args=None, data=None):
+    device = data['device']
+    parser.train()
+
+    arc_targets = batch['arc_targets']
+    rel_targets = batch['rel_targets']
+    pos_targets = batch['pos'].to(device)
+    sent_lens = batch['sent_lens'].to(device)
+    
+    words_d = utils.word_dropout(
+            batch['words'], 
+            w2i=data['vocabs']['x2i']['word'], 
+            i2w=data['vocabs']['i2x']['word'], 
+            counts=data['word_counts'], 
+            lens=sent_lens)
+
+    lstm_input, indices, lens_sorted = parser.Embeddings(batch['words'].to(device), sent_lens)
+    outputs = parser.SyntacticRNN(lstm_input)
+    logits = parser.POSMLP(unsort(outputs, indices))
+
+    loss_pos = losses.loss_pos(logits, pos_targets).cpu()
+    
+    #loss *= args.lr_syn
+
+    return loss_pos
 
 def forward_parsing_and_pos(parser, batch, args=None, data=None):
     device = data['device']
@@ -301,6 +339,9 @@ def forward_semantic(parser, para1, para2, neg1, neg2=None, args=None, data=None
     device = data['device']
     parser.train()
 
+    #w1, p1, sl1 = prepare_batch_ss(para1)
+    #w2, p2, sl2 = prepare_batch_ss(para2)
+    #wn1, p3, sln1 = prepare_batch_ss(neg1)
     w1, _, sl1 = prepare_batch_ss(para1)
     w2, _, sl2 = prepare_batch_ss(para2)
     wn1, _, sln1 = prepare_batch_ss(neg1)
@@ -359,8 +400,8 @@ def sdp_dev_eval(parser, args=None, data=None, loader=None, n_dev_batches=None):
     
             S_arc, S_rel, arc_preds = parser(
                     batch['words'].to(device), 
-                    #batch['pos'].to(device), 
                     sent_lens)
+                    #pos=batch['pos'].to(device))
             rel_preds = utils.predict_relations(S_rel)
     
             loss_h = losses.loss_arcs(S_arc, arc_targets)
@@ -411,14 +452,18 @@ def ss_dev_eval(parser, dev_ss, args=None, data=None):
     return correlation
 
 
-def gradient_update(parser, verbose=True):
+def gradient_update(parser, verbose=False):
     update = ''
+    t = 0
+    for p in parser.parameters():
+        if type(p.grad) != type(None):
+            n = p.grad.data.norm(2)
+            t += n.item() ** 2
+    t = t ** (1. / 2)
     if verbose:
-        #update = '\n'.join(['{:35} {:3.8f}'.format(n, p.grad.data.norm(2).item()) for n, p in list(parser.BiLSTM.named_parameters())])
-        #update = '\n'.join(['{:35} {:3.8f}'.format(n, p.grad.data.norm(2).item()) for n, p in list(parser.named_parameters())])
-        pass
+        update += '\n'.join(['{:35} {:3.8f}'.format(n, p.grad.data.norm(2).item()) for n, p in list(parser.named_parameters())])
+        update += f'\nTotal norm of gradient is {t}\n'
     else: 
-        pass
-        #update = 'Norm of gradient: {:5.8f}'.format(torch.tensor([p.grad.data.norm(2) for n, p in list(parser.BiLSTM.named_parameters())]).norm(2))
+        update += 'Total norm of gradient: {:5.8f}'.format(t)
 
     return update
