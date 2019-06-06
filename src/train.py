@@ -113,6 +113,14 @@ def train(args, parser, data, weights_path=None, experiment=None):
                     opt.zero_grad()
                     batch = next(loader_sdp_train)
                     loss = forward_syntactic_parsing(parser, batch, args=args, data=data)
+
+                    #loss_pos = forward_pos(
+                    #        parser,
+                    #        batch=batch,
+                    #        args=args,
+                    #        data=data)
+                    #loss += loss_pos
+
                     loss.backward()
                     opt.step()
 
@@ -145,33 +153,36 @@ def train(args, parser, data, weights_path=None, experiment=None):
                             loss.backward()
                             opt.step()
 
+                        loss = None
                         if args.train_mode >= 3:
                             opt.zero_grad()
                             batch = next(loader_sdp_train)
                             #loss, loss_pos = forward_parsing_and_pos(
-                            loss = forward_syntactic_parsing(
+                            loss_par = forward_syntactic_parsing(
                                     parser, 
                                     batch=batch, 
                                     args=args, 
                                     data=data)
-                            loss.backward()
+                            #loss.backward()
                             if x % print_grad_every == 0:
                                 print(f'\nParsing gradient:')
                                 print(gradient_update(parser, verbose=False))
-                            opt.step()
-                            opt.zero_grad()
-                            batch = next(loader_sdp_train)
+                            #opt.step()
+                            #opt.zero_grad()
+                            #batch = next(loader_sdp_train)
                             loss_pos = forward_pos(
                                     parser,
                                     batch=batch,
                                     args=args,
                                     data=data)
-                            loss_pos.backward()
+                            #loss_pos.backward()
                             #print(f'\nPOS tagging loss: {loss_pos}\n')
                             if x % print_grad_every == 0:
                                 print(f'\nPOS tagging gradient:\n')
                                 print(gradient_update(parser, verbose=False))
-                            opt.step()
+                            #opt.step()
+
+                            loss = loss_par + loss_pos
 
                         #if x % print_grad_every == 0:
                         #    update = gradient_update(parser)
@@ -179,7 +190,7 @@ def train(args, parser, data, weights_path=None, experiment=None):
                         #    exp_file.write(update)
 
                         # Sentence similarity step
-                        opt.zero_grad()
+                        #opt.zero_grad()
                         loss_sem = forward_semantic(
                                 parser,
                                 para1=[mb_para1[i] for i in idxs[x]],
@@ -188,7 +199,7 @@ def train(args, parser, data, weights_path=None, experiment=None):
                                 neg2=[mb_neg2[i] for i in idxs[x]] if mb_neg2 is not None else None,
                                 args=args,
                                 data=data)
-                        loss = loss_sem 
+                        loss += loss_sem.cpu()
                         loss.backward()
                         if x % print_grad_every == 0:
                             print(f'Semantic similarity gradient:\n')
@@ -259,15 +270,15 @@ def forward_syntactic_parsing(parser, batch, args=None, data=None):
     rel_targets = batch['rel_targets']
     sent_lens = batch['sent_lens'].to(device)
     
-    words_d = utils.word_dropout(
-            batch['words'], 
-            w2i=data['vocabs']['x2i']['word'], 
-            i2w=data['vocabs']['i2x']['word'], 
-            counts=data['word_counts'], 
-            lens=sent_lens)
+    #words_d = utils.word_dropout(
+    #        batch['words'], 
+    #        w2i=data['vocabs']['x2i']['word'], 
+    #        i2w=data['vocabs']['i2x']['word'], 
+    #        counts=data['word_counts'], 
+    #        lens=sent_lens)
 
     #S_arc, S_rel, _ = parser(words_d.to(device), sent_lens, pos=batch['pos'].to(device))
-    S_arc, S_rel, _ = parser(words_d.to(device), sent_lens)
+    S_arc, S_rel, _ = parser(batch['words'].to(device), sent_lens)
     
     loss_h = losses.loss_arcs(S_arc, arc_targets)
     loss_r = losses.loss_rels(S_rel, rel_targets)

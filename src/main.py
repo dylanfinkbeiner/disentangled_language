@@ -45,6 +45,15 @@ stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
 log.addHandler(stream_handler)
 
+
+def save_permanent_params(exp_dir, args):
+    txt = os.path.join(exp_dir, 'parameters.txt')
+    args_dict = dict(vars(args))
+    with open(txt, 'w') as f:
+        for k, v in args_dict.items():
+            f.write(f'{k} : {v} \n')
+
+
 if __name__ == '__main__':
     d = datetime.datetime.utcnow()
     d = d.astimezone(pytz.timezone("America/Los_Angeles"))
@@ -60,6 +69,8 @@ if __name__ == '__main__':
     exp_dir = os.path.join(EXPERIMENTS_DIR, args.model)
     if not os.path.isdir(exp_dir):
             os.mkdir(exp_dir)
+            save_permanent_params(exp_dir, args)
+    #breakpoint()
     exp_type = 'evaluation' if evaluating else 'training'
     day = f'{d:%m_%d}'
     exp_path = os.path.join(exp_dir, '_'.join([exp_type, day]) + '.txt')
@@ -148,7 +159,6 @@ if __name__ == '__main__':
             unk_idx = x2i['word'][UNK_TOKEN],
             device = device)
 
-    print('Pos tags: ', len(x2i['pos']))
 
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
 
@@ -159,6 +169,18 @@ if __name__ == '__main__':
     else:
         log.info(f'Model will have randomly initialized parameters.')
         args.init_model = True
+
+    ih = parser.FinalRNN.lstm.weight_ih_l0.data
+    syn_h = args.syn_h
+    sem_h = args.sem_h
+    #syn_weights = torch.cat([ih[:, :syn_h], ih[:, syn_h+sem_h : 2*syn_h+sem_h]])
+    #sem_weights = torch.cat([ih[:, syn_h:syn_h+sem_h], ih[:, 2*syn_h+sem_h:]])
+    syn_weights = ih[:, :2*syn_h]
+    sem_weights = ih[:, 2*syn_h:]
+
+    print(f'Syn: {syn_weights.norm(2)}')
+    print(f'Sem: {sem_weights.norm(2)}')
+    #breakpoint()
 
     vocabs = {'x2i': x2i, 'i2x': i2x}
 

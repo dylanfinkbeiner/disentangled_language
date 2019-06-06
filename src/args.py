@@ -60,12 +60,12 @@ def get_args():
     parser.add_argument('-synh', help='Number of units of hidden state dedicated to syntactic content.', dest='syn_h', type=int, default=200)
     parser.add_argument('-semh', help='Number of units of hidden state dedicated to semantic content.', dest='sem_h', type=int, default=200)
     parser.add_argument('-finh', help='Size of hidden state in final LSTM.', dest='final_h', type=int, default=400)
-    parser.add_argument('-synl', help='Number of syntactic LSTM layers.', dest='syn_nlayers', type=int, default=3)
+    parser.add_argument('-synl', help='Number of syntactic LSTM layers.', dest='syn_nlayers', type=int, default=2)
     parser.add_argument('-seml', help='Number of semantic LSTM layers.', dest='sem_nlayers', type=int, default=1)
     parser.add_argument('-finl', help='Number of final LSTM layers.', dest='final_nlayers', type=int, default=1)
     parser.add_argument('-postune', help='Tuning parameter for POS tagging loss.', dest='pos_tune', type=float, default=1)
     #parser.add_argument('--lrsyn', help='Learning rate for optimization during syntactic task.', dest='lr_syn', type=float, default=2e-3)
-    #parser.add_argument('--lrsem', help='Learning rate for optimization during semantic task.', dest='lr_sem', type=float, default=2e-3)
+    parser.add_argument('-lrsem', help='Learning rate for optimization during semantic task.', dest='lr_sem', type=float, default=1)
 
     # Training hyperparameters
     parser.add_argument('-b', '--batchsize', help='Size of batch', type=int, dest='batch_size', default=100)
@@ -115,6 +115,5 @@ if __name__ == '__main__':
     print('Epochs: ', args.epochs)
     print("ef ", args.ef)
     print("e ", args.e)
-    print("hsize ", args.h_size)
     print("syn_size ", args.syn_size)
     print("lr_syn ", args.lr_syn)

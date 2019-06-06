@@ -134,7 +134,7 @@ def eval_sdp(args, parser, data, experiment=None):
                 predicted_ud = load_conllu(f)
             evaluation = evaluate(gold_ud, predicted_ud)
 
-            info = '\nResults for {}:\n LAS : {:10.2f} | UAS : {:10.2f} \n'.format(
+            info = '\nResults for {}:\n UAS : {:10.2f} | LAS : {:10.2f} \n'.format(
                 name,
                 100 * evaluation['UAS'].aligned_accuracy,
                 100 * evaluation['LAS'].aligned_accuracy,

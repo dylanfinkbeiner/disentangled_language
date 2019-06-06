@@ -359,16 +359,18 @@ class BiaffineParser(nn.Module):
 
         #Packed outputs
         syntactic_outputs = self.SyntacticRNN(packed_lstm_input)
-        syntactic_outputs = self.final_dropout(syntactic_outputs)
         semantic_outputs = self.SemanticRNN(packed_lstm_input)
+        syntactic_outputs = self.final_dropout(syntactic_outputs)
+        semantic_outputs = self.final_dropout(semantic_outputs)
 
         #This might be unnecessary, should double check
-        syn_h = syntactic_outputs.shape[-1] // 2
-        sem_h = semantic_outputs.shape[-1] // 2
-        forward = torch.cat([syntactic_outputs[:,:,:syn_h], semantic_outputs[:,:,:sem_h]], dim=-1)
-        backward = torch.cat([syntactic_outputs[:,:,syn_h:], semantic_outputs[:,:,sem_h:]], dim=-1)
+        #syn_h = syntactic_outputs.shape[-1] // 2
+        #sem_h = semantic_outputs.shape[-1] // 2
+        #forward = torch.cat([syntactic_outputs[:,:,:syn_h], semantic_outputs[:,:,:sem_h]], dim=-1)
+        #backward = torch.cat([syntactic_outputs[:,:,syn_h:], semantic_outputs[:,:,sem_h:]], dim=-1)
 
-        final_inputs = torch.cat([forward, backward], dim=-1)
+        final_inputs = torch.cat([syntactic_outputs, semantic_outputs], dim=-1)
+        #final_inputs = torch.cat([syntactic_outputs, torch.zeros(semantic_outputs.shape).to(semantic_outputs.device)], dim=-1)
         final_inputs = pack_padded_sequence(final_inputs, lens_sorted, batch_first=True)
         
         final_outputs = self.FinalRNN(final_inputs)
