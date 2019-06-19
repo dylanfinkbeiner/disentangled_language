@@ -56,6 +56,7 @@ def get_args():
     # Model hyperparameters
     parser.add_argument('-we', help='Size of word embeddings.', dest='we', type=int, default=100)
     parser.add_argument('-pe', help='Size of pos embeddings.', dest='pe', type=int, default=None)
+    parser.add_argument('-a', help='Alpha parameter of frequency-based word dropout.', dest='alpha', type=int, default=40)
     parser.add_argument('-sumfb', help='Should we sum the averaged forward and backward hiddens in average_hiddens()?', action='store_true', dest='sum_f_b', default=False)
     parser.add_argument('-synh', help='Number of units of hidden state dedicated to syntactic content.', dest='syn_h', type=int, default=200)
     parser.add_argument('-semh', help='Number of units of hidden state dedicated to semantic content.', dest='sem_h', type=int, default=200)
@@ -80,6 +81,9 @@ def get_args():
 
     # Train mode
     parser.add_argument('-tm', help='Training mode setting.', dest='train_mode', type=int, default=-1)
+
+    # Check weights
+    parser.add_argument('-w', action='store_true', help='Just check the weights of the transformation to FinalRNN hiddens.', dest='w')
 
     # Save configuration?
     parser.add_argument('-sc', help='Name of new file to save configuration to.', default='')

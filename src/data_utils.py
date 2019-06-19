@@ -670,16 +670,19 @@ def megabatch_breakdown(megabatch, minibatch_size=None, parser=None, args=None, 
     mb_para1_reps = [] # (megabatch_size, )
     mb_para2_reps = [] 
     for b1, b2 in zip(minibatches_para1, minibatches_para2):
+        #w1, p1, sl1 = prepare_batch_ss(b1)
         w1, _, sl1 = prepare_batch_ss(b1)
         sl1 = sl1.to(device)
-        #packed_b1, idx_b1, _ = parser.Embeddings(w1.to(device), p1.to(device), sl1)
+        #packed_b1, idx_b1, _ = parser.Embeddings(w1.to(device), sl1, pos=p1.to(device))
         packed_b1, idx_b1, _ = parser.Embeddings(w1.to(device), sl1)
         b1_reps = unsort(parser.SemanticRNN(packed_b1), idx_b1)
         b1_reps_avg = utils.average_hiddens(b1_reps, sl1, sum_f_b=args.sum_f_b)
         mb_para1_reps.append(b1_reps_avg)
         if args.two_negs:
+            #w2, p2, sl2 = prepare_batch_ss(b2)
             w2, _, sl2 = prepare_batch_ss(b2)
             sl2 = sl2.to(device)
+            #packed_b2, idx_b2, _ = parser.Embeddings(w2.to(device), sl2, pos=p2.to(device))
             packed_b2, idx_b2, _ = parser.Embeddings(w2.to(device), sl2)
             b2_reps = unsort(parser.SemanticRNN(packed_b2), idx_b2)
             b2_reps_avg = utils.average_hiddens(b2_reps, sl2, sum_f_b=args.sum_f_b)

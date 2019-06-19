@@ -295,7 +295,8 @@ class BiaffineParser(nn.Module):
 
         self.Embeddings = Embeddings(
                 word_e_size=word_e_size,
-                pos_e_size=pos_e_size,
+                #pos_e_size=pos_e_size,
+                pos_e_size=None, #XXX
                 word_vocab_size=word_vocab_size,
                 pos_vocab_size=pos_vocab_size,
                 pretrained_e=pretrained_e,
@@ -305,7 +306,16 @@ class BiaffineParser(nn.Module):
                 device=device
                 ).to(device)
 
-        token_e_size = (word_e_size + pos_e_size) if pos_e_size is not None else word_e_size
+        #token_e_size = (word_e_size + pos_e_size) if pos_e_size is not None else word_e_size
+        token_e_size = word_e_size #XXX
+
+        #XXX
+        self.pe = nn.Embedding(
+            pos_vocab_size,
+            pos_e_size,
+            padding_idx=padding_idx).to(device)
+        self.pe_drop = nn.Dropout(p=embedding_dropout).to(device)
+        #XXX
 
         self.SyntacticRNN = SyntacticRNN(
                 input_size=token_e_size,
@@ -316,8 +326,6 @@ class BiaffineParser(nn.Module):
         self.final_dropout = nn.Dropout(p=lstm_dropout).to(device)
 
         self.POSMLP = nn.Sequential(nn.Linear(2*syn_h, pos_vocab_size)).to(device)
-                #nn.ReLU()
-                #nn.Dropout(p=arc_dropout)
 
         self.SemanticRNN = SemanticRNN(
                 input_size=token_e_size,
@@ -327,7 +335,8 @@ class BiaffineParser(nn.Module):
                 ).to(device)
         
         self.FinalRNN = FinalRNN(
-                input_size=(2*sem_h + 2*syn_h),
+                #input_size=(2*sem_h + 2*syn_h),
+                input_size=(2*sem_h + 2*syn_h + pos_e_size), #XXX
                 hidden_size=final_h,
                 num_layers=final_nlayers,
                 dropout=lstm_dropout,
@@ -355,7 +364,15 @@ class BiaffineParser(nn.Module):
             arc_preds - Tensor of predicted arcs
         '''
 
-        packed_lstm_input, indices, lens_sorted = self.Embeddings(words, sent_lens, pos=pos)
+        #packed_lstm_input, indices, lens_sorted = self.Embeddings(words, sent_lens, pos=pos)
+        packed_lstm_input, indices, lens_sorted = self.Embeddings(words, sent_lens)
+
+        #XXX
+        if(words.shape[0] > 1):
+            pos = pos.index_select(0, indices)
+        pos_tags = self.pe(pos)
+        pos_tags = self.pe_drop(pos_tags)
+        #XXX
 
         #Packed outputs
         syntactic_outputs = self.SyntacticRNN(packed_lstm_input)
@@ -363,19 +380,14 @@ class BiaffineParser(nn.Module):
         syntactic_outputs = self.final_dropout(syntactic_outputs)
         semantic_outputs = self.final_dropout(semantic_outputs)
 
-        #This might be unnecessary, should double check
-        #syn_h = syntactic_outputs.shape[-1] // 2
-        #sem_h = semantic_outputs.shape[-1] // 2
-        #forward = torch.cat([syntactic_outputs[:,:,:syn_h], semantic_outputs[:,:,:sem_h]], dim=-1)
-        #backward = torch.cat([syntactic_outputs[:,:,syn_h:], semantic_outputs[:,:,sem_h:]], dim=-1)
-
-        final_inputs = torch.cat([syntactic_outputs, semantic_outputs], dim=-1)
-        #final_inputs = torch.cat([syntactic_outputs, torch.zeros(semantic_outputs.shape).to(semantic_outputs.device)], dim=-1)
+        final_inputs = torch.cat([syntactic_outputs, semantic_outputs, pos_tags], dim=-1) #XXX (pos tags added later)
+        #final_inputs = torch.cat([syntactic_outputs, torch.zeros(semantic_outputs.shape).to(semantic_outputs.device)], dim=-1) # (no semantic influence)
+        #final_inputs = torch.cat([syntactic_outputs, semantic_outputs], dim=-1) # Regular model
         final_inputs = pack_padded_sequence(final_inputs, lens_sorted, batch_first=True)
         
         final_outputs = self.FinalRNN(final_inputs)
 
-        if(final_outputs.shape[0] > 1):
+        if final_outputs.shape[0] > 1:
             final_outputs = unsort(final_outputs, indices)
 
         S_arc, S_rel, arc_preds = self.BiAffineAttention(final_outputs, sent_lens)

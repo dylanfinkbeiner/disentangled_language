@@ -96,8 +96,8 @@ def eval_sdp(args, parser, data, experiment=None):
                         batch = next(data_loader)
                         sent_len = batch['sent_lens'].to(device)
 
-                        #_, S_rel, head_preds = parser(batch['words'].to(device), sent_len, pos=batch['pos'].to(device))
-                        _, S_rel, head_preds = parser(batch['words'].to(device), sent_len)
+                        _, S_rel, head_preds = parser(batch['words'].to(device), sent_len, pos=batch['pos'].to(device))
+                        #_, S_rel, head_preds = parser(batch['words'].to(device), sent_len)
                         rel_preds = utils.predict_relations(S_rel)
                         rel_preds = rel_preds.view(-1)
                         rel_preds = [i2r[rel] for rel in rel_preds.numpy()]
@@ -114,6 +114,7 @@ def eval_sdp(args, parser, data, experiment=None):
                         if pos_tag_eval:
                             #NOTE still haven't figured out the head thing
                             lstm_input, indices, lens_sorted = parser.Embeddings(batch['words'].to(device), sent_len)
+                            #lstm_input, indices, lens_sorted = parser.Embeddings(batch['words'].to(device), sent_len, pos=batch['pos'].to(device))
                             outputs = parser.SyntacticRNN(lstm_input)
                             logits = parser.POSMLP(outputs)
                             predictions = torch.argmax(logits, -1)
@@ -123,10 +124,11 @@ def eval_sdp(args, parser, data, experiment=None):
                             total_correct += n_correct
                             total_predictions += sent_len.item()
 
-            pos_accuracy = total_correct / total_predictions
-            pos_res = f'\nPOS tagging accuracy on {name} is {pos_accuracy * 100}\n'
-            exp_file.write(pos_res)
-            print(pos_res)
+            if pos_tag_eval:
+                pos_accuracy = total_correct / total_predictions
+                pos_res = f'\nPOS tagging accuracy on {name} is {pos_accuracy * 100}\n'
+                exp_file.write(pos_res)
+                print(pos_res)
 
             with open(gold, 'r') as f:
                 gold_ud = load_conllu(f)
@@ -161,10 +163,12 @@ def eval_sts(args, parser, data, experiment=None):
                 targets = curr_data['targets']
                 predictions = []
                 
+                #w1, p1, sl1 = data_utils.prepare_batch_ss([s1 for s1, s2 in curr_data['sent_pairs']])
+                #w2, p2, sl2 = data_utils.prepare_batch_ss([s2 for s1, s2 in curr_data['sent_pairs']])
                 w1, _, sl1 = data_utils.prepare_batch_ss([s1 for s1, s2 in curr_data['sent_pairs']])
                 w2, _, sl2 = data_utils.prepare_batch_ss([s2 for s1, s2 in curr_data['sent_pairs']])
-                #packed_s1, idx_s1, _ = parser.Embeddings(w1.to(device), p1.to(device), sl1)
-                #packed_s2, idx_s2, _ = parser.Embeddings(w2.to(device), p2.to(device), sl2)
+                #packed_s1, idx_s1, _ = parser.Embeddings(w1.to(device), sl1, pos=p1.to(device))
+                #packed_s2, idx_s2, _ = parser.Embeddings(w2.to(device), sl2, pos=p2.to(device))
                 packed_s1, idx_s1, _ = parser.Embeddings(w1.to(device), sl1)
                 packed_s2, idx_s2, _ = parser.Embeddings(w2.to(device), sl2)
                 h1 = unsort(parser.SemanticRNN(packed_s1), idx_s1)

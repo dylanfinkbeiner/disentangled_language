@@ -137,7 +137,7 @@ def predict_sts_score(sem_h1, sem_h2, conventional_range=False):
     return sims.tolist()
 
 
-def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=40):
+def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=None):
     '''
         inputs:
             words - LongTensor, shape (b,l)
@@ -150,14 +150,17 @@ def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=40):
         outputs:
             dropped - new LongTensor, shape (b,l)
     '''
-    dropped = torch.LongTensor(words)
 
-    for i, s in enumerate(words):
-        for j in range(1, lens[i]): # Skip root token
-            p = -1
-            c = counts[ i2w[s[j].item()] ]
-            p = alpha / (c + alpha) # Dropout probability
-            if random.random() <= p:
-                dropped[i,j] = int(w2i[UNK_TOKEN])
-    
-    return dropped
+    if alpha > 0.:
+        dropped = torch.LongTensor(words)
+        for i, s in enumerate(words):
+            for j in range(1, lens[i]): # Skip root token
+                p = -1
+                c = counts[ i2w[s[j].item()] ]
+                p = alpha / (c + alpha) # Dropout probability
+                if random.random() <= p:
+                    print('Dropped!')
+                    dropped[i,j] = int(w2i[UNK_TOKEN])
+        return dropped
+    else:
+        return words

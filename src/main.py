@@ -114,7 +114,8 @@ if __name__ == '__main__':
         log.info(f'Loading pickled SS train data.')
 
         chunks_txt = sorted(list(os.listdir(os.path.join(PARANMT_DIR, 'txt'))))
-        for chunk in chunks_txt[3:args.n_chunks]:
+        #for chunk in chunks_txt[3:args.n_chunks]:
+        for chunk in chunks_txt[0:args.n_chunks]:
             train_path_chunk = paths.ss_train_base + f'{os.path.splitext(chunk)[0]}.pkl'
             with open(train_path_chunk, 'rb') as pkl:
                 curr = pickle.load(pkl)
@@ -170,17 +171,18 @@ if __name__ == '__main__':
         log.info(f'Model will have randomly initialized parameters.')
         args.init_model = True
 
-    ih = parser.FinalRNN.lstm.weight_ih_l0.data
-    syn_h = args.syn_h
-    sem_h = args.sem_h
-    #syn_weights = torch.cat([ih[:, :syn_h], ih[:, syn_h+sem_h : 2*syn_h+sem_h]])
-    #sem_weights = torch.cat([ih[:, syn_h:syn_h+sem_h], ih[:, 2*syn_h+sem_h:]])
-    syn_weights = ih[:, :2*syn_h]
-    sem_weights = ih[:, 2*syn_h:]
+    if args.w:
+        ih = parser.FinalRNN.lstm.weight_ih_l0.data
+        syn_h = args.syn_h
+        sem_h = args.sem_h
+        #syn_weights = torch.cat([ih[:, :syn_h], ih[:, syn_h+sem_h : 2*syn_h+sem_h]])
+        #sem_weights = torch.cat([ih[:, syn_h:syn_h+sem_h], ih[:, 2*syn_h+sem_h:]])
+        syn_weights = ih[:, :2*syn_h]
+        sem_weights = ih[:, 2*syn_h:]
 
-    print(f'Syn: {syn_weights.norm(2)}')
-    print(f'Sem: {sem_weights.norm(2)}')
-    #breakpoint()
+        print(f'Syn: {syn_weights.norm(2)}')
+        print(f'Sem: {sem_weights.norm(2)}')
+        breakpoint()
 
     vocabs = {'x2i': x2i, 'i2x': i2x}
 
