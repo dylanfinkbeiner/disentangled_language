@@ -9,6 +9,7 @@ def autos_to_merged():
         chunk_dir = f'{i:02d}'
         curr_dir = os.path.join(bank_dir, chunk_dir)
     
+        nsents = 0 #XXX
         merged_sents = []
         auto_list = sorted([a for a in os.listdir(curr_dir) if os.path.splitext(a)[-1] == '.auto'])
         for a in auto_list:
@@ -18,6 +19,11 @@ def autos_to_merged():
                     if l[0] == '(':
                         sent = auto_to_word_tag_pairs(l)
                         merged_sents.append(sent)
+
+                        nsents += 1 #XXX
+
+        print(f'{chunk_dir} contains {nsents} sentences')
+        continue
 
         out_file = f'{chunk_dir}.stag'
         with open(os.path.join(out_dir, out_file), 'w') as f:

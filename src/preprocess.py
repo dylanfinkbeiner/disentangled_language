@@ -18,7 +18,8 @@ CORPORA_DIR = '/home/AD/dfinkbei/corpora'
 STS_DIR = f'{DATA_DIR}/sts'
 STS_INPUT = os.path.join(STS_DIR, 'input')
 STS_GS = os.path.join(STS_DIR, 'gs')
-DEP_DIR = f'{CORPORA_DIR}/wsj/dependencies'
+WSJ_DIR = f'{CORPORA_DIR}/wsj_sorted/'
+CCG_DIR = f'{CORPORA_DIR}/ccgbank/'
 #BROWN_DIR = f'{CORPORA_DIR}/brown/dependencies'
 BROWN_DIR = '../data/brown'
 PARANMT_DIR = os.path.join(DATA_DIR, 'paranmt_5m')
@@ -47,13 +48,13 @@ class DataPaths:
         # Directories
         sdp_data_dir = os.path.join(DATA_DIR, 'sdp_processed')
         ss_data_dir = os.path.join(DATA_DIR, 'ss_processed')
-        #syn_data_dir = os.path.join(DATA_DIR, 'syn_processed')
+        stag_data_dir = os.path.join(DATA_DIR, 'stag_processed')
         if not os.path.isdir(sdp_data_dir):
             os.mkdir(sdp_data_dir)
         if not os.path.isdir(ss_data_dir):
             os.mkdir(ss_data_dir)
-        #if not os.path.isdir(syn_data_dir):
-        #    os.mkdir(syn_data_dir)
+        if not os.path.isdir(stag_data_dir):
+            os.mkdir(stag_data_dir)
         if not os.path.isdir(os.path.join(PARANMT_DIR, 'pkl')):
             os.mkdir(os.path.join(PARANMT_DIR, 'pkl'))
         if not os.path.isdir(os.path.join(PARANMT_DIR, 'tagged')):
@@ -65,24 +66,18 @@ class DataPaths:
         self.data_ptb = os.path.join(sdp_data_dir, f'data_ptb_{fs}_{voc}.pkl')
         self.data_brown = os.path.join(sdp_data_dir, f'data_brown_{fs}_{voc}.pkl')
 
-        #self.cutoff_dicts = os.path.join(syn_data_dir, f'syn_cutoff_dicts_{fs}_{voc}.pkl')
-        #self.l2p = os.path.join(syn_data_dir, f'syn_l2p_{fs}_{voc}.pkl')
-        #self.syn_data = os.path.join(syn_data_dir, f'syn_data_{fs}_{voc}_{score_type}.pkl')
-            
+        self.data_stag = os.path.join(stag_data_dir, f'data_ptb_stag_{voc}.pkl')
+
         self.glove_data = os.path.join(DATA_DIR, 'glove', f'glove_{glove_d}_data.pkl')
         self.glove_w2v = os.path.join(DATA_DIR, 'glove', f'glove_{glove_d}_w2v.pkl')
         self.ss_train_base = os.path.join(PARANMT_DIR, 'pkl', f'{fs}_{voc}_')
         self.ss_test = os.path.join(ss_data_dir, f'ss_test_{fs}_{voc}.pkl')
-        #self.paranmt_counts = os.path.join(ss_data_dir, f'paranmt_counts.pkl')
-        #self.sl999_data = os.path.join(ss_data_dir, f'sl999_data.pkl')
-        #self.sl999_w2v = os.path.join(ss_data_dir, f'sl999_w2v.pkl')
     
 
 def preprocess(args):
     paths = DataPaths(
             filtered=args.filter, 
-            glove_d=args.glove_d, 
-            score_type=args.score_type)
+            glove_d=args.glove_d) 
 
     x2i, i2x = {}, {}
     if os.path.exists(paths.ptb_vocabs):
@@ -90,9 +85,7 @@ def preprocess(args):
             x2i, i2x = pickle.load(f)
 
     if args.pretrained_voc:
-        #path = paths.sl999_data if args.sl999 else paths.glove_data
-        path = paths.glove_data
-        with open(path, 'rb') as pkl:
+        with open(paths.glove_data, 'rb') as pkl:
             embedding_data = pickle.load(pkl)
 
         x2i['word'] = embedding_data['w2i']
@@ -103,7 +96,11 @@ def preprocess(args):
         if 'ptb' in args.sdp:
             log.info(f'Initializing Penn Treebank WSJ data (including vocabs).')
             ptb_conllus = sorted(
-                    [os.path.join(DEP_DIR, f) for f in os.listdir(DEP_DIR)])
+                    [os.path.join(WSJ_DIR, f) for f in os.listdir(WSJ_DIR)])
+
+            data_utils.compare(conllus=ptb_conllus, stags=ptb_stags) #XXX
+            exit()
+
             raw_data_ptb, x2i_ptb, i2x_ptb, word_counts = data_utils.build_ptb_dataset(
                     ptb_conllus, 
                     filter_sents=args.filter)
@@ -130,46 +127,6 @@ def preprocess(args):
                     filter_sents=args.filter)
             with open(paths.data_brown, 'wb') as f:
                 pickle.dump(data_brown, f)
-
-
-    #if args.paranmt_counts:
-    #    word_counts = Counter()
-    #    chunks_txt = sorted(list(os.listdir(os.path.join(PARANMT_DIR, 'txt'))))
-    #    for chunk in tqdm(chunks_txt, ascii=True, desc=f'Getting word counts for ParaNMT corpus', ncols=80):
-    #        raw_sents_path = os.path.join(PARANMT_DIR, 'tagged', f'{os.path.splitext(chunk)[0]}-tagged.pkl')
-    #        with open(raw_sents_path, 'rb') as pkl:
-    #            raw_sent_pairs = pickle.load(pkl)
-
-    #        flattened_raw = []
-    #        for s1, s2 in raw_sent_pairs:
-    #            flattened_raw.append(s1)
-    #            flattened_raw.append(s2)
-    #        wc_chunk = data_utils.get_word_counts(flattened_raw)
-    #        word_counts.update(wc_chunk)
-
-    #    with open(paths.paranmt_counts, 'wb') as pkl:
-    #        pickle.dump(word_counts, pkl)
-
-
-    #if args.sl999 and not args.pretrained_voc:
-    #    w2v = data_utils.build_pretrained_w2v(word_v_file='../data/paranmt_5m/paragram_300_sl999_top100k.txt')
-    #    with open(paths.sl999_w2v, 'wb') as pkl:
-    #        pickle.dump(w2v, pkl)
-    #    with open(paths.paranmt_counts, 'rb') as pkl:
-    #        word_counts = pickle.load(pkl)
-
-    #    n_removed = 0
-    #    w2v_cleaned = {}
-    #    for w, v in w2v.items():
-    #        if word_counts[w] != 0:
-    #            w2v_cleaned[w] = v
-    #        else:
-    #            n_removed += 1
-    #    print(f'Removed {n_removed} words from w2v.') 
-    #    
-    #    sl999_data = data_utils.build_embedding_data(w2v_cleaned)
-    #    with open(paths.sl999_data, 'wb') as pkl:
-    #        pickle.dump(sl999_data, pkl)
 
 
     if args.glove_d and not args.pretrained_voc:
@@ -242,120 +199,21 @@ def preprocess(args):
             pickle.dump(test_ss, pkl)
 
 
-    if args.syn:
-        with open(paths.data_ptb, 'rb') as pkl:
-            data_ptb, _ = pickle.load(pkl)
-        sents_sorted = sorted(data_ptb['train'], key=lambda sent: sent.shape[0])
+    if args.stag:
+        log.info(f'Initializing supertagging data.')
+        ptb_stags = sorted(
+                [os.path.join(CCG_DIR, f) for f in os.listdir(CCG_DIR)]) #XXX
 
-        if 'cutoffs' in args.syn:
-            cutoff_dicts = data_utils.build_cutoff_dicts(sents_sorted)
-            with open(paths.cutoff_dicts, 'wb') as pkl:
-                pickle.dump(cutoff_dicts, pkl)
-        else:
-            with open(paths.cutoff_dicts, 'rb') as pkl:
-                cutoff_dicts = pickle.load(pkl)
+        raw_stag_sents, s2i, i2s = data_utils.build_ptb_stags(ptb_stags)
+        x2i['stag'] = s2i
+        i2x['stag'] = i2s
 
-        #Cleanup
-        #min_length = 1
-        #max_length = 5
-        #l2n = cutoff_dicts['l2n']
-        #l2n_cleaned = copy.deepcopy(l2n)
-        #l2c_cleaned = copy.deepcopy(cutoff_dicts['l2c'])
-        #for l, n in l2n.items():
-        #    if l < min_length:
-        #        l2n_cleaned.pop(l)
-        #        l2c_cleaned.pop(l)
-        #    elif l > max_length:
-        #        l2n_cleaned.pop(l)
-        #        l2c_cleaned.pop(l)
-
-        if 'pairs' in args.syn:
-            l2p = data_utils.build_l2p(sents_sorted, l2c=l2c_cleaned)
-            #with open(paths.l2p, 'rb') as pkl:
-            #    l2p_old = pickle.load(pkl)
-            #l2p_old.update(l2p)
-            with open(paths.l2p, 'wb') as pkl:
-                pickle.dump(l2p, pkl)
-        else:
-            with open(paths.l2p, 'rb') as pkl:
-                l2p = pickle.load(pkl)
-
-        #total_pairs = 0
-        #l2n = cutoff_dicts['l2n']
-        #for l, p in l2p.items():
-        #    n = l2n[l]
-        #    total_pairs = (n*(n-1))/2
-        #    guess = len(p)
-        #    m = sorted(p, key=lambda x: x[2])[-1]
-        #    print(f'Length {l}, Total from l2n: {total_pairs}, Total from l2p: {guess}, Max is {m}')
-
-        #exit()
-
-        if 'buckets' in args.syn:
-            min_length = 1
-            max_length = 22
-            l2n = cutoff_dicts['l2n']
-            for l in list(l2n.keys()):
-                if l < min_length or l > max_length:
-                    if l in l2p:
-                        l2p.pop(l)
-                    l2n.pop(l)
-
-            l2b = data_utils.build_l2b(
-                    sents_sorted, 
-                    l2p=l2p, 
-                    granularity=args.granularity,
-                    score_type=args.score_type,
-                    include_zeros=args.include_zeros)
-
-            syn_data = {
-                    'sents_sorted': sents_sorted,
-                    'l2n': l2n,
-                    'l2b': l2b, 
-                    'granularity': args.granularity,
-                    'score_type': args.score_type
-                    }
-            with open(paths.syn_data, 'wb') as pkl:
-                pickle.dump(syn_data, pkl)
-        else:
-            with open(paths.syn_data, 'rb') as pkl:
-                syn_data = pickle.load(pkl)
-
-
-
-        #Statistics!
-        if 'stats' in args.syn:
-            l2b = syn_data['l2b']
-            z = 'zeros' if args.include_zeros else 'nozeros'
-            #breakpoint()
-            for l, b in l2b.items():
-                grains = []
-                total_in_bucket = []
-                for grain, bucket in b.items():
-                    grains.append(grain)
-                    total_in_bucket.append(len(bucket))
-
-                #print(f'Length : {l}')
-                #print(grains)
-                #print(total_in_bucket)
-                plt.show()
-                plt.title(f'Distribution for length: {l}')
-                plt.bar(grains, total_in_bucket, 0.15)
-                plt.ylabel('Total pairs in bucket')
-                plt.savefig(f'../images/{args.score_type}_{z}_length_{l}.png')
-                plt.clf()
-
-        total_pairs = 0
-        min_length = 1
-        max_length = 11
-        for l, b in syn_data['l2b'].items():
-            if l >= min_length and l <= max_length:
-                curr_pairs = 0
-                for grain, bucket in b.items():
-                        curr_pairs += len(bucket)
-                print(f'Length {l} has {curr_pairs} many pairs')
-                total_pairs += curr_pairs
-        print(f'In total, {total_pairs} many pairs')
+        data_stag = {}
+        for split, raw_sents in raw_stag_sents.items():
+            data_stag[split] = data_utils.numericalize_stag(raw_sents, x2i)
+        with open(paths.data_stag, 'wb') as f:
+            pickle.dump(data_stag , f)
+    
 
     print('Finished!')
 
@@ -368,14 +226,9 @@ if __name__ == '__main__':
 
     parser.add_argument('-sdp', help='Initialize a part (or all) of the syntactic parsing data.', dest='sdp', nargs='*', type=str, default=[])
 
-    #parser.add_argument('-syn', help='Initialize data special syntactic task.', dest='syn', nargs='*', type=str, default=[])
-    #parser.add_argument('-gr', help='What should be the bucketing granularity for sentence scores?', type=float, dest='granularity', default=0.25)
-    #parser.add_argument('-st', help='Score type', type=str, dest='score_type', default='LAS')
-    #parser.add_argument('-iz', action='store_true', dest='include_zeros', default=False)
+    parser.add_argument('-stag', help='Initialize supertagging data.', dest='stag', action='store_true')
 
     pretrained_emb = parser.add_mutually_exclusive_group()
-    #pretrained_emb.add_argument('-sl999', action='store_true', help='Initialize data corresponding to sl999 word embeddings.', dest='sl999', default=False)
-    #parser.add_argument('-counts', action='store_true', help='Get counts of word ocurrences in ParaNMT corpus.', dest='paranmt_counts', default=False)
     pretrained_emb.add_argument('-g', help='Initialize data corresponding to glove word embeddings.', dest='glove_d', type=int, default=None)
     parser.add_argument('--pevoc', action='store_true', help='Shall we use the word vocabulary derived from the chosen pretrained embeddings?', dest='pretrained_voc', default=False)
 

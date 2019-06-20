@@ -94,10 +94,8 @@ if __name__ == '__main__':
             data_brown = pickle.load(pkl)
 
     args.using_pretrained = False
-    #if args.sl999 or args.glove_d:
     if args.glove_d:
         args.using_pretrained = True
-        #path = paths.sl999_data if args.sl999 else paths.glove_data
         path = paths.glove_data
         log.info(f'Loading pretrained embedding data from {path}')
         with open(path, 'rb') as pkl:
@@ -111,7 +109,7 @@ if __name__ == '__main__':
 
     ss_train = {'sent_pairs': [], 'targets': []}
     if args.train_mode > 0:
-        log.info(f'Loading pickled SS train data.')
+        log.info(f'Loading pickled semantic similarity data.')
 
         chunks_txt = sorted(list(os.listdir(os.path.join(PARANMT_DIR, 'txt'))))
         #for chunk in chunks_txt[3:args.n_chunks]:
@@ -123,18 +121,24 @@ if __name__ == '__main__':
                 ss_train['targets'].extend(curr['targets'])
         data_ss['train'] = ss_train
 
-    ss_test = {}
-    if args.evaluate_semantic or args.train_mode > 0:
-       log.info(f'Loading pickled SS test data.')
-       with open(paths.ss_test, 'rb') as pkl:
-           ss_test = pickle.load(pkl)
-       data_ss['dev'] = ss_test['2017']
-       data_ss['test'] = ss_test
+        ss_test = {}
+        log.info(f'Loading pickled SS test data.')
+        with open(paths.ss_test, 'rb') as pkl:
+            ss_test = pickle.load(pkl)
+            data_ss['dev'] = ss_test['2017']
+            data_ss['test'] = ss_test
+    
 
+    data_stag = {}
+    if args.train_mode > 3:
+        log.info('Loading pickled supertagging training data.')
+        with open(paths.data_stag, 'rb') as pkl:
+            data_stag = pickle.load(pkl)
+        with open(paths.stag_vocabs, 'rb') as pkl:
+            s2i, i2s = pickle.load(pkl)
+        x2i['stag'] = s2i
+        i2x['stag'] = i2s
 
-    #if args.train_mode > 2:
-    #    with open(paths.syn_data, 'rb') as pkl:
-    #        syn_data = pickle.load(pkl)
 
     # Prepare parser
     parser = BiaffineParser(
@@ -175,8 +179,6 @@ if __name__ == '__main__':
         ih = parser.FinalRNN.lstm.weight_ih_l0.data
         syn_h = args.syn_h
         sem_h = args.sem_h
-        #syn_weights = torch.cat([ih[:, :syn_h], ih[:, syn_h+sem_h : 2*syn_h+sem_h]])
-        #sem_weights = torch.cat([ih[:, syn_h:syn_h+sem_h], ih[:, 2*syn_h+sem_h:]])
         syn_weights = ih[:, :2*syn_h]
         sem_weights = ih[:, 2*syn_h:]
 
@@ -194,8 +196,8 @@ if __name__ == '__main__':
                 'device': device}
         if args.train_mode > 0:
             data['data_ss'] = data_ss
-        #if args.train_mode > 2:
-        #    data['syn_data'] = syn_data
+        if args.train_mode > 3:
+            data['data_stag'] = data_stag
 
         train.train(args, parser, data, weights_path=weights_path, experiment=experiment)
 
@@ -213,4 +215,7 @@ if __name__ == '__main__':
                     'device': device,
                     'vocabs': vocabs}
             eval.eval_sts(args, parser, data, experiment=experiment)
+
+        if args.evaluate_stagging:
+            pass
 

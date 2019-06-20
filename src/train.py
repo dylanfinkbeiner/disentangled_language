@@ -67,20 +67,25 @@ def train(args, parser, data, weights_path=None, experiment=None):
     #mode_description = MODE_DESC[args.train_mode]
 
     train_sdp = data['data_ptb']['train']
-
-    custom = args.train_mode > 0
-
     dev_sdp = data['data_ptb']['dev']
     loader_sdp_train = sdp_data_loader(train_sdp, batch_size=args.batch_size, shuffle_idx=True)
     loader_sdp_dev = sdp_data_loader(dev_sdp, batch_size=100, shuffle_idx=False)
-    log.info(f'There are {len(train_sdp)} SDP training examples.')
-    log.info(f'There are {len(dev_sdp)} SDP dev examples.')
+    log.info(f'There are {len(train_sdp)} syntactic dependency parsing training examples.')
+    log.info(f'There are {len(dev_sdp)} syntactic dependency parsing dev examples.')
     if args.train_mode > 0:
         train_ss = data['data_ss']['train']['sent_pairs']
         dev_ss = data['data_ss']['dev']
         idxloader_ss_train = idx_loader(num_data=len(train_ss), batch_size=args.batch_size)
-        log.info(f'There are {len(train_ss)} SS training examples.')
-        log.info(f"There are {len(dev_ss['sent_pairs'])} SS dev examples.")
+        log.info(f'There are {len(train_ss)} semantic similarity training examples.')
+        log.info(f"There are {len(dev_ss['sent_pairs'])} semantic similarity dev examples.")
+    if args.train_mode > 3:
+        train_stag = data['data_stag']['train']
+        dev_stag = data['data_stag']['dev']
+        loader_stag_train = stag_data_loader(train_stag, batch_size=args.batch_size, shuffle_idx=True)
+        loader_stag_dev = stag_data_loader(dev_stag, batch_size=100, shuffle_idx=False)
+        log.info(f'There are {len(train_stag)} supertagging training examples.')
+        log.info(f'There are {len(dev_stag)} supertagging dev examples.')
+
 
     n_train_batches = ceil(len(train_sdp) / args.batch_size)
     n_dev_batches = ceil(len(dev_sdp) / 100)
@@ -137,46 +142,37 @@ def train(args, parser, data, weights_path=None, experiment=None):
                             #Standard syntactic parsing step
                             batch = next(loader_sdp_train)
                             loss = forward_syntactic_parsing(parser, batch, args=args, data=data)
-                            #loss.backward()
-                            #opt.step()
 
-                        if args.train_mode >= 3:
-                            #opt.zero_grad()
+                        if args.train_mode == 3:
                             batch = next(loader_sdp_train)
-                            #loss, loss_pos = forward_parsing_and_pos(
                             loss_par = forward_syntactic_parsing(
                                     parser, 
                                     batch=batch, 
                                     args=args, 
                                     data=data)
-                            #loss.backward()
-                            if x % print_grad_every == 0:
-                                print(f'\nParsing gradient:')
-                                print(gradient_update(parser, verbose=False))
-                            #opt.step()
-                            #opt.zero_grad()
-                            #batch = next(loader_sdp_train)
                             loss_pos = forward_pos(
                                     parser,
                                     batch=batch,
                                     args=args,
                                     data=data)
-                            #loss_pos.backward()
-                            #print(f'\nPOS tagging loss: {loss_pos}\n')
-                            if x % print_grad_every == 0:
-                                print(f'\nPOS tagging gradient:\n')
-                                print(gradient_update(parser, verbose=False))
-                            #opt.step()
-
                             loss = loss_par + loss_pos
 
-                        #if x % print_grad_every == 0:
-                        #    update = gradient_update(parser)
-                        #    log.info(update)
-                        #    exp_file.write(update)
+                        if args.train_mode == 4:
+                            sdp_batch = next(loader_sdp_train)
+                            loss_par = forward_syntactic_parsing(
+                                    parser, 
+                                    batch=sdp_batch, 
+                                    args=args, 
+                                    data=data)
+                            stag_batch = next(loader_stag_train)
+                            loss_pos = forward_stag(
+                                    parser,
+                                    batch=stag_batch,
+                                    args=args,
+                                    data=data)
+                            loss = loss_par + loss_stag
 
                         # Sentence similarity step
-                        #opt.zero_grad()
                         loss_sem = forward_semantic(
                                 parser,
                                 para1=[mb_para1[i] for i in idxs[x]],
@@ -188,14 +184,12 @@ def train(args, parser, data, weights_path=None, experiment=None):
                         loss += loss_sem.cpu()
                         loss.backward()
                         if x % print_grad_every == 0:
-                            print(f'\nSemantic similarity gradient:\n')
+                            print(f'\nGradient:\n')
                             print(gradient_update(parser, verbose=False))
                         
-                        #print(f'\nPOS embedding grad:\n')
-                        #print(parser.pe.data.grad)
                         opt.step()
 
-                    update = f'''Update for megabatch: {m+1}\n'''
+                    update = f'''\nUpdate for megabatch: {m+1}\n'''
                     correlation = ss_dev_eval(parser, dev_ss, args=args, data=data)
                     update += '''Semantic train loss: {:.4f}
                             Semantic dev loss: {:.4f}
@@ -203,7 +197,7 @@ def train(args, parser, data, weights_path=None, experiment=None):
 
                     log.info(update)
 
-            update = f'''Update for epoch: {e+1}/{args.epochs}\n'''
+            update = f'''\nUpdate for epoch: {e+1}/{args.epochs}\n'''
             #if args.train_mode  2:
             if True:
                 UAS, LAS, dev_loss = sdp_dev_eval(parser, args=args, data=data, loader=loader_sdp_dev, n_dev_batches=n_dev_batches)
@@ -249,7 +243,7 @@ def train(args, parser, data, weights_path=None, experiment=None):
     finally:
         d = datetime.datetime.utcnow()
         d = d.astimezone(pytz.timezone("America/Los_Angeles"))
-        exp_file.write('\n' * 3 + f'Experiment ended at {d:%H:%M:%S}')
+        exp_file.write('\n'*3 + f'Experiment ended at {d:%H:%M:%S}')
         exp_file.close()
 
 
