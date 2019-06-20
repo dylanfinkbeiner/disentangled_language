@@ -45,18 +45,18 @@ def get_args():
     sdp_eval = parser.add_mutually_exclusive_group()
     sdp_eval.add_argument('-e', help='Evaluate, and provide flags for datasets to evaluate on.', nargs='*', type=int)
     sdp_eval.add_argument('-ef', help='Evaluate, and provide filename to evaluate on.')
-    parser.add_argument('-es', action='store_true', dest='evaluate_semantic', default=False)
+    parser.add_argument('-esem', action='store_true', dest='evaluate_semantic', default=False)
+    parser.add_argument('-estag', action='store_true', dest='evaluate_stag', default=False)
 
     # Data options
     parser.add_argument('--filter', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
     pretrained_emb = parser.add_mutually_exclusive_group()
-    #pretrained_emb.add_argument('--sl999', action='store_true', help='Should we use sl999 data?', dest='sl999', default=False)
     pretrained_emb.add_argument('--gloved', help='Should we use glove data, and if so what size embeddings?', dest='glove_d', type=int, default=None)
 
     # Model hyperparameters
     parser.add_argument('-we', help='Size of word embeddings.', dest='we', type=int, default=100)
     parser.add_argument('-pe', help='Size of pos embeddings.', dest='pe', type=int, default=None)
-    parser.add_argument('-a', help='Alpha parameter of frequency-based word dropout.', dest='alpha', type=int, default=40)
+    parser.add_argument('-a', help='Alpha parameter of frequency-based word dropout.', dest='alpha', type=int, default=0)
     parser.add_argument('-sumfb', help='Should we sum the averaged forward and backward hiddens in average_hiddens()?', action='store_true', dest='sum_f_b', default=False)
     parser.add_argument('-synh', help='Number of units of hidden state dedicated to syntactic content.', dest='syn_h', type=int, default=200)
     parser.add_argument('-semh', help='Number of units of hidden state dedicated to semantic content.', dest='sem_h', type=int, default=200)

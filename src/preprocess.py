@@ -18,8 +18,8 @@ CORPORA_DIR = '/home/AD/dfinkbei/corpora'
 STS_DIR = f'{DATA_DIR}/sts'
 STS_INPUT = os.path.join(STS_DIR, 'input')
 STS_GS = os.path.join(STS_DIR, 'gs')
-WSJ_DIR = f'{CORPORA_DIR}/wsj_sorted/'
-CCG_DIR = f'{CORPORA_DIR}/ccgbank/'
+WSJ_DIR = os.path.join(CORPORA_DIR, 'wsj')
+CCG_DIR = os.path.join(CORPORA_DIR, 'ccgbank')
 #BROWN_DIR = f'{CORPORA_DIR}/brown/dependencies'
 BROWN_DIR = '../data/brown'
 PARANMT_DIR = os.path.join(DATA_DIR, 'paranmt_5m')
@@ -66,6 +66,7 @@ class DataPaths:
         self.data_ptb = os.path.join(sdp_data_dir, f'data_ptb_{fs}_{voc}.pkl')
         self.data_brown = os.path.join(sdp_data_dir, f'data_brown_{fs}_{voc}.pkl')
 
+        self.stag_vocabs = os.path.join(stag_data_dir, f'stag_vocabs.pkl')
         self.data_stag = os.path.join(stag_data_dir, f'data_ptb_stag_{voc}.pkl')
 
         self.glove_data = os.path.join(DATA_DIR, 'glove', f'glove_{glove_d}_data.pkl')
@@ -205,6 +206,8 @@ def preprocess(args):
                 [os.path.join(CCG_DIR, f) for f in os.listdir(CCG_DIR)]) #XXX
 
         raw_stag_sents, s2i, i2s = data_utils.build_ptb_stags(ptb_stags)
+        with open(paths.stag_vocabs, 'wb') as f:
+            pickle.dump((s2i, i2s), f)
         x2i['stag'] = s2i
         i2x['stag'] = i2s
 

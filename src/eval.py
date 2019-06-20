@@ -17,7 +17,7 @@ from parser import unsort
 
 #CORPORA_DIR = '/corpora'
 CORPORA_DIR = '/home/AD/dfinkbei/corpora'
-WSJ_DIR = os.path.join(CORPORA_DIR, 'wsj/dependencies')
+WSJ_DIR = os.path.join(CORPORA_DIR, 'wsj')
 #BROWN_DIR = '/corpora/brown/dependencies'
 BROWN_DIR = '../data/brown'
 DATA_DIR = '../data/'
@@ -42,8 +42,8 @@ NAMES = {
 YEARS = ['2012', '2013', '2014', '2015', '2016', '2017']
 
 def eval_sdp(args, parser, data, experiment=None):
-    pos_tag_eval = True
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    pos_tag_eval = False
+    device = data['device']
 
     vocabs = data['vocabs']
     i2r = vocabs['i2x']['rel']
@@ -79,12 +79,11 @@ def eval_sdp(args, parser, data, experiment=None):
         prelude += f'\nStarting date/time: {d:%m %d} at {d:%H:%M:%S}'
         print(f'Evaluating on datasets: {names}')
         exp_file.write(prelude)
+        print(prelude)
 
         #XXX 
         total_predictions = 0
         total_correct = 0
-
-        print(prelude)
         for name, gold, sents_list in zip(names, golds, sents):
             dataset = data[name]
             data_loader = data_utils.sdp_data_loader(dataset, batch_size=1, shuffle_idx=False)
@@ -96,8 +95,8 @@ def eval_sdp(args, parser, data, experiment=None):
                         batch = next(data_loader)
                         sent_len = batch['sent_lens'].to(device)
 
-                        _, S_rel, head_preds = parser(batch['words'].to(device), sent_len, pos=batch['pos'].to(device))
-                        #_, S_rel, head_preds = parser(batch['words'].to(device), sent_len)
+                        #_, S_rel, head_preds = parser(batch['words'].to(device), sent_len, pos=batch['pos'].to(device))
+                        _, S_rel, head_preds = parser(batch['words'].to(device), sent_len)
                         rel_preds = utils.predict_relations(S_rel)
                         rel_preds = rel_preds.view(-1)
                         rel_preds = [i2r[rel] for rel in rel_preds.numpy()]
@@ -149,7 +148,7 @@ def eval_sdp(args, parser, data, experiment=None):
 
 
 def eval_sts(args, parser, data, experiment=None):
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = data['device']
 
     exp_path = experiment['path']
 
@@ -218,6 +217,47 @@ def eval_sts(args, parser, data, experiment=None):
                 #print(stats)
 
     print('Finished with semantic evaluation!')
+
+
+def eval_stag(args, parser, data, experiment=None):
+    device = data['device']
+
+    datasets = {'dev': data['dev'], 'test': data['test']}
+
+    with open(experiment['path'], 'a') as exp_file:
+        d = experiment['date']
+        prelude = '\n' * 3 + f'New supertagging evaluation experiment for model : {args.model}'
+        prelude += f'\nStarting date/time: {d:%m %d} at {d:%H:%M:%S}'
+        exp_file.write(prelude)
+
+        print(prelude)
+
+        parser.eval()  # Crucial! Toggles dropout effects
+        with torch.no_grad():
+            for name, dataset in datasets.items():
+                loader = data_utils.stag_data_loader(dataset, batch_size=100, shuffle_idx=False)
+                n_dev_batches = ceil(len(dataset) / 100)
+
+                total_predictions = 0
+                total_correct = 0
+                for b in range(n_dev_batches):
+                    batch = next(loader)
+                    stag_targets = batch['stag_targets']
+                    sent_lens = batch['sent_lens'].to(device)
+
+                    lstm_input, indices, lens_sorted = parser.Embeddings(batch['words'].to(device), sent_lens)
+                    outputs = parser.SyntacticRNN(lstm_input)
+                    logits = parser.StagMLP(unsort(outputs, indices))
+                    predictions = torch.argmax(logits, -1)
+
+                    n_correct = torch.eq(predictions, stag_targets.to(device)).sum().item()
+                    total_correct += n_correct
+                    total_predictions += sent_lens.sum().item()
+
+                stag_accuracy = total_correct / total_predictions
+
+                info = '\nResults for {}:\n {:10.2f}\n'.format(name, 100 * stag_accuracy)
+                exp_file.write(info)
 
 
 def print_results(evaluation, name):

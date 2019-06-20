@@ -147,6 +147,7 @@ if __name__ == '__main__':
             pretrained_e = pretrained_e if args.using_pretrained else None,
             word_vocab_size = len(x2i['word']),
             pos_vocab_size = len(x2i['pos']),
+            stag_vocab_size = len(x2i['stag']) if args.train_mode > 3 else None,
             syn_h = args.syn_h,
             sem_h = args.sem_h,
             final_h = args.final_h,
@@ -166,7 +167,6 @@ if __name__ == '__main__':
 
 
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
-
     if os.path.exists(weights_path):
         log.info(f'Loading state dict from: \"{weights_path}\"')
         parser.load_state_dict(torch.load(weights_path))
@@ -203,8 +203,8 @@ if __name__ == '__main__':
 
     else:
         if syn_eval:
-            data = {'ptb_test': data_ptb['test'],
-                    'ptb_dev': data_ptb['dev'],
+            data = {'ptb_dev': data_ptb['dev'],
+                    'ptb_test': data_ptb['test'],
                     'brown_cf': data_brown['cf'],
                     'device': device,
                     'vocabs': vocabs}
@@ -216,6 +216,11 @@ if __name__ == '__main__':
                     'vocabs': vocabs}
             eval.eval_sts(args, parser, data, experiment=experiment)
 
-        if args.evaluate_stagging:
-            pass
+        if args.evaluate_stag:
+            data = {'dev': data_stag['dev'],
+                    'test': data_stag['test'],
+                    'device': device,
+                    'vocabs': vocabs}
+
+            eval.eval_stag(args, parser, data, experiment=experiment)
 

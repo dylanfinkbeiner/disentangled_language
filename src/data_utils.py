@@ -468,7 +468,7 @@ def prepare_batch_stag(batch):
     l_longest = torch.max(sent_lens).item()
 
     words = torch.zeros((batch_size, l_longest)).long()
-    stags = torch.LongTensor(batch_size, l_longest).fill_(-1)
+    stag_targets = torch.LongTensor(batch_size, l_longest).fill_(-1)
 
     dt = np.dtype(int)
     for i, s in enumerate(batch):
@@ -477,10 +477,10 @@ def prepare_batch_stag(batch):
         resized_input[:s.shape[0]] = s[:,0]
         resized_target[:s.shape[0]] = s[:,1]
         words[i] = torch.LongTensor(resized_input)
-        stags[i] = torch.LongTensor(resized_target)
+        stag_targets[i] = torch.LongTensor(resized_target)
 
     return {'words': words, 
-            'stags' : stags, 
+            'stag_targets' : stag_targets, 
             'sent_lens' : sent_lens}
 
 
