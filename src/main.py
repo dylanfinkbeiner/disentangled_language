@@ -62,7 +62,7 @@ if __name__ == '__main__':
     args = get_args()
 
     syn_eval = args.e != None or args.ef != None
-    evaluating = syn_eval or args.evaluate_semantic
+    evaluating = syn_eval or args.evaluate_semantic or args.evaluate_stag
 
     # Experiment logistics
     experiment = {}
@@ -130,14 +130,13 @@ if __name__ == '__main__':
     
 
     data_stag = {}
-    if args.train_mode > 3:
-        log.info('Loading pickled supertagging training data.')
-        with open(paths.data_stag, 'rb') as pkl:
-            data_stag = pickle.load(pkl)
-        with open(paths.stag_vocabs, 'rb') as pkl:
-            s2i, i2s = pickle.load(pkl)
-        x2i['stag'] = s2i
-        i2x['stag'] = i2s
+    log.info('Loading pickled supertagging training data.')
+    with open(paths.data_stag, 'rb') as pkl:
+        data_stag = pickle.load(pkl)
+    with open(paths.stag_vocabs, 'rb') as pkl:
+        s2i, i2s = pickle.load(pkl)
+    x2i['stag'] = s2i
+    i2x['stag'] = i2s
 
 
     # Prepare parser
@@ -147,7 +146,8 @@ if __name__ == '__main__':
             pretrained_e = pretrained_e if args.using_pretrained else None,
             word_vocab_size = len(x2i['word']),
             pos_vocab_size = len(x2i['pos']),
-            stag_vocab_size = len(x2i['stag']) if args.train_mode > 3 else None,
+            #stag_vocab_size = len(x2i['stag']) if args.train_mode > 3 else None,
+            stag_vocab_size = len(x2i['stag']),
             syn_h = args.syn_h,
             sem_h = args.sem_h,
             final_h = args.final_h,
