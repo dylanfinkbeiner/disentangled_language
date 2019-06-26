@@ -70,7 +70,6 @@ if __name__ == '__main__':
     if not os.path.isdir(exp_dir):
             os.mkdir(exp_dir)
             save_permanent_params(exp_dir, args)
-    #breakpoint()
     exp_type = 'evaluation' if evaluating else 'training'
     day = f'{d:%m_%d}'
     exp_path = os.path.join(exp_dir, '_'.join([exp_type, day]) + '.txt')
@@ -113,7 +112,7 @@ if __name__ == '__main__':
 
         chunks_txt = sorted(list(os.listdir(os.path.join(PARANMT_DIR, 'txt'))))
         #for chunk in chunks_txt[3:args.n_chunks]:
-        for chunk in chunks_txt[0:args.n_chunks]:
+        for chunk in chunks_txt[:args.n_chunks]:
             train_path_chunk = paths.ss_train_base + f'{os.path.splitext(chunk)[0]}.pkl'
             with open(train_path_chunk, 'rb') as pkl:
                 curr = pickle.load(pkl)
@@ -138,15 +137,13 @@ if __name__ == '__main__':
     x2i['stag'] = s2i
     i2x['stag'] = i2s
 
-
     # Prepare parser
     parser = BiaffineParser(
             word_e_size = pretrained_e.shape[-1] if args.using_pretrained else args.we,
-            pos_e_size = args.pe,
+            pos_e_size = args.pe if args.pe > 0 else None,
             pretrained_e = pretrained_e if args.using_pretrained else None,
             word_vocab_size = len(x2i['word']),
             pos_vocab_size = len(x2i['pos']),
-            #stag_vocab_size = len(x2i['stag']) if args.train_mode > 3 else None,
             stag_vocab_size = len(x2i['stag']),
             syn_h = args.syn_h,
             sem_h = args.sem_h,
@@ -221,6 +218,5 @@ if __name__ == '__main__':
                     'test': data_stag['test'],
                     'device': device,
                     'vocabs': vocabs}
-
             eval.eval_stag(args, parser, data, experiment=experiment)
 

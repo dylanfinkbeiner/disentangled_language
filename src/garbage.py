@@ -207,3 +207,182 @@ def sample_pairs(sample_lengths=None, l2b=None, granularity=None):
         sample_pairs.append(sample_pair)
 
     return sample_pairs
+
+
+def forward_pos(parser, batch, args=None, data=None):
+    device = data['device']
+    parser.train()
+
+    arc_targets = batch['arc_targets']
+    rel_targets = batch['rel_targets']
+    pos_targets = batch['pos'].to(device)
+    sent_lens = batch['sent_lens'].to(device)
+    
+    lstm_input, indices, lens_sorted = parser.Embeddings(batch['words'].to(device), sent_lens)
+    #lstm_input, indices, lens_sorted = parser.Embeddings(batch['words'].to(device), sent_lens, pos=batch['pos'].to(device))
+    outputs = parser.SyntacticRNN(lstm_input)
+    logits = parser.POSMLP(unsort(outputs, indices))
+
+    loss_pos = losses.loss_pos(logits, pos_targets).cpu()
+    
+    #loss *= args.lr_syn
+
+    return loss_pos
+
+def get_paired_idx(idx: list, cutoffs: dict):
+    '''
+        produces a list of indices, paired to an index in idx, of a
+        sentence of equal length
+    '''
+    paired_idx = []
+    for i in idx:
+        c = cutoffs[i]
+        paired_i = random.randrange(c[0], c[1])
+        is_unique_length = (c[0] == c[1] - 1)
+        while (paired_i == i) and not is_unique_length:
+            paired_i = random.randrange(c[0], c[1])
+        paired_idx.append(paired_i)
+
+    return paired_idx
+
+
+def get_syntactic_scores(s1_batch, s2_batch, device=None):
+    ''' Not a great name for the function: must change this later... '''
+    if device is None:
+        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+    results = utils.attachment_scoring(
+            arc_preds=s1_batch['arc_targets'].to(device), 
+            rel_preds=s1_batch['rel_targets'].to(device), 
+            arc_targets=s2_batch['arc_targets'].to(device), 
+            rel_targets=s2_batch['rel_targets'].to(device), 
+            sent_lens=s1_batch['sent_lens'].to(device), 
+            include_root=False,
+            keep_dim=True)
+
+    return results
+
+
+def build_l2p(sents_sorted, l2c=None):
+    l2p = {}
+
+    for l, c in tqdm(l2c.items(), ascii=True, desc=f'Progress in building l2p', ncols=80):
+        idxs = list(range(c[0], c[1]))
+        pairs = []
+
+        for i, idx_i in enumerate(idxs[:-2]):
+            s1_batch = []
+            s2_batch = []
+            for idx_j in idxs[i+1:]:
+                s1_batch.append(sents_sorted[idx_i])
+                s2_batch.append(sents_sorted[idx_j])
+
+            results = get_syntactic_scores(
+                    prepare_batch_sdp(s1_batch),
+                    prepare_batch_sdp(s2_batch))
+
+            uas_batch = results['UAS'].flatten().tolist() # (chunk_size) shaped tensor
+            las_batch = results['LAS'].flatten().tolist()
+
+            for idx_j, uas, las in zip(idxs[i+1:], uas_batch, las_batch):
+                pairs.append( (idx_i, idx_j, uas, las) )
+
+        l2p[l] = pairs
+        print(f'Pairs size is {len(pairs)}')
+
+    return l2p
+
+
+#def length_to_results(data_sorted, l2c=None, device=None, chunk_size=100) -> dict:
+#    ''' 'results', here, refers to the output of my get_syntactic_scores function '''
+#
+#    l2r = {}
+#
+#    for l, c in tqdm(l2c.items(), ascii=True, desc=f'Progress in building l2r', ncols=80):
+#        idxs = list(range(c[0], c[1]))
+#        n = len(idxs)
+#
+#        UAS_chunks = []
+#        LAS_chunks = []
+#        for i, idx_i in enumerate(idxs[:-2]):
+#            s1_batch = []
+#            s2_batch = []
+#            for idx_j in idxs[i+1:]:
+#                s1_batch.append(data_sorted[idx_i])
+#                s2_batch.append(data_sorted[idx_j])
+#        
+#            results = get_syntactic_scores(
+#                    prepare_batch_sdp(s1_batch),
+#                    prepare_batch_sdp(s2_batch),
+#                    device=device)
+#
+#            UAS_chunks.append(results['UAS'].flatten()) # (chunk_size) shaped tensor
+#            LAS_chunks.append(results['LAS'].flatten())
+#
+#        # Stack up results from batched attachment scoring
+#        UAS_l = torch.cat(UAS_chunks, dim=0)
+#        LAS_l = torch.cat(LAS_chunks, dim=0)
+#        expected_len = (n * (n-1)) / 2
+#        if UAS_l.shape[0] != expected_len:
+#            print(f'Expected len: {expected_len}, UAS_l len: {UAS_l.shape[0]}')
+#            raise Exception
+#        elif LAS_l.shape[0] != expected_len:
+#            print(f'Expected len: {expected_len}, LAS_l len: {LAS_l.shape[0]}')
+#            raise Exception
+#
+#        l2r[l] = {'UAS': UAS_l, 'LAS': LAS_l}
+#
+#    return l2r
+
+def build_cutoff_dicts(sents_sorted: list) -> dict:
+    '''
+        inputs:
+            sents_sorted - list of np arrays (conllu-formatted sentences)
+
+        returns:
+            a dictionary i2c, keys are indices in sorted data, values are lists with 2 elements,
+            the first index in sents_sorted of a sentence of that length and the 
+            (non-inclusive) final index
+    '''
+    i2c = dict()
+    l2c = defaultdict(list)
+    l2n = defaultdict(int)
+
+    l_prev = sents_sorted[0].shape[0]
+    l_max = sents_sorted[-1].shape[0]
+    l2c[l_prev].append(0)
+    l2n[l_prev] += 1
+    for i, s in enumerate(sents_sorted[1:], start=1):
+        l = s.shape[0]
+        l2n[l] += 1
+        if l > l_prev:
+            l2c[l_prev].append(i)
+            l2c[l].append(i)
+        l_prev = l
+    l2c[l_max].append(len(sents_sorted))
+
+    for c in l2c.values():
+        for i in range(c[0], c[1]):
+            i2c[i] = c
+
+    if len(i2c) != len(sents_sorted):
+        print(f'i2c {len(i2c)} != sents_sorted {len(sents_sorted)}')
+        raise Exception
+
+
+    return {'l2c': dict(l2c), 'i2c': i2c, 'l2n': dict(l2n)}
+#XXX in forward for biaffine parser
+#if(words.shape[0] > 1):
+#    pos = pos.index_select(0, indices)
+#pos_tags = self.pe(pos)
+#pos_tags = self.pe_drop(pos_tags)
+#XXX
+
+
+#XXX in __init__
+#self.pe = nn.Embedding(
+#    pos_vocab_size,
+#    pos_e_size,
+#    padding_idx=padding_idx).to(device)
+#self.pe_drop = nn.Dropout(p=embedding_dropout).to(device)
+#XXX

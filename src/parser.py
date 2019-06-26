@@ -65,7 +65,7 @@ class Embeddings(nn.Module):
 
     def forward(self, words, sent_lens, pos=None):
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        pos_flag = True if pos is not None else False
+        pos_flag = pos is not None
 
         # Zero-out "unk" word at test time
         #if not self.training:
@@ -74,23 +74,18 @@ class Embeddings(nn.Module):
         # Sort the words, pos, sent_lens (necessary for pack_padded_sequence)
         lens_sorted = sent_lens
         words_sorted = words
-        if pos_flag:
-            pos_sorted = pos
+        pos_sorted = pos
         indices = None
         if(sent_lens.shape[0] > 1):
             lens_sorted, indices = torch.sort(lens_sorted, descending=True)
             indices = indices.to(device)
             words_sorted = words_sorted.index_select(0, indices)
-            del words
-            if pos_flag:
-                pos_sorted = pos_sorted.index_select(0, indices)
-                del pos
+            pos_sorted = pos_sorted.index_select(0, indices) if pos_flag else None
 
         w_embs = self.word_emb(words_sorted) # (b, l, w_e)
-        if pos_flag:
-            p_embs = self.pos_emb(pos_sorted) # (b, l, p_e)
+        p_embs = self.pos_emb(pos_sorted) if pos_flag else None # (b, l, p_e)
 
-        dropout_input = w_embs if not pos_flag else torch.cat([w_embs, p_embs], -1)
+        dropout_input = torch.cat([w_embs, p_embs], -1) if pos_flag else w_embs
 
         lstm_input = self.embedding_dropout(dropout_input) # (b, l, w_e + p_e)
         packed_lstm_input = pack_padded_sequence(
@@ -149,14 +144,11 @@ class SyntacticRNN(nn.Module):
                 dropout=dropout,
                 bias=True)
 
-        # Must now manually do what was once automatic in Torch's 3-layer BiLSTM
-        #self.output_dropout = nn.Dropout(p=dropout)
 
     def forward(self, packed_lstm_input):
         outputs, _ = self.lstm(packed_lstm_input)
-        outputs, _ = pad_packed_sequence(outputs, batch_first=True) 
+        outputs, _ = pad_packed_sequence(outputs, batch_first=True)
 
-        #outputs = self.output_dropout(outputs)
         return outputs
 
 
@@ -294,10 +286,11 @@ class BiaffineParser(nn.Module):
             device=None):
         super(BiaffineParser, self).__init__()
 
+        self.pos_in = bool(pos_e_size)
+
         self.Embeddings = Embeddings(
                 word_e_size=word_e_size,
-                #pos_e_size=pos_e_size,
-                pos_e_size=None, #XXX
+                pos_e_size=pos_e_size,
                 word_vocab_size=word_vocab_size,
                 pos_vocab_size=pos_vocab_size,
                 pretrained_e=pretrained_e,
@@ -307,16 +300,7 @@ class BiaffineParser(nn.Module):
                 device=device
                 ).to(device)
 
-        #token_e_size = (word_e_size + pos_e_size) if pos_e_size is not None else word_e_size
-        token_e_size = word_e_size #XXX
-
-        #XXX
-        #self.pe = nn.Embedding(
-        #    pos_vocab_size,
-        #    pos_e_size,
-        #    padding_idx=padding_idx).to(device)
-        #self.pe_drop = nn.Dropout(p=embedding_dropout).to(device)
-        #XXX
+        token_e_size = (word_e_size + pos_e_size) if pos_e_size != None else word_e_size
 
         self.SyntacticRNN = SyntacticRNN(
                 input_size=token_e_size,
@@ -367,15 +351,8 @@ class BiaffineParser(nn.Module):
             arc_preds - Tensor of predicted arcs
         '''
 
-        #packed_lstm_input, indices, lens_sorted = self.Embeddings(words, sent_lens, pos=pos)
-        packed_lstm_input, indices, lens_sorted = self.Embeddings(words, sent_lens)
-
-        #XXX
-        #if(words.shape[0] > 1):
-        #    pos = pos.index_select(0, indices)
-        #pos_tags = self.pe(pos)
-        #pos_tags = self.pe_drop(pos_tags)
-        #XXX
+        packed_lstm_input, indices, lens_sorted = self.Embeddings(words, sent_lens, pos=pos)
+        #packed_lstm_input, indices, lens_sorted = self.Embeddings(words, sent_lens)
 
         #Packed outputs
         syntactic_outputs = self.SyntacticRNN(packed_lstm_input)

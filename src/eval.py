@@ -4,6 +4,7 @@ import sys
 import subprocess
 import datetime
 from tqdm import tqdm
+import pickle
 
 import matplotlib.pyplot as plt
 import torch
@@ -46,6 +47,8 @@ def eval_sdp(args, parser, data, experiment=None):
     pos_tag_eval = False
     device = data['device']
 
+    sdp_eval_data = {}
+
     vocabs = data['vocabs']
     i2r = vocabs['i2x']['rel']
 
@@ -77,12 +80,11 @@ def eval_sdp(args, parser, data, experiment=None):
     with open(experiment['path'], 'a') as exp_file:
         d = experiment['date']
         prelude = '\n' * 3 + f'New syntactic evaluation experiment for model : {args.model}'
-        prelude += f'\nStarting date/time: {d:%m %d} at {d:%H:%M:%S}'
-        print(f'Evaluating on datasets: {names}')
+        prelude += f'\nStarting date/time: {d:%m %d} at {d:%H:%M:%S}\n'
+        print(f'\nEvaluating on datasets: {names}\n')
         exp_file.write(prelude)
         print(prelude)
 
-        #XXX 
         total_predictions = 0
         total_correct = 0
         for name, gold, sents_list in zip(names, golds, sents):
@@ -96,8 +98,10 @@ def eval_sdp(args, parser, data, experiment=None):
                         batch = next(data_loader)
                         sent_len = batch['sent_lens'].to(device)
 
-                        #_, S_rel, head_preds = parser(batch['words'].to(device), sent_len, pos=batch['pos'].to(device))
-                        _, S_rel, head_preds = parser(batch['words'].to(device), sent_len)
+                        _, S_rel, head_preds = parser(
+                                batch['words'].to(device), 
+                                sent_len, 
+                                pos=batch['pos'].to(device) if parser.pos_in else None)
                         rel_preds = utils.predict_relations(S_rel)
                         rel_preds = rel_preds.view(-1)
                         rel_preds = [i2r[rel] for rel in rel_preds.numpy()]
@@ -135,17 +139,25 @@ def eval_sdp(args, parser, data, experiment=None):
             with open(predicted, 'r') as f:
                 predicted_ud = load_conllu(f)
             evaluation = evaluate(gold_ud, predicted_ud)
+            UAS = evaluation['UAS'].aligned_accuracy
+            LAS = evaluation['LAS'].aligned_accuracy
 
             info = '\nResults for {}:\n UAS : {:10.2f} | LAS : {:10.2f} \n'.format(
                 name,
-                100 * evaluation['UAS'].aligned_accuracy,
-                100 * evaluation['LAS'].aligned_accuracy,
+                100 * UAS,
+                100 * LAS
             )
             exp_file.write(info)
+            sdp_eval_data[name] = (UAS, LAS)
 
             print_results(evaluation, name)
 
+
+    save_eval_data(experiment['path'], 'sdp', sdp_eval_data)
+
+
     print('Finished with syntactic evaluation!')
+
 
 
 def eval_sts(args, parser, data, experiment=None):
@@ -155,6 +167,8 @@ def eval_sts(args, parser, data, experiment=None):
 
     parser.eval()
 
+    sem_eval_data = {}
+
     with open(exp_path, 'a') as exp_file:
         exp_file.write(f'Semantic evaluation for model : {args.model}\n\n')
         with torch.no_grad():
@@ -162,15 +176,13 @@ def eval_sts(args, parser, data, experiment=None):
                 curr_data = data['semeval'][year]
                 targets = curr_data['targets']
                 predictions = []
+
+                pi = parser.pos_in
                 
-                #w1, p1, sl1 = data_utils.prepare_batch_ss([s1 for s1, s2 in curr_data['sent_pairs']])
-                #w2, p2, sl2 = data_utils.prepare_batch_ss([s2 for s1, s2 in curr_data['sent_pairs']])
-                w1, _, sl1 = data_utils.prepare_batch_ss([s1 for s1, s2 in curr_data['sent_pairs']])
-                w2, _, sl2 = data_utils.prepare_batch_ss([s2 for s1, s2 in curr_data['sent_pairs']])
-                #packed_s1, idx_s1, _ = parser.Embeddings(w1.to(device), sl1, pos=p1.to(device))
-                #packed_s2, idx_s2, _ = parser.Embeddings(w2.to(device), sl2, pos=p2.to(device))
-                packed_s1, idx_s1, _ = parser.Embeddings(w1.to(device), sl1)
-                packed_s2, idx_s2, _ = parser.Embeddings(w2.to(device), sl2)
+                w1, p1, sl1 = data_utils.prepare_batch_ss([s1 for s1, s2 in curr_data['sent_pairs']])
+                w2, p2, sl2 = data_utils.prepare_batch_ss([s2 for s1, s2 in curr_data['sent_pairs']])
+                packed_s1, idx_s1, _ = parser.Embeddings(w1.to(device), sl1, pos=p1.to(device) if pi else None)
+                packed_s2, idx_s2, _ = parser.Embeddings(w2.to(device), sl2, pos=p2.to(device) if pi else None)
                 h1 = unsort(parser.SemanticRNN(packed_s1), idx_s1)
                 h2 = unsort(parser.SemanticRNN(packed_s2), idx_s2)
 
@@ -186,7 +198,7 @@ def eval_sts(args, parser, data, experiment=None):
 
                 correlation = utils.sts_scoring(predictions, targets)
 
-                scores = [score for score in zip(predictions, targets)]
+                #scores = [score for score in zip(predictions, targets)]
 
                 #ax.scatter(x, y, alpha=0.8, c=color, edgecolors='none', s=30, label=group)
 
@@ -215,7 +227,11 @@ def eval_sts(args, parser, data, experiment=None):
                     np.max(predictions))
                 exp_file.write(info)
                 print(info)
+
+                sem_eval_data[year] = correlation
                 #print(stats)
+
+    save_eval_data(experiment['path'], 'sem', sem_eval_data)
 
     print('Finished with semantic evaluation!')
 
@@ -259,6 +275,30 @@ def eval_stag(args, parser, data, experiment=None):
 
                 info = '\nResults for {}:\n {:10.2f}\n'.format(name, 100 * stag_accuracy)
                 exp_file.write(info)
+
+                stag_eval_data[name] = stag_accuracy
+
+
+    save_eval_data(experiment['path'], 'stag', stag_eval_data)
+
+    print('Finished with supertagging evaluation!')
+
+
+def save_eval_data(exp_path, task, data):
+    exp_data_path = os.path.splitext(exp_path)[0] + '.pkl'
+    eval_data = {}
+    if os.path.exists(exp_data_path):
+            with open(exp_data_path, 'rb') as pkl:
+                eval_data_pkl = pickle.load(pkl)
+            if task in eval_data_pkl:
+                eval_data_pkl[task].update(data)
+            else:
+                eval_data_pkl[task] = data
+            eval_data = eval_data_pkl
+    else:
+        eval_data[task] = data 
+    with open(exp_data_path, 'wb') as pkl:
+        pickle.dump(eval_data, pkl)
 
 
 def print_results(evaluation, name):

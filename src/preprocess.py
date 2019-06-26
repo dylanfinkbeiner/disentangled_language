@@ -203,7 +203,7 @@ def preprocess(args):
     if args.stag:
         log.info(f'Initializing supertagging data.')
         ptb_stags = sorted(
-                [os.path.join(CCG_DIR, f) for f in os.listdir(CCG_DIR)]) #XXX
+                [os.path.join(CCG_DIR, f) for f in os.listdir(CCG_DIR)])
 
         raw_stag_sents, s2i, i2s = data_utils.build_ptb_stags(ptb_stags)
         with open(paths.stag_vocabs, 'wb') as f:
