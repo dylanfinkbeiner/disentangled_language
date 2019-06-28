@@ -77,26 +77,15 @@ def attachment_scoring(
 
     return {'UAS': UAS,
             'LAS': LAS, 
-            'total_words' : total_words, 
+            'total_words' : total_words,
             'UAS_correct' : UAS_correct,
             'LAS_correct' : LAS_correct}
 
 
 def average_hiddens(hiddens, sent_lens=None, sum_f_b=False):
-    '''
-        inputs:
-            hiddens - tensor w/ shape (b, l, d)
-            sent_lens - 1-D (b) tensor of sentence lengths
-
-        outputs:
-            averaged_hiddens -  (b, d) tensor
-    '''
-
-    #NOTE WE ARE ASSUMING PAD VALUES ARE 0 IN THIS SUM (NEED TO DOUBLE CHECK)
+    #NOTE WE ARE ASSUMING PAD VALUES ARE 0 IN THIS SUM
     averaged_hiddens = hiddens.sum(dim=1) # (b,l,2*h_size) -> (b,2*h_size)
-
     sent_lens = sent_lens.view(-1, 1).float() # (b, 1)
-
     averaged_hiddens /= sent_lens
 
     if sum_f_b:
@@ -108,28 +97,19 @@ def average_hiddens(hiddens, sent_lens=None, sum_f_b=False):
 
 
 def predict_relations(S_rel):
-    '''
-        inputs:
-            S_rel - label logits with shape (b, l, num_rels)
-
-        outputs:
-            rel_preds - shape (b, l)
-    '''
-
     rel_preds = S_rel.cpu().argmax(2).long()
-    
     return rel_preds
 
 
 def sts_scoring(predictions, targets) -> float:
-    r, _ = pearsonr(predictions, targets)
-    return r
+    R, p_value = pearsonr(predictions, targets)
+    return R
 
 
 def predict_sts_score(sem_h1, sem_h2, conventional_range=False):
     sims = F.cosine_similarity(sem_h1, sem_h2, dim=-1).flatten()
 
-    # Scale into 0-5 range, per SemEval STS task conventions (commented out since R invariant to linear transformations)
+    # Scale into 0-5 range, per SemEval STS task conventions
     if conventional_range:
         sims += 1
         sims *= 2.5
@@ -138,28 +118,14 @@ def predict_sts_score(sem_h1, sem_h2, conventional_range=False):
 
 
 def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=None):
-    '''
-        inputs:
-            words - LongTensor, shape (b,l)
-            w2i - word to index dict
-            i2w - index to word dict
-            counts - Counter object associating words to counts in corpus
-            lens - lens of sentences (should be b of them)
-            alpha - hyperparameter for dropout
-
-        outputs:
-            dropped - new LongTensor, shape (b,l)
-    '''
-
     if alpha > 0.:
         dropped = torch.LongTensor(words)
-        for i, s in enumerate(words):
-            for j in range(1, lens[i]): # Skip root token
+        for i, sentence in enumerate(words):
+            for j in range(1, lens[i]): # Skip root token (assumes lens include root)
                 p = -1
-                c = counts[ i2w[s[j].item()] ]
+                c = counts[ i2w[sentence[j].item()] ]
                 p = alpha / (c + alpha) # Dropout probability
                 if random.random() <= p:
-                    print('Dropped!')
                     dropped[i,j] = int(w2i[UNK_TOKEN])
         return dropped
     else:

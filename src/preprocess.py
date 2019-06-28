@@ -99,9 +99,6 @@ def preprocess(args):
             ptb_conllus = sorted(
                     [os.path.join(WSJ_DIR, f) for f in os.listdir(WSJ_DIR)])
 
-            data_utils.compare(conllus=ptb_conllus, stags=ptb_stags) #XXX
-            exit()
-
             raw_data_ptb, x2i_ptb, i2x_ptb, word_counts = data_utils.build_ptb_dataset(
                     ptb_conllus, 
                     filter_sents=args.filter)
@@ -202,10 +199,10 @@ def preprocess(args):
 
     if args.stag:
         log.info(f'Initializing supertagging data.')
-        ptb_stags = sorted(
+        stag_files = sorted(
                 [os.path.join(CCG_DIR, f) for f in os.listdir(CCG_DIR)])
 
-        raw_stag_sents, s2i, i2s = data_utils.build_ptb_stags(ptb_stags)
+        raw_stag_sents, s2i, i2s = data_utils.build_stag_dataset(stag_files=stag_files)
         with open(paths.stag_vocabs, 'wb') as f:
             pickle.dump((s2i, i2s), f)
         x2i['stag'] = s2i

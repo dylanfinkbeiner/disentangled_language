@@ -40,6 +40,7 @@ def get_args():
     parser.add_argument('model', help='Name of model', default='default_model')
     parser.add_argument('--seed', type=int, dest='seed', default=7)
     parser.add_argument('--device', type=str, dest='device', default='')
+    parser.add_argument('-auto', action='store_true', dest='autopilot', default=False)
 
     # Evaluation options
     sdp_eval = parser.add_mutually_exclusive_group()
@@ -65,9 +66,9 @@ def get_args():
     parser.add_argument('-seml', help='Number of semantic LSTM layers.', dest='sem_nlayers', type=int, default=1)
     parser.add_argument('-finl', help='Number of final LSTM layers.', dest='final_nlayers', type=int, default=1)
     parser.add_argument('-lr', help='Learning rate.', dest='lr', type=float, default=2e-3)
-    parser.add_argument('-lrsdp', help='Learning rate scaling syntactic dependency parsing.', dest='lr_sdp', type=float, default=2e-3)
-    parser.add_argument('-lrstag', help='Learning rate scaling supertagging loss.', dest='lr_stag', type=float, default=2e-3)
-    parser.add_argument('-lrsem', help='Learning rate scaling semantic similarity loss.', dest='lr_sem', type=float, default=2e-3)
+    parser.add_argument('-lrsdp', help='Learning rate scaling syntactic dependency parsing.', dest='lr_sdp', type=float, default=1)
+    parser.add_argument('-lrstag', help='Learning rate scaling supertagging loss.', dest='lr_stag', type=float, default=1)
+    parser.add_argument('-lrsem', help='Learning rate scaling semantic similarity loss.', dest='lr_sem', type=float, default=1)
 
     # Training hyperparameters
     parser.add_argument('-sdpbs', help='Batch size, syntactic dependency parsing.', type=int, dest='sdp_bs', default=100)

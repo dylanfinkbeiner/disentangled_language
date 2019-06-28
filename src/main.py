@@ -1,15 +1,20 @@
-import datetime
+import datetime as dt
 import pytz
 import logging
 import os
 import pickle
 import time
+import random
+random.seed(1)
 
 import torch
+torch.manual_seed(1)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+import numpy as np
+np.random.seed(1)
 
 from args import get_args
-#from data_utils import build_ptb_dataset, build_sdp_dataset, build_ss_dataset
-import data_utils
 from parser import BiaffineParser
 import train
 import eval
@@ -28,7 +33,6 @@ DEP_DIR = f'{CORPORA_DIR}/wsj/dependencies'
 #BROWN_DIR = f'{CORPORA_DIR}/brown/dependencies'
 BROWN_DIR = '../data/brown'
 PARANMT_DIR = os.path.join(DATA_DIR, 'paranmt_5m')
-POS_ONLY = False
 
 PAD_TOKEN = '<pad>' # XXX Weird to have out here
 UNK_TOKEN = '<unk>'
@@ -55,8 +59,7 @@ def save_permanent_params(exp_dir, args):
 
 
 if __name__ == '__main__':
-    d = datetime.datetime.utcnow()
-    d = d.astimezone(pytz.timezone("America/Los_Angeles"))
+    d = dt.datetime.now().astimezone(pytz.timezone("America/Los_Angeles"))
     log.info(f'New session: {d}\n')
 
     args = get_args()
@@ -82,6 +85,7 @@ if __name__ == '__main__':
 
     paths = DataPaths(filtered=args.filter, glove_d=args.glove_d)
 
+
     # Populate syntactic dependency parsing data
     log.info(f'Loading pickled syntactic dependency parsing data.')
     with open(paths.data_ptb, 'rb') as pkl:
@@ -100,6 +104,7 @@ if __name__ == '__main__':
         with open(path, 'rb') as pkl:
             embedding_data = pickle.load(pkl)
         x2i['word'] = embedding_data['w2i']
+        print(len(x2i['word']))
         i2x['word'] = embedding_data['i2w']
         pretrained_e = embedding_data['word_e']
 
@@ -107,11 +112,10 @@ if __name__ == '__main__':
     data_ss = {}
 
     ss_train = {'sent_pairs': [], 'targets': []}
-    if args.train_mode > 0:
+    if args.train_mode > 0 or args.evaluate_semantic:
         log.info(f'Loading pickled semantic similarity data.')
 
         chunks_txt = sorted(list(os.listdir(os.path.join(PARANMT_DIR, 'txt'))))
-        #for chunk in chunks_txt[3:args.n_chunks]:
         for chunk in chunks_txt[:args.n_chunks]:
             train_path_chunk = paths.ss_train_base + f'{os.path.splitext(chunk)[0]}.pkl'
             with open(train_path_chunk, 'rb') as pkl:
@@ -136,6 +140,7 @@ if __name__ == '__main__':
         s2i, i2s = pickle.load(pkl)
     x2i['stag'] = s2i
     i2x['stag'] = i2s
+
 
     # Prepare parser
     parser = BiaffineParser(
@@ -174,11 +179,8 @@ if __name__ == '__main__':
 
     if args.w:
         ih = parser.FinalRNN.lstm.weight_ih_l0.data
-        syn_h = args.syn_h
-        sem_h = args.sem_h
-        syn_weights = ih[:, :2*syn_h]
-        sem_weights = ih[:, 2*syn_h:]
-
+        syn_weights = ih[:, :2*args.syn_h]
+        sem_weights = ih[:, 2*args.syn_h:]
         print(f'Syn: {syn_weights.norm(2)}')
         print(f'Sem: {sem_weights.norm(2)}')
         breakpoint()

@@ -17,39 +17,10 @@ from parser import unsort
 
 UNK_TOKEN = '<unk>'
 ROOT_TOKEN = '<root>'
-PAD_TOKEN = '<pad>'
+PAD_TOKEN = '<pad>' # Only place where this seems to come up is in Embeddings, for pad_idx
 
 CONLLU_MASK = [1, 4, 6, 7]  # [word, pos, head, rel]
 CORENLP_URL = 'http://localhost:9000'
-
-
-#def compare(conllus=[], stags=[]):
-#    for c, s in zip(conllus, stags):
-#
-#        c_sents = conllu_to_sents(c)
-#        s_sents = stag_to_sents(s)
-#
-#        while(len(c_sents) != 0):
-#            s1 = c_sents[0]
-#            s2 = s_sents[0]
-#
-#            if len(s1) != len(s2):
-#                print(f'Problem in files {c} and {s}\nProblem sentences:\n{s1}\n{s2}')
-#                breakpoint()
-#                #break
-#
-#            c_sents.pop(0)
-#            s_sents.pop(0)
-
-#        for i in range(len(s_sents)):
-#            s1 = c_sents[i]
-#            s2 = s_sents[i]
-#
-#            for j in range(len(s1)):
-#                if s1[j][1] != s2[j][0]:
-#                    print(f'Problem in files {c} and {s}\nProblem sentences:\n{s1}\n{s2}')
-#                    breakpoint()
-#                    break
 
 
 def stag_to_sents(f: str):
@@ -57,9 +28,8 @@ def stag_to_sents(f: str):
 
     with open(f, 'r') as stag_file:
         lines = stag_file.readlines()
-        if lines[-1] != '\n':
-            lines.append('\n') # So split_points works properly
-
+    if lines[-1] != '\n':
+        lines.append('\n') # So split_points works properly
     while lines[0] == '\n':
         lines.pop(0)
 
@@ -78,22 +48,17 @@ def stag_to_sents(f: str):
 
 
 def build_stag_dicts(sents_list):
-    stag = set()
-    for s in sents_list:
-        for line in s:
-            stag.add(line[2])
-
-    stag = sorted(stag)
-
     s2i = defaultdict(lambda : len(s2i))
     i2s = dict()
-
-    #Crucial that PAD_TOKEN map to 0 so that chunk_to_batch() definition correct
-    i2s[s2i[PAD_TOKEN]] = PAD_TOKEN
     i2s[s2i[UNK_TOKEN]] = UNK_TOKEN
 
-    for t in stag:
-        i2s[s2i[t]] = t
+    stags = set()
+    for s in sents_list:
+        for line in s:
+            stags.add(line[2])
+    stags = sorted(stags) # Reproducibility
+    for stag in stags:
+        i2s[s2i[stag]] = stag
 
     return dict(s2i), i2s
 
@@ -105,25 +70,25 @@ def numericalize_stag(sents_list, x2i):
 
     sents_numericalized = []
     for s in tqdm(sents_list, ascii=True, desc=f'Numericalizing stag data', ncols=80):
-        new_s = np.zeros(s.shape, dtype=int) # Making room for ROOT_TOKEN
+        new_s = np.zeros(s.shape, dtype=int)
 
         for i in range(s.shape[0]):
             new_s[i,0] = w2i.get(s[i,0].lower(), w2i[UNK_TOKEN])
             new_s[i,1] = p2i.get(s[i,1], p2i[UNK_TOKEN])
-            new_s[i,2] = s2i.get(s[i,2], s2i[UNK_TOKEN])
+            new_s[i,2] = s2i[s[i,2]]
 
         sents_numericalized.append(new_s)
 
     return sents_numericalized
 
 
-def build_ptb_stags(stag_files=[]):
+def build_stag_dataset(stag_files=[]):
     sents_list = []
     for f in stag_files:
         sents_list.append(stag_to_sents(f))
 
     # The 'standard' split for CCGBank
-    train_list = [s for f in sents_list[2:22] for s in f] #02-21 for train
+    train_list = [s for f in sents_list[2:22] for s in f] # 02-21 for train
     dev_list = sents_list[0]
     test_list = sents_list[23]
     
@@ -137,32 +102,20 @@ def build_ptb_stags(stag_files=[]):
     
 
 def build_ptb_dataset(conllu_files=[], filter_sents=False):
-    '''
-        inputs:
-            conllu_files - a list of sorted strings, filenames of dependencies
-
-        output:
-            conllu_files - a list
-    '''
-    sents_list = []
-
-    if not conllu_files:
-        print(f'Empty list of filenames passed.')
-        raise Exception
-
-    for f in conllu_files:
-        sents_list.append(conllu_to_sents(f))
-
-    if len(sents_list) != 24:
+    if len(conllu_files) != 24:
         print(f'Missing a conllu file? {len(sents_list)} files provided.')
         raise Exception
+
+    sents_list = []
+    for f in conllu_files:
+        sents_list.append(conllu_to_sents(f))
 
     for i, f in enumerate(sents_list):
         sents_list[i] = [s[:, CONLLU_MASK] for s in f]
 
     # "Standard" train/dev/split for PTB
-    train_list = [s for f in sents_list[2:22] for s in f] #02-21 for train
-    dev_list = sents_list[22] #22
+    train_list = [s for f in sents_list[2:22] for s in f] # 02-21 for train
+    dev_list = sents_list[22]
     test_list = sents_list[23]
 
     word_counts = get_word_counts(train_list)
@@ -174,9 +127,7 @@ def build_ptb_dataset(conllu_files=[], filter_sents=False):
 
     x2i_ptb, i2x_ptb = build_dicts(train_list)
 
-    raw_data = {'train': train_list,
-            'dev': dev_list,
-            'test': test_list}
+    raw_data = {'train': train_list, 'dev': dev_list, 'test': test_list}
 
     return raw_data, x2i_ptb, i2x_ptb, word_counts
 
@@ -208,10 +159,9 @@ def build_ss_dataset(raw_sent_pairs, gs='', x2i=None, filter_sents=False):
         for s1, s2 in raw_sent_pairs:
             flattened_raw.append(s1)
             flattened_raw.append(s2)
-        filter_sentences(flattened_raw)
+        filter_sentences(flattened_raw) # in-place
         word_counts = get_word_counts(flattened_raw)
 
-    # Raw sent pairs got modified within filter and count
     numericalized_pairs = numericalize_ss(raw_sent_pairs, x2i)
 
     raw_targets = txt_to_sem_scores(gs) if gs else None
@@ -220,9 +170,8 @@ def build_ss_dataset(raw_sent_pairs, gs='', x2i=None, filter_sents=False):
     targets = []
     if raw_targets != None:
         for s, t in zip(numericalized_pairs, raw_targets):
-            if t != -1.0:
-                sent_pairs.append(s)
-                targets.append(t)
+            sent_pairs.append(s)
+            targets.append(t)
         if len(targets) != len(sent_pairs):
             print('Mismatch between targets ({len(targets)}) and sents ({len(sent_pairs)})')
             raise Exception
@@ -235,7 +184,7 @@ def build_ss_dataset(raw_sent_pairs, gs='', x2i=None, filter_sents=False):
 def txt_to_sem_scores(txt: str) -> list:
     with open(txt, 'r') as f:
         lines = f.readlines()
-        sem_scores = [float(l.strip()) if l != '\n' else -1.0 for l in lines]
+        sem_scores = [float(l.strip()) for l in lines if l != '\n']
 
     return sem_scores
 
@@ -246,7 +195,6 @@ def stag_data_loader(data, batch_size=None, shuffle_idx=False):
     while True:
         if shuffle_idx:
             shuffle(idx) # In-place shuffle
-        
         for chunk in idx_chunks(idx, batch_size):
             batch = [data[i] for i in chunk]
             yield prepare_batch_stag(batch)
@@ -315,7 +263,7 @@ def prepare_batch_sdp(batch):
 
 def prepare_batch_stag(batch):
     batch_size = len(batch)
-    sent_lens = torch.LongTensor([s.shape[0] for s in batch])
+    sent_lens = torch.LongTensor([len(s) for s in batch])
     l_longest = torch.max(sent_lens).item()
 
     words = torch.zeros((batch_size, l_longest)).long()
@@ -324,12 +272,13 @@ def prepare_batch_stag(batch):
 
     dt = np.dtype(int)
     for i, s in enumerate(batch):
+        s_len = len(s)
         resized_words = np.zeros(l_longest, dtype=dt)
         resized_pos = np.zeros(l_longest, dtype=dt)
         resized_stags = np.zeros(l_longest, dtype=dt) - 1
-        resized_words[:s.shape[0]] = s[:,0]
-        resized_pos[:s.shape[0]] = s[:,1]
-        resized_stags[:s.shape[0]] = s[:,2]
+        resized_words[:s_len] = s[:,0]
+        resized_pos[:s_len] = s[:,1]
+        resized_stags[:s_len] = s[:,2]
         words[i] = torch.LongTensor(resized_words)
         pos[i] = torch.LongTensor(resized_pos)
         stag_targets[i] = torch.LongTensor(resized_stags)
@@ -342,35 +291,29 @@ def prepare_batch_stag(batch):
 
 def prepare_batch_ss(batch):
     batch_size = len(batch)
-
-    sent_lens = torch.LongTensor([s.shape[0] for s in batch])
+    sent_lens = torch.LongTensor([len(s) for s in batch])
     l_longest = torch.max(sent_lens).item()
 
     words = torch.zeros((batch_size, l_longest)).long()
     pos = torch.zeros((batch_size, l_longest)).long()
 
+    dt = np.dtype(int)
     for i, s in enumerate(batch):
-        dt = np.dtype(int)
-        resized_np = np.zeros((l_longest, s.shape[1]), dtype=dt)
-        resized_np[:s.shape[0]] = s
-        words[i] = torch.LongTensor(resized_np[:,0])
-        pos[i] = torch.LongTensor(resized_np[:,1])
+        resized_s = np.zeros((l_longest, s.shape[1]), dtype=dt)
+        resized_s[:len(s)] = s
+        words[i] = torch.LongTensor(resized_s[:,0])
+        pos[i] = torch.LongTensor(resized_s[:,1])
 
     return words, pos, sent_lens
 
 
 def conllu_to_sents(f: str):
-    '''
-    outputs:
-        sents_list - a list of np arrays, each with shape (#words-in-sentence, 4)
-    '''
     sents_list = []
 
     with open(f, 'r') as conllu_file:
         lines = conllu_file.readlines()
-        if lines[-1] != '\n':
-            lines.append('\n') # So split_points works properly
-
+    if lines[-1] != '\n':
+        lines.append('\n') # So split_points works properly
     while lines[0] == '\n':
         lines.pop(0)
 
@@ -445,7 +388,6 @@ def build_dicts(sents_list, is_sdp=True):
     r2i = defaultdict(lambda : len(r2i))
     i2w, i2p, i2r = dict(), dict(), dict()
 
-    #Crucial that PAD_TOKEN map to 0 so that chunk_to_batch() definition correct
     i2w[w2i[PAD_TOKEN]] = PAD_TOKEN
     i2p[p2i[PAD_TOKEN]] = PAD_TOKEN
 
@@ -603,44 +545,44 @@ def megabatch_breakdown(megabatch, minibatch_size=None, parser=None, args=None, 
 
         outputs:
             s1 - list of orig. sentence instances
-            mb_para2 - list of paraphrase instances
-            mb_neg1 - list of neg sample instances
+            mb_s2 - list of paraphrase instances
+            mb_n1 - list of neg sample instances
     '''
     device = data['device']
 
-    mb_para1 = []
-    mb_para2 = []
+    mb_s1 = []
+    mb_s2 = []
     
-    for para1, para2 in megabatch:
-        mb_para1.append(para1) # Does this allocate new memory?
-        mb_para2.append(para2)
+    for s1, s2 in megabatch:
+        mb_s1.append(s1) # Does this allocate new memory?
+        mb_s2.append(s2)
 
     if args.scramble > 0:
-        scramble_words(mb_para1, scramble_prob=args.scramble)
-        scramble_words(mb_para2, scramble_prob=args.scramble)
+        scramble_words(mb_s1, scramble_prob=args.scramble)
+        scramble_words(mb_s2, scramble_prob=args.scramble)
 
-    minibatches_para1 = [mb_para1[i:i+minibatch_size] for i in range(0, len(mb_para1), minibatch_size)]
-    minibatches_para2 = [mb_para2[i:i+minibatch_size] for i in range(0, len(mb_para2), minibatch_size)]
+    minibatches_s1 = [mb_s1[i:i+minibatch_size] for i in range(0, len(mb_s1), minibatch_size)]
+    minibatches_s2 = [mb_s2[i:i+minibatch_size] for i in range(0, len(mb_s2), minibatch_size)]
 
     check = 0
-    for mini in minibatches_para1:
+    for mini in minibatches_s1:
         check += len(mini)
     if check != len(megabatch):
-        print(len(minibatches_para1) * minibatch_size)
+        print(len(minibatches_s1) * minibatch_size)
         print(len(megabatch))
 
         raise Exception
 
-    mb_para1_reps = [] # (megabatch_size, )
-    mb_para2_reps = [] 
+    mb_s1_reps = [] # (megabatch_size, )
+    mb_s2_reps = [] 
     pi = parser.pos_in
-    for b1, b2 in zip(minibatches_para1, minibatches_para2):
+    for b1, b2 in zip(minibatches_s1, minibatches_s2):
         w1, p1, sl1 = prepare_batch_ss(b1)
         sl1 = sl1.to(device)
         packed_b1, idx_b1, _ = parser.Embeddings(w1.to(device), sl1, pos=p1.to(device) if pi else None)
         b1_reps = unsort(parser.SemanticRNN(packed_b1), idx_b1)
         b1_reps_avg = utils.average_hiddens(b1_reps, sl1, sum_f_b=args.sum_f_b)
-        mb_para1_reps.append(b1_reps_avg)
+        mb_s1_reps.append(b1_reps_avg)
         if args.two_negs:
             w2, p2, sl2 = prepare_batch_ss(b2)
             sl2 = sl2.to(device)
@@ -648,19 +590,19 @@ def megabatch_breakdown(megabatch, minibatch_size=None, parser=None, args=None, 
             packed_b2, idx_b2, _ = parser.Embeddings(w2.to(device), sl2)
             b2_reps = unsort(parser.SemanticRNN(packed_b2), idx_b2)
             b2_reps_avg = utils.average_hiddens(b2_reps, sl2, sum_f_b=args.sum_f_b)
-            mb_para2_reps.append(b2_reps_avg)
+            mb_s2_reps.append(b2_reps_avg)
 
     # Stack all reps into torch tensors
-    mb_para1_reps = torch.cat(mb_para1_reps)
-    mb_para2_reps = torch.cat(mb_para2_reps) if args.two_negs else None
+    mb_s1_reps = torch.cat(mb_s1_reps)
+    mb_s2_reps = torch.cat(mb_s2_reps) if args.two_negs else None
 
-    # Get negative samples with respect to mb_para1
-    mb_neg1, mb_neg2 = get_negative_samps(megabatch, mb_para1_reps, mb_para2_reps)
+    # Get negative samples with respect to mb_s1
+    mb_n1, mb_n2 = get_negative_samps(megabatch, mb_s1_reps, mb_s2_reps)
 
-    return mb_para1, mb_para2, mb_neg1, mb_neg2
+    return mb_s1, mb_s2, mb_n1, mb_n2
 
 
-def get_negative_samps(megabatch, mb_para1_reps, mb_para2_reps):
+def get_negative_samps(megabatch, mb_s1_reps, mb_s2_reps):
     '''
         inputs:
             megabatch - a megabatch (list) of sentences
@@ -671,16 +613,16 @@ def get_negative_samps(megabatch, mb_para1_reps, mb_para2_reps):
                         of sentences
     '''
 
-    two_negs = mb_para2_reps is not None
+    two_negs = mb_s2_reps is not None
 
     reps = []
     sents = []
-    for i, (para1, para2) in enumerate(megabatch):
-        reps.append(mb_para1_reps[i].cpu().numpy())
-        sents.append(para1)
+    for i, (s1, s2) in enumerate(megabatch):
+        reps.append(mb_s1_reps[i].cpu().numpy())
+        sents.append(s1)
         if two_negs:
-            reps.append(mb_para2_reps[i].cpu().numpy())
-            sents.append(para2)
+            reps.append(mb_s2_reps[i].cpu().numpy())
+            sents.append(s2)
 
     dists = pdist(reps, 'cosine') # cosine distance, as (1 - normalized inner product)
     dists = squareform(dists) # Symmetric 2-D matrix of pairwise distances
@@ -698,23 +640,24 @@ def get_negative_samps(megabatch, mb_para1_reps, mb_para2_reps):
     # For each sentence, get index of sentence 'closest' to it
     neg_idxs = np.argmin(dists, axis=1)
 
-    mb_neg1 = []
-    mb_neg2 = [] if two_negs else None
+    mb_n1 = []
+    mb_n2 = [] if two_negs else None
     for idx in range(len(megabatch)):
         if two_negs:
-            neg1 = sents[neg_idxs[2*idx]]
-            neg2 = sents[neg_idxs[(2*idx)+1]]
-            mb_neg1.append(neg1)
-            mb_neg2.append(neg2)
+            n1 = sents[neg_idxs[2*idx]]
+            n2 = sents[neg_idxs[(2*idx)+1]]
+            mb_n1.append(n1)
+            mb_n2.append(n2)
         else:
-            neg1 = sents[neg_idxs[idx]]
-            mb_neg1.append(neg1)
+            n1 = sents[neg_idxs[idx]]
+            mb_n1.append(n1)
 
-    return mb_neg1, mb_neg2
+    return mb_n1, mb_n2
 
 
 # From https://github.com/EelcovdW/Biaffine-Parser/blob/master/data_utils.py
 def filter_sentences(sentences, word_counts=None):
+    # In-place filtering of the sentences as numpy arrays of strings
     if word_counts is not None:
         one_words = set([w for w, c in word_counts.items() if c == 1])
     for sentence in tqdm(sentences, ascii=True, desc=f'Progress in filtering.', ncols=80):
@@ -745,4 +688,3 @@ def is_long_punctuation(word):
 
 def has_digits(word):
     return bool(set(string.digits).intersection(word))
-

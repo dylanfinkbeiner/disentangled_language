@@ -386,3 +386,53 @@ def build_cutoff_dicts(sents_sorted: list) -> dict:
 #    padding_idx=padding_idx).to(device)
 #self.pe_drop = nn.Dropout(p=embedding_dropout).to(device)
 #XXX
+
+#                        if args.train_mode == 3:
+#                            batch = next(loader_sdp_train)
+#                            loss_par = forward_syntactic_parsing(
+#                                    parser, 
+#                                    batch=batch, 
+#                                    args=args, 
+#                                    data=data)
+#                            loss_pos = forward_pos(
+#                                    parser,
+#                                    batch=batch,
+#                                    args=args,
+#                                    data=data)
+#                            loss = loss_par + loss_pos
+
+
+#def compare(conllus=[], stags=[]):
+#    for c, s in zip(conllus, stags):
+#
+#        c_sents = conllu_to_sents(c)
+#        s_sents = stag_to_sents(s)
+#
+#        while(len(c_sents) != 0):
+#            s1 = c_sents[0]
+#            s2 = s_sents[0]
+#
+#            if len(s1) != len(s2):
+#                print(f'Problem in files {c} and {s}\nProblem sentences:\n{s1}\n{s2}')
+#                breakpoint()
+#                #break
+#
+#            c_sents.pop(0)
+#            s_sents.pop(0)
+
+#        for i in range(len(s_sents)):
+#            s1 = c_sents[i]
+#            s2 = s_sents[i]
+#
+#            for j in range(len(s1)):
+#                if s1[j][1] != s2[j][0]:
+#                    print(f'Problem in files {c} and {s}\nProblem sentences:\n{s1}\n{s2}')
+#                    breakpoint()
+#                    break
+
+
+def loss_pos(logits, target_pos, pad_idx=-1):
+    loss_nn = torch.nn.CrossEntropyLoss(ignore_index=pad_idx)
+    losses = loss_nn(logits.view(-1, logits.shape[-1]), target_pos.flatten())
+
+    return losses.mean()

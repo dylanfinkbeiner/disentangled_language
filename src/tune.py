@@ -7,7 +7,7 @@ import numpy as np
 
 def main():
     #name_prefix = input('Prefix for model names: ').strip()
-    name_prefix = 'secondRound'
+    name_prefix = 'round6'
 
     n_iter = int(sys.argv[1]) if len(sys.argv) > 1 else 50
 
@@ -20,9 +20,9 @@ def main():
     frac_syn_r = [1/8 * x for x in range(4, 8)]
 
     #bs_r = logrange_list(20, 200, 12, rnd=10)
-    bs_r = [20, 30, 40, 50, 60, 80, 100, 120, 150, 200]
+    bs_r = [20, 30, 40, 50, 60, 80, 100, 150]
 
-    scales = [1, 10, 100, 1000]
+    #scales = [1, 10, 100]
 
     p_e_size_r = [0, 25]
 
@@ -33,12 +33,12 @@ def main():
     finh = unif_samp(range_list=finh_r, n_samps=n_iter)
     frac_syn = unif_samp(range_list=frac_syn_r, n_samps=n_iter)
 
-    lr = log_samp(e_lo=-3.5, e_hi=-2.25, n_samps=n_iter)
-    #lr_sem = log_samp(e_lo=-2, n_samps=n_iter)
-    #lr_sdp = log_samp(e_lo=-2, n_samps=n_iter)
-    #lr_stag = log_samp(e_lo=-2, n_samps=n_iter)
-    lr_sem=unif_samp(range_list=scales, n_samps=n_iter)
-    lr_stag=unif_samp(range_list=scales, n_samps=n_iter)
+    lr = log_samp(e_lo=-3.5, e_hi=-2.7, n_samps=n_iter)
+    lr_sem = log_samp(e_lo=-2, n_samps=n_iter)
+    lr_sdp = log_samp(e_lo=-2, n_samps=n_iter)
+    lr_stag = log_samp(e_lo=-2, n_samps=n_iter)
+    #lr_sem=unif_samp(range_list=scales, n_samps=n_iter)
+    #lr_stag=unif_samp(range_list=scales, n_samps=n_iter)
 
     p_e_size = unif_samp(range_list=p_e_size_r, n_samps=n_iter)
 
@@ -76,7 +76,8 @@ def main():
                 -finl {finl_} -synl {synl_} -seml 1\
                 -lr {lr_} -lrsdp {lr_sdp_} -lrstag {lr_stag_} -lrsem {lr_sem_}\
                 -sdpbs {sdp_bs_} -stagbs {stag_bs_} -sembs {sem_bs_}\
-                --nchunks 1 -M 20 --epochs 15 --gloved 100 --scramble 0.3 -a 0'
+                --nchunks 1 -M 20 --epochs 15 --gloved 100 --scramble 0.3 -a 0\
+                -auto'
 
         command = command.replace('\n', '')
 
