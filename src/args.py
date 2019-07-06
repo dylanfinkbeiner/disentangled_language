@@ -57,7 +57,8 @@ def get_args():
     # Model hyperparameters
     parser.add_argument('-we', help='Size of word embeddings.', dest='we', type=int, default=100)
     parser.add_argument('-pe', help='Size of pos embeddings.', dest='pe', type=int, default=0)
-    parser.add_argument('-a', help='Alpha parameter of frequency-based word dropout.', dest='alpha', type=int, default=0)
+    parser.add_argument('-zw', action='store_true', help='Init word embeds as 0 matrix?', dest='zero_we')
+    parser.add_argument('-a', help='Alpha parameter of frequency-based word dropout.', dest='alpha', type=float, default=0.)
     parser.add_argument('-sumfb', help='Should we sum the averaged forward and backward hiddens in average_hiddens()?', action='store_true', dest='sum_f_b', default=False)
     parser.add_argument('-synh', help='Number of units of hidden state dedicated to syntactic content.', dest='syn_h', type=int, default=69)
     parser.add_argument('-semh', help='Number of units of hidden state dedicated to semantic content.', dest='sem_h', type=int, default=69)
@@ -69,12 +70,17 @@ def get_args():
     parser.add_argument('-lrsdp', help='Learning rate scaling syntactic dependency parsing.', dest='lr_sdp', type=float, default=1)
     parser.add_argument('-lrstag', help='Learning rate scaling supertagging loss.', dest='lr_stag', type=float, default=1)
     parser.add_argument('-lrsem', help='Learning rate scaling semantic similarity loss.', dest='lr_sem', type=float, default=1)
+    parser.add_argument('-edrop', help='', dest='embedding_dropout', type=float, default=0.33)
+    parser.add_argument('-ldrop', help='', dest='lstm_dropout', type=float, default=0.33)
+    parser.add_argument('-wa', action='store_true', help='Should we do word averaging instead of a semantic RNN?', dest='word_avg')
+
 
     # Training hyperparameters
     parser.add_argument('-sdpbs', help='Batch size, syntactic dependency parsing.', type=int, dest='sdp_bs', default=100)
     parser.add_argument('-stagbs', help='Batch size, supertagging.', type=int, dest='stag_bs', default=100)
     parser.add_argument('-sembs', help='Batch size, semantic similarity.', type=int, dest='sem_bs', default=100)
     parser.add_argument('-M', '--megasize', help='Number of batches in a megabatch.', type=int, dest='M', default=1)
+    parser.add_argument('-esp', help='Number of batches in a megabatch.', type=int, dest='earlystop_pt', default=5)
     parser.add_argument('--epochs', help='Number of epochs in training.', type=int, default=5)
     parser.add_argument('--margin', help='Margin in semantic similarity objective function.', dest='margin', type=float, default=0.4)
     parser.add_argument('--nchunks', help='Number of 100k-sentence-pair chunks of SS data from the filtered ParaNMT-50m dataset.', type=int, dest='n_chunks', default=1)
@@ -82,7 +88,8 @@ def get_args():
     parser.add_argument('--2negs', help='Shall we get a negative sample for both sentences in a paraphrase pair?', action='store_true', dest='two_negs', default=False)
 
     # Train mode
-    parser.add_argument('-tm', help='Training mode setting.', dest='train_mode', type=int, default=-1)
+    #parser.add_argument('-tm', help='Training mode setting.', dest='train_mode', type=int, default=-1)
+    parser.add_argument('-tm', help='List of training mode flags.', dest='train_mode', nargs='+', type=int, default=[0])
 
     # Check weights
     parser.add_argument('-w', action='store_true', help='Just check the weights of the transformation to FinalRNN hiddens.', dest='w')

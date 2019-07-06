@@ -118,7 +118,7 @@ def eval_sdp(args, parser, data, experiment=None):
 
                         if pos_tag_eval:
                             #NOTE still haven't figured out the head thing
-                            lstm_input, indices, lens_sorted = parser.Embeddings(batch['words'].to(device), sent_len)
+                            lstm_input, indices, lens_sorted, _ = parser.Embeddings(batch['words'].to(device), sent_len)
                             #lstm_input, indices, lens_sorted = parser.Embeddings(batch['words'].to(device), sent_len, pos=batch['pos'].to(device))
                             outputs = parser.SyntacticRNN(lstm_input)
                             logits = parser.POSMLP(outputs)
@@ -153,9 +153,32 @@ def eval_sdp(args, parser, data, experiment=None):
 
             print_results(evaluation, name)
 
+    #weights = {}
+    #syn = {}
+    #sem = {}
+    #ih = parser.FinalRNN.lstm.weight_ih_l0.data
+    #syn_weights = ih[:, :2*args.syn_h]
+    #sem_weights = ih[:, 2*args.syn_h:]
+    #syn['final'] = syn_weights.norm(2).item()
+    #sem['final'] = sem_weights.norm(2).item()
+    #if parser.SemanticRNN is None:
+    #    pass
+    #else:
+    #    ih = parser.SemanticRNN.lstm.weight_ih_l0.data
+    #    pos = ih[:, args.we:] 
+    #    word = ih[:, :args.we]
+    #    sem['pos'] = pos.norm(2).item() if parser.pos_in else None
+    #    sem['word'] = word.norm(2).item()
+    #ih = parser.SyntacticRNN.lstm.weight_ih_l0.data
+    #pos = ih[:, args.we:]
+    #word = ih[:, :args.we]
+    #syn['pos'] = pos.norm(2).item() if parser.pos_in else None
+    #syn['word'] = word.norm(2).item()
+    #weights['syn'] = syn
+    #weights['sem'] = sem
+    #sdp_eval_data['weights'] = weights
 
-    save_eval_data(experiment['path'], 'sdp', sdp_eval_data)
-
+    save_eval_data(args, experiment['path'], 'sdp', sdp_eval_data)
 
     print('Finished with syntactic evaluation!')
 
@@ -182,8 +205,8 @@ def eval_sts(args, parser, data, experiment=None):
                 
                 w1, p1, sl1 = data_utils.prepare_batch_ss([s1 for s1, s2 in curr_data['sent_pairs']])
                 w2, p2, sl2 = data_utils.prepare_batch_ss([s2 for s1, s2 in curr_data['sent_pairs']])
-                packed_s1, idx_s1, _ = parser.Embeddings(w1.to(device), sl1, pos=p1.to(device) if pi else None)
-                packed_s2, idx_s2, _ = parser.Embeddings(w2.to(device), sl2, pos=p2.to(device) if pi else None)
+                packed_s1, idx_s1, _, _ = parser.Embeddings(w1.to(device), sl1, pos=p1.to(device) if pi else None)
+                packed_s2, idx_s2, _, _ = parser.Embeddings(w2.to(device), sl2, pos=p2.to(device) if pi else None)
                 h1 = unsort(parser.SemanticRNN(packed_s1), idx_s1)
                 h2 = unsort(parser.SemanticRNN(packed_s2), idx_s2)
 
@@ -232,7 +255,13 @@ def eval_sts(args, parser, data, experiment=None):
                 sem_eval_data[year] = correlation
                 #print(stats)
 
-    save_eval_data(experiment['path'], 'sem', sem_eval_data)
+    average = 0
+    YEARS.remove('2017')
+    for year in YEARS:
+        average += sem_eval_data[year]
+    average /= len(YEARS)
+    sem_eval_data['average'] = average
+    save_eval_data(args, experiment['path'], 'sem', sem_eval_data)
 
     print('Finished with semantic evaluation!')
 
@@ -241,6 +270,8 @@ def eval_stag(args, parser, data, experiment=None):
     device = data['device']
 
     datasets = {'dev': data['dev'], 'test': data['test']}
+
+    stag_eval_data = {}
 
     with open(experiment['path'], 'a') as exp_file:
         d = experiment['date']
@@ -262,8 +293,9 @@ def eval_stag(args, parser, data, experiment=None):
                     batch = next(loader)
                     stag_targets = batch['stag_targets']
                     sent_lens = batch['sent_lens'].to(device)
+                    pos = batch['pos'].to(device) if parser.pos_in else None
 
-                    lstm_input, indices, lens_sorted = parser.Embeddings(batch['words'].to(device), sent_lens)
+                    lstm_input, indices, lens_sorted, _ = parser.Embeddings(batch['words'].to(device), sent_lens, pos=pos)
                     outputs = parser.SyntacticRNN(lstm_input)
                     logits = parser.StagMLP(unsort(outputs, indices))
                     predictions = torch.argmax(logits, -1)
@@ -280,13 +312,14 @@ def eval_stag(args, parser, data, experiment=None):
                 stag_eval_data[name] = stag_accuracy
 
 
-    save_eval_data(experiment['path'], 'stag', stag_eval_data)
+    save_eval_data(args, experiment['path'], 'stag', stag_eval_data)
 
     print('Finished with supertagging evaluation!')
 
 
-def save_eval_data(exp_path, task, data):
-    exp_data_path = os.path.splitext(exp_path)[0] + '.pkl'
+def save_eval_data(args, exp_path, task, data):
+    #exp_data_path = os.path.splitext(exp_path)[0] + '.pkl'
+    exp_data_path = f'../experiments/{args.model}/evaluation.pkl'
     eval_data = {}
     if os.path.exists(exp_data_path):
             with open(exp_data_path, 'rb') as pkl:

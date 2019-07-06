@@ -42,7 +42,7 @@ class DataPaths:
         fs = 'filtered' if filtered else 'unfiltered' # Filtered status
 
         voc = 'ptbvocab'
-        if glove_d is not None:
+        if glove_d is not None and glove_d > 0:
             voc = f'glove{glove_d}vocab'
     
         # Directories

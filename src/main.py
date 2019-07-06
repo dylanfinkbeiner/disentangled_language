@@ -4,6 +4,7 @@ import logging
 import os
 import pickle
 import time
+from collections import namedtuple
 import random
 random.seed(1)
 
@@ -51,14 +52,18 @@ log.addHandler(stream_handler)
 
 
 def save_permanent_params(exp_dir, args):
-    txt = os.path.join(exp_dir, 'parameters.txt')
+    txt_path = os.path.join(exp_dir, 'parameters.txt')
     args_dict = dict(vars(args))
-    with open(txt, 'w') as f:
+    with open(txt_path, 'w') as f:
         for k, v in args_dict.items():
             f.write(f'{k} : {v} \n')
 
+    pkl_path = os.path.join(exp_dir, 'parameters.pkl')
+    with open(pkl_path, 'wb') as pkl:
+        pickle.dump(args_dict, pkl)
 
-if __name__ == '__main__':
+
+def main():
     d = dt.datetime.now().astimezone(pytz.timezone("America/Los_Angeles"))
     log.info(f'New session: {d}\n')
 
@@ -80,11 +85,23 @@ if __name__ == '__main__':
     experiment['path'] = exp_path
     experiment['date'] = d
 
+    if evaluating:
+        pkl_path = os.path.join(exp_dir, 'parameters.pkl')
+        if os.path.exists(pkl_path):
+            with open(os.path.join(exp_dir, 'parameters.pkl'), 'rb') as pkl:
+                args_dict = pickle.load(pkl)
+            args_dict['e'] = args.e
+            args_dict['ef'] = args.ef
+            args_dict['evaluate_semantic'] = args.evaluate_semantic
+            args_dict['evaluate_stag'] = args.evaluate_stag
+            args = namedtuple('args', args_dict.keys())(*args_dict.values())
+
+
+
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     log.info(f'Using device: {device}')
 
     paths = DataPaths(filtered=args.filter, glove_d=args.glove_d)
-
 
     # Populate syntactic dependency parsing data
     log.info(f'Loading pickled syntactic dependency parsing data.')
@@ -96,9 +113,7 @@ if __name__ == '__main__':
         with open(paths.data_brown, 'rb') as pkl:
             data_brown = pickle.load(pkl)
 
-    args.using_pretrained = False
     if args.glove_d:
-        args.using_pretrained = True
         path = paths.glove_data
         log.info(f'Loading pretrained embedding data from {path}')
         with open(path, 'rb') as pkl:
@@ -112,7 +127,8 @@ if __name__ == '__main__':
     data_ss = {}
 
     ss_train = {'sent_pairs': [], 'targets': []}
-    if args.train_mode > 0 or args.evaluate_semantic:
+    #if args.evaluate_semantic or args.train_mode > 0:
+    if args.evaluate_semantic or 1 in args.train_mode:
         log.info(f'Loading pickled semantic similarity data.')
 
         chunks_txt = sorted(list(os.listdir(os.path.join(PARANMT_DIR, 'txt'))))
@@ -132,32 +148,35 @@ if __name__ == '__main__':
             data_ss['test'] = ss_test
     
 
-    data_stag = {}
-    log.info('Loading pickled supertagging training data.')
-    with open(paths.data_stag, 'rb') as pkl:
-        data_stag = pickle.load(pkl)
-    with open(paths.stag_vocabs, 'rb') as pkl:
-        s2i, i2s = pickle.load(pkl)
-    x2i['stag'] = s2i
-    i2x['stag'] = i2s
+    #stag_flag = args.evaluate_stag or (args.train_mode > 3)
+    stag_flag = args.evaluate_stag or 2 in args.train_mode
+    if stag_flag:
+        data_stag = {}
+        log.info('Loading pickled supertagging training data.')
+        with open(paths.data_stag, 'rb') as pkl:
+            data_stag = pickle.load(pkl)
+        with open(paths.stag_vocabs, 'rb') as pkl:
+            s2i, i2s = pickle.load(pkl)
+        x2i['stag'] = s2i
+        i2x['stag'] = i2s
 
 
     # Prepare parser
     parser = BiaffineParser(
-            word_e_size = pretrained_e.shape[-1] if args.using_pretrained else args.we,
+            word_e_size = pretrained_e.shape[-1] if args.glove_d else args.we,
             pos_e_size = args.pe if args.pe > 0 else None,
-            pretrained_e = pretrained_e if args.using_pretrained else None,
+            pretrained_e = pretrained_e if args.glove_d else None,
             word_vocab_size = len(x2i['word']),
             pos_vocab_size = len(x2i['pos']),
-            stag_vocab_size = len(x2i['stag']),
+            stag_vocab_size = len(x2i['stag']) if stag_flag else None,
             syn_h = args.syn_h,
             sem_h = args.sem_h,
             final_h = args.final_h,
             syn_nlayers = args.syn_nlayers,
             sem_nlayers = args.sem_nlayers,
             final_nlayers = args.final_nlayers,
-            embedding_dropout=0.33,
-            lstm_dropout=0.33,
+            embedding_dropout=args.embedding_dropout,
+            lstm_dropout=args.lstm_dropout,
             d_arc=500,
             d_rel=100,
             num_relations = len(x2i['rel']),
@@ -165,6 +184,9 @@ if __name__ == '__main__':
             rel_dropout=0.33,
             padding_idx = x2i['word'][PAD_TOKEN],
             unk_idx = x2i['word'][UNK_TOKEN],
+            #word_avg=args.word_avg,
+            #vanilla=(args.train_mode == 0),
+            vanilla=(0 in args.train_mode and len(args.train_mode) == 1),
             device = device)
 
 
@@ -172,10 +194,8 @@ if __name__ == '__main__':
     if os.path.exists(weights_path):
         log.info(f'Loading state dict from: \"{weights_path}\"')
         parser.load_state_dict(torch.load(weights_path))
-        args.init_model = False
     else:
         log.info(f'Model will have randomly initialized parameters.')
-        args.init_model = True
 
     if args.w:
         ih = parser.FinalRNN.lstm.weight_ih_l0.data
@@ -188,14 +208,17 @@ if __name__ == '__main__':
     vocabs = {'x2i': x2i, 'i2x': i2x}
 
     if not evaluating:
-        args.epochs = args.epochs if args.train_mode != -1 else 1
+        #args.epochs = args.epochs if args.train_mode != -1 else 1
+        args.epochs = args.epochs 
         data = {'data_ptb' : data_ptb,
                 'vocabs' : vocabs,
                 'word_counts' : word_counts,
                 'device': device}
-        if args.train_mode > 0:
+        #if args.train_mode > 0:
+        if 1 in args.train_mode:
             data['data_ss'] = data_ss
-        if args.train_mode > 3:
+        #if args.train_mode > 3:
+        if 2 in args.train_mode:
             data['data_stag'] = data_stag
 
         train.train(args, parser, data, weights_path=weights_path, experiment=experiment)
@@ -222,3 +245,5 @@ if __name__ == '__main__':
                     'vocabs': vocabs}
             eval.eval_stag(args, parser, data, experiment=experiment)
 
+if __name__ == '__main__':
+    main()

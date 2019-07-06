@@ -35,19 +35,22 @@ class Embeddings(nn.Module):
             pos_vocab_size=None,
             hidden_size=None,
             embedding_dropout=None,
+            zero_we=False,
             padding_idx=None,
             unk_idx=None,
             device=None):
         super(Embeddings, self).__init__()
 
         self.unk_idx = unk_idx
+        self.device = device
 
         self.word_emb = nn.Embedding(
                 word_vocab_size,
                 word_e_size,
                 padding_idx=padding_idx)
-        #self.word_emb.weight.data.copy_(
-        #        torch.zeros(word_vocab_size, word_e_size))
+        if zero_we:
+            self.word_emb.weight.data.copy_(
+                    torch.zeros(word_vocab_size, word_e_size))
         if pretrained_e is not None:
             print('Using pretrained word embeddings!')
             self.word_emb.weight.data.copy_(torch.Tensor(pretrained_e))
@@ -63,12 +66,11 @@ class Embeddings(nn.Module):
 
 
     def forward(self, words, sent_lens, pos=None):
-        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         pos_in = pos is not None
 
-        # Zero-out "unk" word at test time (Jabberwocky paper)
-        #if not self.training:
-        #    self.word_emb.weight.data[self.unk_idx,:] = 0.0 
+        #Zero-out "unk" word at test time (Jabberwocky paper)
+        if not self.training:
+            self.word_emb.weight.data[self.unk_idx,:] = 0.0 
 
         # Sort the words, pos, sent_lens (necessary for pack_padded_sequence)
         lens_sorted = sent_lens
@@ -77,7 +79,7 @@ class Embeddings(nn.Module):
         indices = None
         if(len(words) > 1):
             lens_sorted, indices = torch.sort(lens_sorted, descending=True)
-            indices = indices.to(device)
+            indices = indices.to(self.device)
             words_sorted = words_sorted.index_select(0, indices)
             pos_sorted = pos_sorted.index_select(0, indices) if pos_in else None
 
@@ -89,7 +91,7 @@ class Embeddings(nn.Module):
         packed_lstm_input = pack_padded_sequence(
                 lstm_input, lens_sorted, batch_first=True)
 
-        return packed_lstm_input, indices, lens_sorted
+        return packed_lstm_input, indices, lens_sorted, lstm_input
 
 
 class SemanticRNN(nn.Module):
@@ -182,8 +184,10 @@ class BiAffineAttention(nn.Module):
             d_rel=None,
             num_relations=None,
             arc_dropout=None,
-            rel_dropout=None):
+            rel_dropout=None,
+            device=None):
         super(BiAffineAttention, self).__init__()
+        self.device = device
 
         # Arc-scoring MLPs
         self.h_arc_dep = nn.Sequential(
@@ -214,8 +218,6 @@ class BiAffineAttention(nn.Module):
         self.b_rel = nn.Parameter(torch.randn(num_relations))
 
     def forward(self, H, sent_lens):
-        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
         #Recap so far: H is a (b,l,800) tensor; first axis: sentence | second: word | third: lstm output
         H_arc_head = self.h_arc_head(H) # (b, l, d_arc)
         H_arc_dep  = self.h_arc_dep(H) # (b, l, d_arc)
@@ -239,7 +241,7 @@ class BiAffineAttention(nn.Module):
                     batch_first=True, padding_value=0) # (b, l)
 
         # head_preds should be (b,l), not (b,l-1), as head of a word might be root
-        arc_preds = arc_preds.to(device)
+        arc_preds = arc_preds.to(self.device)
 
         d_rel, num_rel, _ = self.U_rel.size()
 
@@ -276,11 +278,15 @@ class BiaffineParser(nn.Module):
             arc_dropout=None,
             rel_dropout=None,
             padding_idx=None,
+            #word_avg=False,
+            vanilla=False,
+            zero_we=False,
             unk_idx=None,
             device=None):
         super(BiaffineParser, self).__init__()
 
         self.pos_in = bool(pos_e_size)
+        #self.word_avg = word_avg
 
         self.Embeddings = Embeddings(
                 word_e_size=word_e_size,
@@ -289,6 +295,7 @@ class BiaffineParser(nn.Module):
                 pos_vocab_size=pos_vocab_size,
                 pretrained_e=pretrained_e,
                 embedding_dropout=embedding_dropout,
+                zero_we=zero_we,
                 padding_idx=padding_idx,
                 unk_idx=unk_idx,
                 device=device
@@ -303,19 +310,25 @@ class BiaffineParser(nn.Module):
                 dropout=lstm_dropout,
                 ).to(device)
 
-        self.StagMLP = nn.Sequential(nn.Linear(2*syn_h, stag_vocab_size)).to(device)
+        if stag_vocab_size != None:
+            self.StagMLP = nn.Sequential(nn.Linear(2*syn_h, stag_vocab_size)).to(device)
 
-        self.SemanticRNN = SemanticRNN(
-                input_size=token_e_size,
-                hidden_size=sem_h,
-                num_layers=sem_nlayers,
-                dropout=lstm_dropout,
-                ).to(device)
+        #if self.word_avg:
+        #    self.SemanticMLP = nn.Sequential(
+        #            nn.Linear(token_e_size, sem_h)).to(device)
+        self.SemanticRNN = None
+        if not vanilla:
+            self.SemanticRNN = SemanticRNN(
+                    input_size=token_e_size,
+                    hidden_size=sem_h,
+                    num_layers=sem_nlayers,
+                    dropout=lstm_dropout,
+                    ).to(device)
         
         self.final_dropout = nn.Dropout(p=lstm_dropout).to(device)
 
         self.FinalRNN = FinalRNN(
-                input_size=(2*syn_h + 2*sem_h),
+                input_size=(2*syn_h + 2*sem_h) if not vanilla else 2*syn_h,
                 hidden_size=final_h,
                 num_layers=final_nlayers,
                 dropout=lstm_dropout,
@@ -327,7 +340,8 @@ class BiaffineParser(nn.Module):
             d_rel=d_rel,
             num_relations=num_relations,
             arc_dropout=arc_dropout,
-            rel_dropout=rel_dropout
+            rel_dropout=rel_dropout,
+            device=device
             ).to(device)
 
         
@@ -343,14 +357,19 @@ class BiaffineParser(nn.Module):
             S_rel - Tensor containing scores for
             arc_preds - Tensor of predicted arcs
         '''
-        packed_lstm_input, indices, lens_sorted = self.Embeddings(words, sent_lens, pos=pos)
+        packed_lstm_input, indices, lens_sorted, t_e = self.Embeddings(words, sent_lens, pos=pos)
 
         syntactic_outputs = self.SyntacticRNN(packed_lstm_input)
-        semantic_outputs = self.SemanticRNN(packed_lstm_input)
-        syntactic_outputs = self.final_dropout(syntactic_outputs)
-        semantic_outputs = self.final_dropout(semantic_outputs)
+        #syntactic_outputs = self.final_dropout(syntactic_outputs)
+        if self.SemanticRNN is not None:
+            semantic_outputs = self.SemanticRNN(packed_lstm_input)
+            #semantic_outputs = self.final_dropout(semantic_outputs)
+            final_inputs = torch.cat([syntactic_outputs, semantic_outputs], dim=-1)
+        else:
+            final_inputs = syntactic_outputs
 
-        final_inputs = torch.cat([syntactic_outputs, semantic_outputs], dim=-1)
+        final_inputs = self.final_dropout(final_inputs)
+
         final_inputs = pack_padded_sequence(final_inputs, lens_sorted, batch_first=True)
         final_outputs = self.FinalRNN(final_inputs)
 

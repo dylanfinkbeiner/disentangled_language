@@ -75,7 +75,8 @@ def numericalize_stag(sents_list, x2i):
         for i in range(s.shape[0]):
             new_s[i,0] = w2i.get(s[i,0].lower(), w2i[UNK_TOKEN])
             new_s[i,1] = p2i.get(s[i,1], p2i[UNK_TOKEN])
-            new_s[i,2] = s2i[s[i,2]]
+            new_s[i,2] = s2i.get(s[i,2], s2i[UNK_TOKEN])
+            #new_s[i,2] = s2i[s[i,2]]
 
         sents_numericalized.append(new_s)
 
@@ -92,7 +93,12 @@ def build_stag_dataset(stag_files=[]):
     dev_list = sents_list[0]
     test_list = sents_list[23]
     
-    s2i, i2s = build_stag_dicts(train_list)
+    #s2i, i2s = build_stag_dicts(train_list)
+    l = []
+    l.extend(train_list)
+    l.extend(dev_list)
+    l.extend(test_list)
+    s2i, i2s = build_stag_dicts(l)
 
     raw_data = {'train': train_list,
             'dev': dev_list,
@@ -579,15 +585,15 @@ def megabatch_breakdown(megabatch, minibatch_size=None, parser=None, args=None, 
     for b1, b2 in zip(minibatches_s1, minibatches_s2):
         w1, p1, sl1 = prepare_batch_ss(b1)
         sl1 = sl1.to(device)
-        packed_b1, idx_b1, _ = parser.Embeddings(w1.to(device), sl1, pos=p1.to(device) if pi else None)
+        packed_b1, idx_b1, _, _ = parser.Embeddings(w1.to(device), sl1, pos=p1.to(device) if pi else None)
         b1_reps = unsort(parser.SemanticRNN(packed_b1), idx_b1)
         b1_reps_avg = utils.average_hiddens(b1_reps, sl1, sum_f_b=args.sum_f_b)
         mb_s1_reps.append(b1_reps_avg)
         if args.two_negs:
             w2, p2, sl2 = prepare_batch_ss(b2)
             sl2 = sl2.to(device)
-            packed_b2, idx_b2, _ = parser.Embeddings(w2.to(device), sl2, pos=p2.to(device) if pi else None)
-            packed_b2, idx_b2, _ = parser.Embeddings(w2.to(device), sl2)
+            packed_b2, idx_b2, _, _ = parser.Embeddings(w2.to(device), sl2, pos=p2.to(device) if pi else None)
+            packed_b2, idx_b2, _, _ = parser.Embeddings(w2.to(device), sl2)
             b2_reps = unsort(parser.SemanticRNN(packed_b2), idx_b2)
             b2_reps_avg = utils.average_hiddens(b2_reps, sl2, sum_f_b=args.sum_f_b)
             mb_s2_reps.append(b2_reps_avg)
