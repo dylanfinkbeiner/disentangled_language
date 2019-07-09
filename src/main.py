@@ -6,14 +6,14 @@ import pickle
 import time
 from collections import namedtuple
 import random
-random.seed(1)
+#random.seed(1)
 
 import torch
-torch.manual_seed(1)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
+#torch.manual_seed(1)
+#torch.backends.cudnn.deterministic = True
+#torch.backends.cudnn.benchmark = False
 import numpy as np
-np.random.seed(1)
+#np.random.seed(1)
 
 from args import get_args
 from parser import BiaffineParser
@@ -96,20 +96,27 @@ def main():
             args_dict['evaluate_stag'] = args.evaluate_stag
             args = namedtuple('args', args_dict.keys())(*args_dict.values())
 
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(args.seed)
 
-
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = torch.device(f'cuda:{args.cuda}' if torch.cuda.is_available() else 'cpu')
     log.info(f'Using device: {device}')
 
-    paths = DataPaths(filtered=args.filter, glove_d=args.glove_d)
+    paths = DataPaths(filtered=args.filter, 
+            glove_d=args.glove_d,
+            truncated=args.truncated)
 
     # Populate syntactic dependency parsing data
     log.info(f'Loading pickled syntactic dependency parsing data.')
-    with open(paths.data_ptb, 'rb') as pkl:
-        data_ptb, word_counts = pickle.load(pkl)
+    if 0 in args.train_mode:
+        with open(paths.data_ptb, 'rb') as pkl:
+            data_ptb, word_counts = pickle.load(pkl)
     with open(paths.ptb_vocabs, 'rb') as pkl:
         x2i, i2x = pickle.load(pkl)
-    if evaluating:
+    if syn_eval:
         with open(paths.data_brown, 'rb') as pkl:
             data_brown = pickle.load(pkl)
 
@@ -127,7 +134,6 @@ def main():
     data_ss = {}
 
     ss_train = {'sent_pairs': [], 'targets': []}
-    #if args.evaluate_semantic or args.train_mode > 0:
     if args.evaluate_semantic or 1 in args.train_mode:
         log.info(f'Loading pickled semantic similarity data.')
 
@@ -184,10 +190,9 @@ def main():
             rel_dropout=0.33,
             padding_idx = x2i['word'][PAD_TOKEN],
             unk_idx = x2i['word'][UNK_TOKEN],
-            #word_avg=args.word_avg,
-            #vanilla=(args.train_mode == 0),
-            vanilla=(0 in args.train_mode and len(args.train_mode) == 1),
-            device = device)
+            vanilla=(args.train_mode == [0]),
+            semantic_dropout=args.semantic_dropout,
+            device=device)
 
 
     weights_path = os.path.join(WEIGHTS_DIR, args.model)
@@ -208,16 +213,14 @@ def main():
     vocabs = {'x2i': x2i, 'i2x': i2x}
 
     if not evaluating:
-        #args.epochs = args.epochs if args.train_mode != -1 else 1
         args.epochs = args.epochs 
-        data = {'data_ptb' : data_ptb,
-                'vocabs' : vocabs,
-                'word_counts' : word_counts,
+        data = {'vocabs' : vocabs,
                 'device': device}
-        #if args.train_mode > 0:
+        if 0 in args.train_mode:
+            data['data_ptb'] = data_ptb
+            data['word_counts'] = word_counts
         if 1 in args.train_mode:
             data['data_ss'] = data_ss
-        #if args.train_mode > 3:
         if 2 in args.train_mode:
             data['data_stag'] = data_stag
 

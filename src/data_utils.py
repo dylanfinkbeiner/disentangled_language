@@ -219,14 +219,6 @@ def sdp_data_loader(data, batch_size=None, shuffle_idx=False):
 
 
 def idx_loader(num_data=None, batch_size=None):
-    '''
-        inputs:
-            data - the full Python list of pairs of numericalized sentences (np arrays)
-            batch_size - batch size
-
-        yields:
-            chunk - list of indices representing a minibatch
-    '''
     idx = list(range(num_data))
     while True:
         shuffle(idx)
@@ -369,21 +361,13 @@ def paraphrase_to_sents(f: str):
     return sent_pairs
 
 
-def build_dicts(sents_list, is_sdp=True):
-    if not is_sdp:
-        paired_sents_list = sents_list
-        sents_list = []
-        for s1, s2 in paired_sents_list:
-            sents_list.append(s1)
-            sents_list.append(s2)
-
+def build_dicts(sents_list):
     word, pos, rel = set(), set(), set()
     for s in sents_list:
         for line in s:
             word.add(line[0].lower())
             pos.add(line[1])
-            if is_sdp:
-                rel.add(line[3])
+            rel.add(line[3])
 
     word = sorted(word)
     pos = sorted(pos)
@@ -533,14 +517,14 @@ def decode_sdp_sents(sents=[], i2x=None) -> list:
 
 
 #According to Weiting, effective in regularization
-def scramble_words(batch, scramble_prob=0.3):
-    n = np.random.binomial(1, scramble_prob, len(batch))
-
-    for i, outcome in enumerate(n):
-        if outcome == 1:
-            copy = batch[i].copy()
-            np.random.shuffle(copy)
-            batch[i] = copy
+def scramble_words(batch, scramble_prob=0.):
+    if scramble_prob > 0:
+        n = np.random.binomial(1, scramble_prob, len(batch))
+        for i, outcome in enumerate(n):
+            if outcome == 1:
+                copy = batch[i].copy()
+                np.random.shuffle(copy)
+                batch[i] = copy
 
 
 def megabatch_breakdown(megabatch, minibatch_size=None, parser=None, args=None, data=None):
@@ -576,7 +560,6 @@ def megabatch_breakdown(megabatch, minibatch_size=None, parser=None, args=None, 
     if check != len(megabatch):
         print(len(minibatches_s1) * minibatch_size)
         print(len(megabatch))
-
         raise Exception
 
     mb_s1_reps = [] # (megabatch_size, )

@@ -69,8 +69,7 @@ class Embeddings(nn.Module):
         pos_in = pos is not None
 
         #Zero-out "unk" word at test time (Jabberwocky paper)
-        if not self.training:
-            self.word_emb.weight.data[self.unk_idx,:] = 0.0 
+        self.word_emb.weight.data[self.unk_idx,:] = 0.0 
 
         # Sort the words, pos, sent_lens (necessary for pack_padded_sequence)
         lens_sorted = sent_lens
@@ -259,6 +258,7 @@ class BiAffineAttention(nn.Module):
         return S_arc, S_rel, arc_preds
 
 
+
 class BiaffineParser(nn.Module):
     def __init__(
             self,
@@ -278,15 +278,16 @@ class BiaffineParser(nn.Module):
             arc_dropout=None,
             rel_dropout=None,
             padding_idx=None,
-            #word_avg=False,
             vanilla=False,
             zero_we=False,
+            semantic_dropout=None,
             unk_idx=None,
             device=None):
         super(BiaffineParser, self).__init__()
 
         self.pos_in = bool(pos_e_size)
-        #self.word_avg = word_avg
+        self.device = device
+        self.semantic_dropout = semantic_dropout
 
         self.Embeddings = Embeddings(
                 word_e_size=word_e_size,
@@ -313,9 +314,6 @@ class BiaffineParser(nn.Module):
         if stag_vocab_size != None:
             self.StagMLP = nn.Sequential(nn.Linear(2*syn_h, stag_vocab_size)).to(device)
 
-        #if self.word_avg:
-        #    self.SemanticMLP = nn.Sequential(
-        #            nn.Linear(token_e_size, sem_h)).to(device)
         self.SemanticRNN = None
         if not vanilla:
             self.SemanticRNN = SemanticRNN(
@@ -345,7 +343,7 @@ class BiaffineParser(nn.Module):
             ).to(device)
 
         
-    def forward(self, words, sent_lens, pos=None):
+    def forward(self, words, sent_lens, pos=None, mask=None):
         '''
         ins:
             words - LongTensor
@@ -360,16 +358,16 @@ class BiaffineParser(nn.Module):
         packed_lstm_input, indices, lens_sorted, t_e = self.Embeddings(words, sent_lens, pos=pos)
 
         syntactic_outputs = self.SyntacticRNN(packed_lstm_input)
-        #syntactic_outputs = self.final_dropout(syntactic_outputs)
         if self.SemanticRNN is not None:
             semantic_outputs = self.SemanticRNN(packed_lstm_input)
-            #semantic_outputs = self.final_dropout(semantic_outputs)
+            if self.semantic_dropout and self.training:
+                mask = mask.to(self.device).index_select(0, indices)
+                semantic_outputs = semantic_dropout(semantic_outputs, mask, self.device)
             final_inputs = torch.cat([syntactic_outputs, semantic_outputs], dim=-1)
         else:
             final_inputs = syntactic_outputs
 
         final_inputs = self.final_dropout(final_inputs)
-
         final_inputs = pack_padded_sequence(final_inputs, lens_sorted, batch_first=True)
         final_outputs = self.FinalRNN(final_inputs)
 
@@ -386,6 +384,18 @@ def unsort(batch, indices):
     batch = batch.index_select(0, indices_inverted)
     return batch
 
+
+def semantic_dropout(semantic_outputs, mask, device):
+    #sem outs have shape (b, l, 2*sem_h)
+    sem_shape = semantic_outputs.shape
+    mask = mask.unsqueeze(-1).cpu().numpy()
+    mask = np.repeat(mask, sem_shape[-1], axis=-1)
+    mask = torch.LongTensor(mask).to(device)
+    dropped = torch.where(
+            mask == 1,
+            semantic_outputs,
+            torch.zeros(semantic_outputs.shape).to(device))
+    return dropped
 
 ## From https://github.com/chantera/biaffineparser/blob/master/pytorch_model.py#L86
 def mst_preds(S_arc, sent_lens):

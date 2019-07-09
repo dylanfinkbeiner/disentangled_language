@@ -25,8 +25,6 @@ LOG_DIR = '../log'
 DATA_DIR = '../data'
 
 
-
-
 def write_prelude(args, experiment):
     d = experiment['date']
     prelude = []
@@ -64,24 +62,26 @@ def train(args, parser, data, weights_path=None, experiment=None):
     log.info(prelude)
     sleep(5)
 
-    train_sdp = data['data_ptb']['train']
-    dev_sdp = data['data_ptb']['dev']
-    loader_sdp_train = data_utils.sdp_data_loader(train_sdp, batch_size=args.sdp_bs, shuffle_idx=True)
-    loader_sdp_dev = data_utils.sdp_data_loader(dev_sdp, batch_size=100, shuffle_idx=False)
-    log.info(f'There are {len(train_sdp)} syntactic dependency parsing training examples.')
-    log.info(f'There are {len(dev_sdp)} syntactic dependency parsing dev examples.')
-    sdp_devloss_record = []
-    sdp_uas_record = []
-    sdp_las_record = []
-    #if args.train_mode > 0:
+    if 0 in args.train_mode:
+        train_sdp = data['data_ptb']['train']
+        dev_sdp = data['data_ptb']['dev']
+        loader_sdp_train = data_utils.sdp_data_loader(train_sdp, batch_size=args.sdp_bs, shuffle_idx=True)
+        loader_sdp_dev = data_utils.sdp_data_loader(dev_sdp, batch_size=100, shuffle_idx=False)
+        n_train_batches = ceil(len(train_sdp) / args.sdp_bs)
+        n_dev_batches = ceil(len(dev_sdp) / 100)
+        log.info(f'There are {len(train_sdp)} syntactic dependency parsing training examples.')
+        log.info(f'There are {len(dev_sdp)} syntactic dependency parsing dev examples.')
+        sdp_devloss_record = []
+        sdp_uas_record = []
+        sdp_las_record = []
     if 1 in args.train_mode:
         train_ss = data['data_ss']['train']['sent_pairs']
         dev_ss = data['data_ss']['dev']
         idxloader_ss_train = data_utils.idx_loader(num_data=len(train_ss), batch_size=args.sem_bs)
+        n_megabatches = ceil(len(train_ss) / (args.M * args.sem_bs))
         log.info(f'There are {len(train_ss)} semantic similarity training examples.')
         log.info(f"There are {len(dev_ss['sent_pairs'])} semantic similarity dev examples.")
         sem_corr_record = []
-    #if args.train_mode > 3:
     if 2 in args.train_mode:
         train_stag = data['data_stag']['train']
         dev_stag = data['data_stag']['dev']
@@ -91,19 +91,13 @@ def train(args, parser, data, weights_path=None, experiment=None):
         log.info(f'There are {len(dev_stag)} supertagging dev examples.')
         stag_acc_record = []
 
-
-    n_train_batches = ceil(len(train_sdp) / args.sdp_bs)
-    n_dev_batches = ceil(len(dev_sdp) / 100)
-    #if args.train_mode > 0:
-    if 1 in args.train_mode:
-        n_megabatches = ceil(len(train_ss) / (args.M * args.sem_bs))
-
     opt = Adam(parser.parameters(), lr=args.lr, betas=[0.9, 0.9])
 
     print_grad_every = 10
     earlystop_counter = 0
     prev_best = 0
     if 0 in args.train_mode:
+        sdp_batches = n_train_batches # Counts down to 0, whereafter we check early stopping criterion
         _, prev_best, _ = sdp_dev_eval(parser, args=args, data=data, loader=loader_sdp_dev, n_dev_batches=n_dev_batches)
     try:
         for e in range(args.epochs):
@@ -156,17 +150,16 @@ def train(args, parser, data, weights_path=None, experiment=None):
                         loss = torch.zeros(1).to(data['device'])
                         opt.zero_grad()
 
-                        #if args.train_mode == 2:
                         if 0 in args.train_mode:
                             sdp_batch = next(loader_sdp_train)
+                            sdp_batches -= 1
                             loss_sdp = forward_syntactic_parsing(
                                     parser, 
-                                    batch,
+                                    sdp_batch,
                                     args=args, 
                                     data=data)
                             loss += loss_sdp
 
-                        #if args.train_mode == 4:
                         if 2 in args.train_mode:
                             stag_batch = next(loader_stag_train)
                             loss_stag = forward_stag(
@@ -189,12 +182,28 @@ def train(args, parser, data, weights_path=None, experiment=None):
                         loss.backward()
                         opt.step()
 
+                        if 0 in args.train_mode and sdp_batches == 0:
+                           _, LAS, _ = sdp_dev_eval(
+                                   parser, 
+                                   args=args, 
+                                   data=data, 
+                                   loader=loader_sdp_dev,
+                                   n_dev_batches=n_dev_batches)
+                           prev_best, earlystop_counter, msg = earlystop_check(args, LAS, prev_best, earlystop_counter)
+                           log.info(msg)
+                           if earlystop_counter >= args.earlystop_pt:
+                               break
+                           sdp_batches = n_train_batches
+
                         #if x % print_grad_every == 0:
                         #    print(gradient_update(parser, verbose=False))
                         #print(gradient_update(parser, verbose=False))
 
 
-                    update = ''
+                    if earlystop_counter >= args.earlystop_pt:
+                        break
+
+                    #update = ''
                     #update += f'''\nUpdate for megabatch: {m+1}\n'''
                     #correlation = ss_dev_eval(parser, dev_ss, args=args, data=data)
                     #update += '''Correlation: {:.4f}'''.format(correlation)
@@ -202,7 +211,7 @@ def train(args, parser, data, weights_path=None, experiment=None):
                     #log.info(update)
                     
 
-            update = f'''\nUpdate for epoch: {e+1}/{args.epochs}\n'''
+            update = f'\nUpdate for epoch: {e+1}/{args.epochs}\n'
             if 0 in args.train_mode:
                 UAS, LAS, dev_loss = sdp_dev_eval(
                         parser, 
@@ -216,14 +225,13 @@ def train(args, parser, data, weights_path=None, experiment=None):
                 update += '''\nSyntactic dev loss: {:.3f}
                         UAS * 100: {:.3f}
                         LAS * 100: {:.3f}\n'''.format(dev_loss, UAS * 100, LAS * 100)
-            #if args.train_mode > 0:
             if 1 in args.train_mode:
                 correlation = ss_dev_eval(parser, dev_ss, args=args, data=data)
                 sem_corr_record.append(correlation)
                 update += f'\nCorrelation: {correlation:.4f}\n'
             if 2 in args.train_mode:
                 stag_accuracy = stag_dev_eval(
-                        parser, 
+                        parser,
                         args=args, 
                         data=data, 
                         loader=loader_stag_dev, 
@@ -233,36 +241,32 @@ def train(args, parser, data, weights_path=None, experiment=None):
 
             log.info(update)
 
-            if 0 in args.train_mode:
-                #if round(LAS, 4) > prev_best + 0.00005 :
-                if LAS > prev_best + 0.00005:
-                    msg = f'LAS improved from {prev_best} on epoch {e+1}/{args.epochs}.'
-                    log.info(msg)
-                    earlystop_counter = 0
-                    #prev_best = round(LAS, 4)
-                    prev_best = LAS
-                else:
-                    earlystop_counter += 1
-                    msg = f'LAS has not improved for {earlystop_counter} consecutive epoch(s).'
-                    log.info(msg)
-                    if earlystop_counter >= args.earlystop_pt:
-                        break
-            if args.train_mode == [2]:
-                if stag_accuracy > prev_best + 0.00005:
-                    msg = f'LAS improved from {prev_best} on epoch {e+1}/{args.epochs}.'
-                    log.info(msg)
-                    earlystop_counter = 0
-                    prev_best = stag_accuracy
-                else:
-                    earlystop_counter += 1
-                    msg = f'LAS has not improved for {earlystop_counter} consecutive epoch(s).'
-                    log.info(msg)
-                    if earlystop_counter >= args.earlystop_pt:
-                        break
-
             if args.train_mode != [-1]:
                 torch.save(parser.state_dict(), weights_path)
                 log.info(f'Weights saved to {weights_path}.')
+
+            #if 0 in args.train_mode and not 1 in args.train_mode:
+            if args.train_mode == [0]:
+                prev_best, earlystop_counter, msg = earlystop_check(args, LAS, prev_best, earlystop_counter)
+                log.info(msg)
+
+            if earlystop_counter >= args.earlystop_pt:
+                break
+
+            #if args.train_mode == [2]:
+            #    if stag_accuracy > prev_best + 0.00005:
+            #        msg = f'LAS improved from {prev_best} on epoch {e+1}/{args.epochs}.'
+            #        log.info(msg)
+            #        earlystop_counter = 0
+            #        prev_best = stag_accuracy
+            #    else:
+            #        earlystop_counter += 1
+            #        msg = f'LAS has not improved for {earlystop_counter} consecutive epoch(s).'
+            #        log.info(msg)
+            #        if earlystop_counter >= args.earlystop_pt:
+            #            break
+
+
 
 
     except KeyboardInterrupt:
@@ -277,13 +281,12 @@ def train(args, parser, data, weights_path=None, experiment=None):
     finally:
         with open(os.path.splitext(experiment['path'])[0] + '.pkl', 'wb') as pkl:
                 exp_data = {}
-                exp_data['sdp_devloss_record'] = sdp_devloss_record
-                exp_data['sdp_uas_record'] = sdp_uas_record
-                exp_data['sdp_las_record'] = sdp_las_record
-                #if args.train_mode > 0:
+                if 0 in args.train_mode:
+                    exp_data['sdp_devloss_record'] = sdp_devloss_record
+                    exp_data['sdp_uas_record'] = sdp_uas_record
+                    exp_data['sdp_las_record'] = sdp_las_record
                 if 1 in args.train_mode:
                     exp_data['sem_corr_record'] = sem_corr_record
-                #if args.train_mode > 3:
                 if 2 in args.train_mode:
                     exp_data['stag_acc_record'] = stag_acc_record
                 pickle.dump(exp_data, pkl)
@@ -298,7 +301,7 @@ def forward_syntactic_parsing(parser, batch, args=None, data=None):
     sent_lens = batch['sent_lens']
     pos = batch['pos'].to(device) if parser.pos_in else None
     
-    words_d = utils.word_dropout(
+    words_d, mask = utils.word_dropout(
             batch['words'], 
             w2i=data['vocabs']['x2i']['word'], 
             i2w=data['vocabs']['i2x']['word'], 
@@ -306,7 +309,14 @@ def forward_syntactic_parsing(parser, batch, args=None, data=None):
             lens=sent_lens,
             alpha=args.alpha)
 
-    S_arc, S_rel, _ = parser(words_d.to(device), sent_lens, pos=pos)
+    if not args.semantic_dropout:
+        S_arc, S_rel, _ = parser(words_d.to(device), sent_lens, pos=pos)
+    else:
+        S_arc, S_rel, _ = parser(
+                batch['words'].to(device), 
+                sent_lens, 
+                pos=pos, 
+                mask=mask)
     
     loss_a = losses.loss_arcs(S_arc, batch['arc_targets'].to(device))
     loss_r = losses.loss_rels(S_rel, batch['rel_targets'].to(device))
@@ -325,19 +335,25 @@ def forward_stag(parser, batch, args=None, data=None):
     sent_lens = batch['sent_lens']
     pos = batch['pos'].to(device) if parser.pos_in else None
 
-    words_d = utils.word_dropout(
-            batch['words'], 
-            w2i=data['vocabs']['x2i']['word'], 
-            i2w=data['vocabs']['i2x']['word'], 
-            counts=data['word_counts'], 
-            lens=sent_lens,
-            alpha=args.alpha)
+    if args.wd_stag:
+        words_d, mask = utils.word_dropout(
+                batch['words'], 
+                w2i=data['vocabs']['x2i']['word'], 
+                i2w=data['vocabs']['i2x']['word'], 
+                counts=data['word_counts'], 
+                lens=sent_lens,
+                alpha=args.alpha)
 
-    lstm_input, indices, _, _ = parser.Embeddings(
-            #batch['words'].to(device), 
-            words_d.to(device), 
-            sent_lens, 
-            pos=pos)
+        lstm_input, indices, _, _ = parser.Embeddings(
+                #batch['words'].to(device), 
+                words_d.to(device), 
+                sent_lens,
+                pos=pos)
+    else:
+        lstm_input, indices, _, _ = parser.Embeddings(
+                batch['words'].to(device), 
+                sent_lens,
+                pos=pos)
 
     outputs = parser.SyntacticRNN(lstm_input)
     logits = parser.StagMLP(unsort(outputs, indices))
@@ -353,11 +369,19 @@ def forward_semantic(parser, s1, s2, n1, n2=None, args=None, data=None):
     parser.train()
     device = data['device']
 
+    pi = parser.pos_in
+
+    w2i = data['vocabs']['x2i']['word']
+    i2w = data['vocabs']['i2x']['word']
+    counts = data['word_counts']
+
     w1, p1, sl1 = data_utils.prepare_batch_ss(s1)
     w2, p2, sl2 = data_utils.prepare_batch_ss(s2)
     wn1, pn1, sln1 = data_utils.prepare_batch_ss(n1)
-
-    pi = parser.pos_in
+    if args.alpha > 0. and args.wd_sem:
+        w1, _ = utils.word_dropout(w1, w2i=w2i, i2w=i2w, counts=counts, lens=sl1, alpha=args.alpha)
+        w2, _ = utils.word_dropout(w2, w2i=w2i, i2w=i2w, counts=counts, lens=sl2, alpha=args.alpha)
+        wn1, _ = utils.word_dropout(wn1, w2i=w2i, i2w=i2w, counts=counts, lens=sln1, alpha=args.alpha)
     
     packed_s1, idx_s1, _, _ = parser.Embeddings(w1.to(device), sl1, pos=p1.to(device) if pi else None)
     packed_s2, idx_s2, _, _ = parser.Embeddings(w2.to(device), sl2, pos=p2.to(device) if pi else None)
@@ -383,40 +407,6 @@ def forward_semantic(parser, s1, s2, n1, n2=None, args=None, data=None):
             h2_avg,
             hn1_avg,
             sem_hn2=hn2_avg,
-            margin=args.margin)
-
-    loss *= args.lr_sem
-
-    return loss
-
-
-def forward_semantic_word(parser, s1, s2, n1, n2=None, args=None, data=None):
-    parser.train()
-    device = data['device']
-
-    w1, p1, sl1 = data_utils.prepare_batch_ss(s1)
-    w2, p2, sl2 = data_utils.prepare_batch_ss(s2)
-    wn1, pn1, sln1 = data_utils.prepare_batch_ss(n1)
-
-    pi = parser.pos_in
-    
-    _, idx_s1, _, e1 = parser.Embeddings(w1.to(device), sl1, pos=p1.to(device) if pi else None)
-    _, idx_s2, _, e2 = parser.Embeddings(w2.to(device), sl2, pos=p2.to(device) if pi else None)
-    _, idx_n1, _, en1 = parser.Embeddings(wn1.to(device), sln1, pos=pn1.to(device) if pi else None)
-
-    h1 = unsort(parser.SemanticMLP(e1), idx_s1)
-    h2 = unsort(parser.SemanticMLP(e2), idx_s2)
-    hn1 = unsort(parser.SemanticMLP(en1), idx_n1)
-
-    h1_avg = utils.average_hiddens(h1, sl1.to(device), sum_f_b=args.sum_f_b)
-    h2_avg = utils.average_hiddens(h2, sl2.to(device), sum_f_b=args.sum_f_b)
-    hn1_avg = utils.average_hiddens(hn1, sln1.to(device), sum_f_b=args.sum_f_b)
-
-    loss = losses.loss_sem_rep(
-            h1_avg,
-            h2_avg,
-            hn1_avg,
-            sem_hn2=None,
             margin=args.margin)
 
     loss *= args.lr_sem
@@ -538,3 +528,15 @@ def gradient_update(parser, verbose=False):
         update += 'Total norm of gradient: {:5.8f}\n'.format(t)
 
     return update
+
+
+def earlystop_check(args, LAS, prev_best, earlystop_counter):
+    if LAS > prev_best + 0.00005:
+        msg = f'LAS improved from {prev_best}.'
+        earlystop_counter = 0
+        prev_best = LAS
+    else:
+        earlystop_counter += 1
+        msg = f'LAS has not improved for {earlystop_counter} consecutive epoch(s).'
+    
+    return prev_best, earlystop_counter, msg

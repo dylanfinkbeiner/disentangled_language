@@ -38,12 +38,16 @@ log.addHandler(stream_handler)
 
 
 class DataPaths:
-    def __init__(self, filtered=False, glove_d=None):
+    def __init__(self, filtered=False, glove_d=None, truncated=None):
+        if truncated is not None and glove_d is None:
+            raise Exception
+
         fs = 'filtered' if filtered else 'unfiltered' # Filtered status
+        trunc = 'intersectPTB' if truncated else ''
 
         voc = 'ptbvocab'
         if glove_d is not None and glove_d > 0:
-            voc = f'glove{glove_d}vocab'
+            voc = f'glove{glove_d}{trunc}vocab'
     
         # Directories
         sdp_data_dir = os.path.join(DATA_DIR, 'sdp_processed')
@@ -78,7 +82,8 @@ class DataPaths:
 def preprocess(args):
     paths = DataPaths(
             filtered=args.filter, 
-            glove_d=args.glove_d) 
+            glove_d=args.glove_d,
+            truncated=args.truncated) 
 
     x2i, i2x = {}, {}
     if os.path.exists(paths.ptb_vocabs):
@@ -88,6 +93,14 @@ def preprocess(args):
     if args.pretrained_voc:
         with open(paths.glove_data, 'rb') as pkl:
             embedding_data = pickle.load(pkl)
+
+        if args.truncated:
+            ptb_words = set(x2i['word'].keys())
+            paranmt_words = set(embedding_data['w2i'].keys())
+            just_paranmt = paranmt_words - ptb_words
+            for w in just_paranmt:
+                embedding_data['i2w'].pop(embedding_data['w2i'][w], None)
+                embedding_data['w2i'].pop(w, None)
 
         x2i['word'] = embedding_data['w2i']
         i2x['word'] = embedding_data['i2w']
@@ -231,6 +244,7 @@ if __name__ == '__main__':
     pretrained_emb = parser.add_mutually_exclusive_group()
     pretrained_emb.add_argument('-g', help='Initialize data corresponding to glove word embeddings.', dest='glove_d', type=int, default=None)
     parser.add_argument('--pevoc', action='store_true', help='Shall we use the word vocabulary derived from the chosen pretrained embeddings?', dest='pretrained_voc', default=False)
+    parser.add_argument('--trunc', action='store_true', help='Vocab at the intersection of ParaNMT and PTB?', dest='truncated')
 
     parser.add_argument('-f', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
 

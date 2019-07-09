@@ -93,20 +93,20 @@ def main():
             f = float(mods[0]['params'][p])
         except Exception:
             params.remove(p)
+    mods = sorted(mods, key=lambda m : m['params']['alpha'])
 
     # SDP
     sdpR = {}
     corw = {}
     corwo = {}
     try:
-        mods_syn = sorted(mods, key=lambda m : m['eval_data']['sdp']['ptb_dev'][1])
+        #mods_syn = sorted(mods, key=lambda m : m['eval_data']['sdp']['ptb_dev'][1])
+        mods_syn = mods
         #wpos = [m for m in models.values() if int(m['params']['pe']) != 0]
         #wopos = [m for m in models.values() if int(m['params']['pe']) == 0]
         #wpos = sorted(wpos, key=lambda m : m['eval_data']['sdp']['ptb_dev'][1])
         #wopos = sorted(wopos, key=lambda m : m['eval_data']['sdp']['ptb_dev'][1])
-        LAS = [m['eval_data']['sdp']['ptb_dev'][1] for m in mods]
-        #LASb = [m['eval_data']['sdp']['brown_cf'][1] for m in mods]
-        #UASb = [m['eval_data']['sdp']['brown_cf'][0] for m in mods]
+        LAS = [m['eval_data']['sdp']['ptb_dev'][1] for m in mods_syn]
         #LAS_w = [m['eval_data']['sdp']['ptb_dev'][1] for m in wpos]
         #LAS_wo = [m['eval_data']['sdp']['ptb_dev'][1] for m in wopos]
 
@@ -136,6 +136,17 @@ def main():
     except Exception:
         print('Missing/no SemEval results.')
 
+
+    # Brown
+    try:
+        #mods_brown = sorted(mods, key=lambda m : m['eval_data']['sdp']['ptb_dev'][1])
+        mods_brown = mods
+        LASb = [m['eval_data']['sdp']['brown_cf'][1] for m in mods_brown]
+        UASb = [m['eval_data']['sdp']['brown_cf'][0] for m in mods_brown]
+    except Exception:
+        print('Missing/no Brown evaluation data.')
+
+
     breakpoint()
 
 
@@ -160,6 +171,10 @@ def get_corr(param=None, models=None, values=None):
         print(f'Cannot get correlation for: {param}')
         return None
 
+def stats(vals : list):
+    mean = np.mean(vals)
+    std = np.std(vals)
+    return (mean, std)
 
 def line(d : dict):
     for k, v in d.items():

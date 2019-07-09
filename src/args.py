@@ -1,7 +1,7 @@
 import os
 
 from argparse import ArgumentParser
-from configparser import ConfigParser
+#from configparser import ConfigParser
 
 LOG_DIR = '../log'
 DATA_DIR = '../data'
@@ -22,24 +22,24 @@ if not os.path.isdir(EXPERIMENTS_DIR):
 
 
 def get_args():
-    config_parser = ArgumentParser(add_help=False)
-    config_parser.add_argument('-c', '--config_file', help='Provide filename of a configuration file')
+    #config_parser = ArgumentParser(add_help=False)
+    #config_parser.add_argument('-c', '--config_file', help='Provide filename of a configuration file')
 
-    # Parsing known args allows the same command line string to provide config filename as well as rest of args
-    args, remaining_argv = config_parser.parse_known_args()
+    ## Parsing known args allows the same command line string to provide config filename as well as rest of args
+    #args, remaining_argv = config_parser.parse_known_args()
 
-    defaults = {}
+    #defaults = {}
 
-    if args.config_file:
-        config = ConfigParser()
-        config.read([os.path.join(CONFIG_DIR, args.config_file + '.cfg')])
-        defaults.update(dict(config.items('Defaults')))
+    #if args.config_file:
+    #    config = ConfigParser()
+    #    config.read([os.path.join(CONFIG_DIR, args.config_file + '.cfg')])
+    #    defaults.update(dict(config.items('Defaults')))
 
     parser = ArgumentParser()
 
     parser.add_argument('model', help='Name of model', default='default_model')
     parser.add_argument('--seed', type=int, dest='seed', default=7)
-    parser.add_argument('--device', type=str, dest='device', default='')
+    parser.add_argument('-cuda', type=int, dest='cuda', default=0)
     parser.add_argument('-auto', action='store_true', dest='autopilot', default=False)
 
     # Evaluation options
@@ -51,8 +51,8 @@ def get_args():
 
     # Data options
     parser.add_argument('--filter', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
-    pretrained_emb = parser.add_mutually_exclusive_group()
-    pretrained_emb.add_argument('--gloved', help='Should we use glove data, and if so what size embeddings?', dest='glove_d', type=int, default=None)
+    parser.add_argument('--gloved', help='Should we use glove data, and if so what size embeddings?', dest='glove_d', type=int, default=None)
+    parser.add_argument('--trunc', action='store_true', help='yadda?', dest='truncated')
 
     # Model hyperparameters
     parser.add_argument('-we', help='Size of word embeddings.', dest='we', type=int, default=100)
@@ -72,7 +72,10 @@ def get_args():
     parser.add_argument('-lrsem', help='Learning rate scaling semantic similarity loss.', dest='lr_sem', type=float, default=1)
     parser.add_argument('-edrop', help='', dest='embedding_dropout', type=float, default=0.33)
     parser.add_argument('-ldrop', help='', dest='lstm_dropout', type=float, default=0.33)
-    parser.add_argument('-wa', action='store_true', help='Should we do word averaging instead of a semantic RNN?', dest='word_avg')
+    #parser.add_argument('-sdrop', help='', dest='semantic_dropout', type=float, default=0.)
+    parser.add_argument('-sdrop', action='store_true', help='Init word embeds as 0 matrix?', dest='semantic_dropout')
+    parser.add_argument('-wdsem', action='store_true', help='Do word dropout in semantic task?', dest='wd_sem')
+    parser.add_argument('-wdstag', action='store_true', help='Do word dropout in supertag task?', dest='wd_stag')
 
 
     # Training hyperparameters
@@ -80,7 +83,7 @@ def get_args():
     parser.add_argument('-stagbs', help='Batch size, supertagging.', type=int, dest='stag_bs', default=100)
     parser.add_argument('-sembs', help='Batch size, semantic similarity.', type=int, dest='sem_bs', default=100)
     parser.add_argument('-M', '--megasize', help='Number of batches in a megabatch.', type=int, dest='M', default=1)
-    parser.add_argument('-esp', help='Number of batches in a megabatch.', type=int, dest='earlystop_pt', default=5)
+    parser.add_argument('-esp', help='Early stop point.', type=int, dest='earlystop_pt', default=5)
     parser.add_argument('--epochs', help='Number of epochs in training.', type=int, default=5)
     parser.add_argument('--margin', help='Margin in semantic similarity objective function.', dest='margin', type=float, default=0.4)
     parser.add_argument('--nchunks', help='Number of 100k-sentence-pair chunks of SS data from the filtered ParaNMT-50m dataset.', type=int, dest='n_chunks', default=1)
@@ -98,9 +101,10 @@ def get_args():
     parser.add_argument('-sc', help='Name of new file to save configuration to.', default='')
 
     # Warning: overrides argument-level defaults
-    parser.set_defaults(**defaults)
+    #parser.set_defaults(**defaults)
 
-    args = parser.parse_args(remaining_argv)
+    #args = parser.parse_args(remaining_argv)
+    args = parser.parse_args()
 
     # Save configuration
     if args.sc:

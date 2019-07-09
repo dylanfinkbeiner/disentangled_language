@@ -118,7 +118,9 @@ def predict_sts_score(sem_h1, sem_h2, conventional_range=False):
 
 
 def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=None):
+    mask = torch.ones(words.shape)
     if alpha > 0.:
+        unk_i = int(w2i[UNK_TOKEN])
         dropped = torch.LongTensor(words)
         for i, sentence in enumerate(words):
             for j in range(1, lens[i]): # Skip root token (assumes lens include root)
@@ -126,7 +128,8 @@ def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=None):
                 c = counts[ i2w[sentence[j].item()] ]
                 p = alpha / (c + alpha) # Dropout probability
                 if random.random() <= p:
-                    dropped[i,j] = int(w2i[UNK_TOKEN])
-        return dropped
+                    dropped[i,j] = unk_i
+                    mask[i,j] = 0
+        return dropped, mask
     else:
-        return words
+        return words, mask
