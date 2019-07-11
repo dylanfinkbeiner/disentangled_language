@@ -1,5 +1,6 @@
 import os
 import logging
+import random
 
 import numpy as np
 import torch
@@ -38,9 +39,11 @@ class Embeddings(nn.Module):
             zero_we=False,
             padding_idx=None,
             unk_idx=None,
+            train_unk=False,
             device=None):
         super(Embeddings, self).__init__()
 
+        self.train_unk = train_unk
         self.unk_idx = unk_idx
         self.device = device
 
@@ -69,7 +72,8 @@ class Embeddings(nn.Module):
         pos_in = pos is not None
 
         #Zero-out "unk" word at test time (Jabberwocky paper)
-        self.word_emb.weight.data[self.unk_idx,:] = 0.0 
+        if not self.train_unk or not self.training:
+            self.word_emb.weight.data[self.unk_idx,:] = 0.0 
 
         # Sort the words, pos, sent_lens (necessary for pack_padded_sequence)
         lens_sorted = sent_lens
@@ -282,12 +286,15 @@ class BiaffineParser(nn.Module):
             zero_we=False,
             semantic_dropout=None,
             unk_idx=None,
+            train_unk=False,
+            layer_drop=0.,
             device=None):
         super(BiaffineParser, self).__init__()
 
         self.pos_in = bool(pos_e_size)
         self.device = device
         self.semantic_dropout = semantic_dropout
+        self.layer_drop = layer_drop #XXX
 
         self.Embeddings = Embeddings(
                 word_e_size=word_e_size,
@@ -299,6 +306,7 @@ class BiaffineParser(nn.Module):
                 zero_we=zero_we,
                 padding_idx=padding_idx,
                 unk_idx=unk_idx,
+                train_unk=train_unk,
                 device=device
                 ).to(device)
 
@@ -361,8 +369,13 @@ class BiaffineParser(nn.Module):
         if self.SemanticRNN is not None:
             semantic_outputs = self.SemanticRNN(packed_lstm_input)
             if self.semantic_dropout and self.training:
-                mask = mask.to(self.device).index_select(0, indices)
-                semantic_outputs = semantic_dropout(semantic_outputs, mask, self.device)
+                if self.layer_drop <= 0.: #XXX
+                    mask = mask.to(self.device).index_select(0, indices)
+                    semantic_outputs = semantic_dropout(semantic_outputs, mask, self.device)
+                else:
+                    for i in range(semantic_outputs.shape[0]):
+                        if random.random() <= self.layer_drop: #XXX
+                            semantic_outputs[i] = torch.zeros(semantic_outputs[i].shape).to(self.device) #XXX
             final_inputs = torch.cat([syntactic_outputs, semantic_outputs], dim=-1)
         else:
             final_inputs = syntactic_outputs

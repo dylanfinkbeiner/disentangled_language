@@ -117,16 +117,37 @@ def predict_sts_score(sem_h1, sem_h2, conventional_range=False):
     return sims.tolist()
 
 
-def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=None):
+def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=None, style='freq'):
     mask = torch.ones(words.shape)
     if alpha > 0.:
+        if style == 'unif':
+            assert(alpha <= 1. and alpha >= 0)
         unk_i = int(w2i[UNK_TOKEN])
         dropped = torch.LongTensor(words)
         for i, sentence in enumerate(words):
             for j in range(1, lens[i]): # Skip root token (assumes lens include root)
                 p = -1
-                c = counts[ i2w[sentence[j].item()] ]
-                p = alpha / (c + alpha) # Dropout probability
+                if style == 'freq':
+                    c = counts[ i2w[sentence[j].item()] ]
+                    p = alpha / (c + alpha) # Dropout probability
+                elif style == 'unif':
+                    p = alpha
+                if random.random() <= p:
+                    dropped[i,j] = unk_i
+                    mask[i,j] = 0
+        return dropped, mask
+    else:
+        return words, mask
+
+
+def pos_dropout(pos, lens=None, p2i=None, p=None):
+    mask = torch.ones(pos.shape)
+    if p > 0.:
+        assert(p <= 1. and p >= 0)
+        unk_i = int(p2i[UNK_TOKEN])
+        dropped = torch.LongTensor(pos)
+        for i, sentence in enumerate(pos):
+            for j in range(1, lens[i]):
                 if random.random() <= p:
                     dropped[i,j] = unk_i
                     mask[i,j] = 0

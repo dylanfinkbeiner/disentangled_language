@@ -153,30 +153,30 @@ def eval_sdp(args, parser, data, experiment=None):
 
             print_results(evaluation, name)
 
-    #weights = {}
-    #syn = {}
-    #sem = {}
-    #ih = parser.FinalRNN.lstm.weight_ih_l0.data
-    #syn_weights = ih[:, :2*args.syn_h]
-    #sem_weights = ih[:, 2*args.syn_h:]
-    #syn['final'] = syn_weights.norm(2).item()
-    #sem['final'] = sem_weights.norm(2).item()
-    #if parser.SemanticRNN is None:
-    #    pass
-    #else:
-    #    ih = parser.SemanticRNN.lstm.weight_ih_l0.data
-    #    pos = ih[:, args.we:] 
-    #    word = ih[:, :args.we]
-    #    sem['pos'] = pos.norm(2).item() if parser.pos_in else None
-    #    sem['word'] = word.norm(2).item()
-    #ih = parser.SyntacticRNN.lstm.weight_ih_l0.data
-    #pos = ih[:, args.we:]
-    #word = ih[:, :args.we]
-    #syn['pos'] = pos.norm(2).item() if parser.pos_in else None
-    #syn['word'] = word.norm(2).item()
-    #weights['syn'] = syn
-    #weights['sem'] = sem
-    #sdp_eval_data['weights'] = weights
+    weights = {}
+    syn = {}
+    sem = {}
+    ih = parser.FinalRNN.lstm.weight_ih_l0.data
+    syn_weights = ih[:, :2*args.syn_h]
+    sem_weights = ih[:, 2*args.syn_h:]
+    syn['final'] = syn_weights.norm(2).item()
+    sem['final'] = sem_weights.norm(2).item()
+    if parser.SemanticRNN is None:
+        pass
+    else:
+        ih = parser.SemanticRNN.lstm.weight_ih_l0.data
+        pos = ih[:, args.we:] 
+        word = ih[:, :args.we]
+        sem['pos'] = pos.norm(2).item() if parser.pos_in else None
+        sem['word'] = word.norm(2).item()
+    ih = parser.SyntacticRNN.lstm.weight_ih_l0.data
+    pos = ih[:, args.we:]
+    word = ih[:, :args.we]
+    syn['pos'] = pos.norm(2).item() if parser.pos_in else None
+    syn['word'] = word.norm(2).item()
+    weights['syn'] = syn
+    weights['sem'] = sem
+    sdp_eval_data['weights'] = weights
 
     save_eval_data(args, experiment['path'], 'sdp', sdp_eval_data)
 
@@ -250,6 +250,7 @@ def eval_sts(args, parser, data, experiment=None):
                     np.min(predictions),
                     np.max(predictions))
                 exp_file.write(info)
+                exp_file.write(stats)
                 print(info)
 
                 sem_eval_data[year] = correlation

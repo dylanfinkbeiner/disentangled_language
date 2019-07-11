@@ -39,7 +39,7 @@ log.addHandler(stream_handler)
 
 class DataPaths:
     def __init__(self, filtered=False, glove_d=None, truncated=None):
-        if truncated is not None and glove_d is None:
+        if truncated is True and glove_d is None:
             raise Exception
 
         fs = 'filtered' if filtered else 'unfiltered' # Filtered status
@@ -68,6 +68,7 @@ class DataPaths:
     
         self.ptb_vocabs = os.path.join(sdp_data_dir, f'vocabs_{fs}.pkl')
         self.data_ptb = os.path.join(sdp_data_dir, f'data_ptb_{fs}_{voc}.pkl')
+        self.counts_wsj = os.path.join(sdp_data_dir, f'counts_wsj_{fs}.pkl')
         self.data_brown = os.path.join(sdp_data_dir, f'data_brown_{fs}_{voc}.pkl')
 
         self.stag_vocabs = os.path.join(stag_data_dir, f'stag_vocabs.pkl')
@@ -98,12 +99,33 @@ def preprocess(args):
             ptb_words = set(x2i['word'].keys())
             paranmt_words = set(embedding_data['w2i'].keys())
             just_paranmt = paranmt_words - ptb_words
+
+            ##XXX
+            #just_ptb = ptb_words - paranmt_words
+            #print(len(just_ptb))
+            #sdp_data_dir = os.path.join(DATA_DIR, 'sdp_processed')
+            #patt = os.path.join(sdp_data_dir, f'data_ptb_unfiltered_glove100vocab.pkl')
+            #with open(patt, 'rb') as f:
+            #    _, counts = pickle.load(f)
+            #cts = []
+            #xs=[]
+            #for w in just_ptb:
+            #    cts.append((w, counts[w]))
+            #    xs.append(counts[w])
+            #
+            #ctssort = sorted(cts, key=lambda x: x[1])
+            #breakpoint()
+            #exit()
+            #XXX
+
             for w in just_paranmt:
                 embedding_data['i2w'].pop(embedding_data['w2i'][w], None)
                 embedding_data['w2i'].pop(w, None)
 
+
         x2i['word'] = embedding_data['w2i']
         i2x['word'] = embedding_data['i2w']
+
 
 
     if args.sdp != []:
@@ -132,10 +154,18 @@ def preprocess(args):
         if 'brown' in args.sdp:
             log.info(f'Initializing Brown corpus data.')
             brown_conllus = [os.path.join(BROWN_DIR, f) for f in os.listdir(BROWN_DIR)]
-            data_brown = data_utils.build_sdp_dataset(
+            data_brown, word_counts = data_utils.build_sdp_dataset(
                     brown_conllus, 
                     x2i=x2i, 
                     filter_sents=args.filter)
+
+            wc = word_counts['cf']
+            total = sum(wc.values())
+            unique = list(wc)
+            print(total)
+            print(len(unique))
+            breakpoint()
+            exit()
             with open(paths.data_brown, 'wb') as f:
                 pickle.dump(data_brown, f)
 

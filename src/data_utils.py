@@ -15,9 +15,9 @@ import torch
 import utils
 from parser import unsort
 
+PAD_TOKEN = '<pad>' # Only place where this seems to come up is in Embeddings, for pad_idx
 UNK_TOKEN = '<unk>'
 ROOT_TOKEN = '<root>'
-PAD_TOKEN = '<pad>' # Only place where this seems to come up is in Embeddings, for pad_idx
 
 CONLLU_MASK = [1, 4, 6, 7]  # [word, pos, head, rel]
 CORENLP_URL = 'http://localhost:9000'
@@ -144,6 +144,7 @@ def build_sdp_dataset(conllu_files: list, x2i=None, filter_sents=False):
         has been constructed by build_ptb_dataset.
     '''
     data = {}
+    word_counts = {}
 
     for f in conllu_files:
         name = os.path.splitext(f)[0].split('/')[-1].lower()
@@ -153,9 +154,12 @@ def build_sdp_dataset(conllu_files: list, x2i=None, filter_sents=False):
         sents_masked = [s[:, CONLLU_MASK] for s in sents]
         if filter_sents:
             filter_sentences(sents_masked)
+
+        word_counts[name] = get_word_counts(sents_masked)
+
         data[name] = numericalize_sdp(sents_masked, x2i)
 
-    return data
+    return data, word_counts
 
 
 def build_ss_dataset(raw_sent_pairs, gs='', x2i=None, filter_sents=False):
@@ -453,6 +457,7 @@ def numericalize_sdp(sents_list, x2i):
     p2i = x2i['pos']
     r2i = x2i['rel']
 
+    unk_count = 0 # XXX
     sents_numericalized = []
     for s in tqdm(sents_list, ascii=True, desc=f'Numericalizing SDP data', ncols=80):
         new_shape = (s.shape[0] + 1, s.shape[1])
@@ -461,13 +466,18 @@ def numericalize_sdp(sents_list, x2i):
         new_s[0,:] = w2i[ROOT_TOKEN], p2i[ROOT_TOKEN], -1, -1 # -1s here become crucial for attachment scoring
 
         for i in range(s.shape[0]):
-            new_s[i+1,0] = w2i.get(s[i,0].lower(), w2i[UNK_TOKEN])
+            word_i = w2i.get(s[i,0].lower(), w2i[UNK_TOKEN])
+            if word_i == 1:
+                unk_count += 1
+            #new_s[i+1,0] = w2i.get(s[i,0].lower(), w2i[UNK_TOKEN])
+            new_s[i+1,0] = word_i
             new_s[i+1,1] = p2i.get(s[i,1], p2i[UNK_TOKEN])
             new_s[i+1,2] = int(s[i,2]) # Head idx
             new_s[i+1,3] = r2i[s[i,3]]
 
         sents_numericalized.append(new_s)
 
+    print(f'Unk count is {unk_count}') #XXX
     return sents_numericalized
 
 

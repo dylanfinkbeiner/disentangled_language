@@ -86,7 +86,6 @@ def main():
     n_mods = len(models)
 
     mods = list(models.values())
-    #mods = sorted(mods, key=lambda m : m['params']['alpha'])
     params = list(mods[0]['params'].keys())
     for p in list(params):
         try:
@@ -97,22 +96,25 @@ def main():
 
     # SDP
     sdpR = {}
-    corw = {}
-    corwo = {}
     try:
         #mods_syn = sorted(mods, key=lambda m : m['eval_data']['sdp']['ptb_dev'][1])
-        mods_syn = mods
-        #wpos = [m for m in models.values() if int(m['params']['pe']) != 0]
-        #wopos = [m for m in models.values() if int(m['params']['pe']) == 0]
-        #wpos = sorted(wpos, key=lambda m : m['eval_data']['sdp']['ptb_dev'][1])
-        #wopos = sorted(wopos, key=lambda m : m['eval_data']['sdp']['ptb_dev'][1])
+        mods_syn = [] 
+        #mods_syn = mods
+        for m in mods:
+            try:
+                LAS_ = m['eval_data']['sdp']['ptb_dev'][1]
+                mods_syn.append(m)
+            except Exception:
+                name = m['params']['model']
+                print(f'{name} missing SDP data.')
+                continue
+
+        mods_syn = sorted(mods_syn, key=lambda m : m['eval_data']['sdp']['ptb_dev'][1])
+
         LAS = [m['eval_data']['sdp']['ptb_dev'][1] for m in mods_syn]
-        #LAS_w = [m['eval_data']['sdp']['ptb_dev'][1] for m in wpos]
-        #LAS_wo = [m['eval_data']['sdp']['ptb_dev'][1] for m in wopos]
+
 
         sdpR = R_dict(params, models=mods_syn, values=LAS)
-        #corw[p] = get_corr(param=p, models=wpos, LAS=LAS_w)
-        #corwo[p] = get_corr(param=p, models=wopos, LAS=LAS_wo)
     except Exception:
         print('Missing/no syntactic dependency parsing evaluation data.')
 

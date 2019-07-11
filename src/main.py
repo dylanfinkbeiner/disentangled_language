@@ -109,6 +109,9 @@ def main():
             glove_d=args.glove_d,
             truncated=args.truncated)
 
+    with open(paths.counts_wsj, 'rb') as pkl:
+        word_counts = pickle.load(pkl)
+
     # Populate syntactic dependency parsing data
     log.info(f'Loading pickled syntactic dependency parsing data.')
     if 0 in args.train_mode:
@@ -190,8 +193,10 @@ def main():
             rel_dropout=0.33,
             padding_idx = x2i['word'][PAD_TOKEN],
             unk_idx = x2i['word'][UNK_TOKEN],
+            train_unk=args.train_unk,
             vanilla=(args.train_mode == [0]),
             semantic_dropout=args.semantic_dropout,
+            layer_drop=args.layer_drop, #XXX
             device=device)
 
 
@@ -215,10 +220,10 @@ def main():
     if not evaluating:
         args.epochs = args.epochs 
         data = {'vocabs' : vocabs,
-                'device': device}
+                'device': device, 
+                'word_counts': word_counts}
         if 0 in args.train_mode:
             data['data_ptb'] = data_ptb
-            data['word_counts'] = word_counts
         if 1 in args.train_mode:
             data['data_ss'] = data_ss
         if 2 in args.train_mode:

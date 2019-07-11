@@ -307,15 +307,18 @@ def forward_syntactic_parsing(parser, batch, args=None, data=None):
             i2w=data['vocabs']['i2x']['word'], 
             counts=data['word_counts'], 
             lens=sent_lens,
-            alpha=args.alpha)
+            alpha=args.alpha,
+            style=args.drop_style)
+
+    pos_d, mask = utils.pos_dropout(pos.to('cpu'), lens=sent_lens, p2i=data['vocabs']['x2i']['pos'], p=args.alpha)
 
     if not args.semantic_dropout:
-        S_arc, S_rel, _ = parser(words_d.to(device), sent_lens, pos=pos)
+        S_arc, S_rel, _ = parser(words_d.to(device), sent_lens, pos=pos_d.to(device))
     else:
         S_arc, S_rel, _ = parser(
                 batch['words'].to(device), 
                 sent_lens, 
-                pos=pos, 
+                pos=pos_d.to(device), 
                 mask=mask)
     
     loss_a = losses.loss_arcs(S_arc, batch['arc_targets'].to(device))
@@ -335,6 +338,8 @@ def forward_stag(parser, batch, args=None, data=None):
     sent_lens = batch['sent_lens']
     pos = batch['pos'].to(device) if parser.pos_in else None
 
+    pos_d, mask = utils.pos_dropout(pos.to('cpu'), lens=sent_lens, p2i=data['vocabs']['x2i']['pos'], p=args.alpha)
+
     if args.wd_stag:
         words_d, mask = utils.word_dropout(
                 batch['words'], 
@@ -342,18 +347,19 @@ def forward_stag(parser, batch, args=None, data=None):
                 i2w=data['vocabs']['i2x']['word'], 
                 counts=data['word_counts'], 
                 lens=sent_lens,
-                alpha=args.alpha)
+                alpha=args.alpha,
+                style=args.drop_style)
 
         lstm_input, indices, _, _ = parser.Embeddings(
                 #batch['words'].to(device), 
                 words_d.to(device), 
                 sent_lens,
-                pos=pos)
+                pos=pos_d.to(device))
     else:
         lstm_input, indices, _, _ = parser.Embeddings(
                 batch['words'].to(device), 
                 sent_lens,
-                pos=pos)
+                pos=pos_d.to(device))
 
     outputs = parser.SyntacticRNN(lstm_input)
     logits = parser.StagMLP(unsort(outputs, indices))
@@ -373,15 +379,15 @@ def forward_semantic(parser, s1, s2, n1, n2=None, args=None, data=None):
 
     w2i = data['vocabs']['x2i']['word']
     i2w = data['vocabs']['i2x']['word']
-    counts = data['word_counts']
 
     w1, p1, sl1 = data_utils.prepare_batch_ss(s1)
     w2, p2, sl2 = data_utils.prepare_batch_ss(s2)
     wn1, pn1, sln1 = data_utils.prepare_batch_ss(n1)
     if args.alpha > 0. and args.wd_sem:
-        w1, _ = utils.word_dropout(w1, w2i=w2i, i2w=i2w, counts=counts, lens=sl1, alpha=args.alpha)
-        w2, _ = utils.word_dropout(w2, w2i=w2i, i2w=i2w, counts=counts, lens=sl2, alpha=args.alpha)
-        wn1, _ = utils.word_dropout(wn1, w2i=w2i, i2w=i2w, counts=counts, lens=sln1, alpha=args.alpha)
+        counts = data['word_counts']
+        w1, _ = utils.word_dropout(w1, w2i=w2i, i2w=i2w, counts=counts, lens=sl1, alpha=args.alpha, style=args.drop_style)
+        w2, _ = utils.word_dropout(w2, w2i=w2i, i2w=i2w, counts=counts, lens=sl2, alpha=args.alpha, style=args.drop_style)
+        wn1, _ = utils.word_dropout(wn1, w2i=w2i, i2w=i2w, counts=counts, lens=sln1, alpha=args.alpha, style=args.drop_style)
     
     packed_s1, idx_s1, _, _ = parser.Embeddings(w1.to(device), sl1, pos=p1.to(device) if pi else None)
     packed_s2, idx_s2, _, _ = parser.Embeddings(w2.to(device), sl2, pos=p2.to(device) if pi else None)
