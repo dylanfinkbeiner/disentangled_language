@@ -15,7 +15,9 @@ def main():
 
     #name_prefix = ['zeroUnk'] * n_iter
     #name_prefix = ['semUnifDrop'] * n_iter
-    name_prefix = ['semLayerDrop'] * n_iter
+    #name_prefix = ['semLayerDrop'] * n_iter
+    #name_prefix = ['moreUnifDrop'] * n_iter
+    name_prefix = ['justAdvStag'] * n_iter
 
 
     # Ranges
@@ -26,10 +28,11 @@ def main():
     #synl_r = [2] 
     #finl_r = [1, 2, 3]
     #finl_r = [1]
-    finl_r = [1,2] #x
+    #finl_r = [1,2] #x
+    finl_r = [2]
 
     #finh_r = [300, 400, 500, 600]
-    #finh_r = [400, 500]
+    finh_r = [400]
     frac_syn_r = [1/8 * x for x in range(4, 6)]
 
     #bs_r = logrange_list(20, 200, 12, rnd=10)
@@ -46,8 +49,8 @@ def main():
     synl = unif_samp(range_list=synl_r, n_samps=n_iter)
     finl = unif_samp(range_list=finl_r, n_samps=n_iter)
 
-    #finh = unif_samp(range_list=finh_r, n_samps=n_iter)
-    finh = [400, 500] * n_iter #x
+    finh = unif_samp(range_list=finh_r, n_samps=n_iter)
+    #finh = [400, 500] * n_iter #x
     #finh = [400, 500, 600] * (n_iter // 2)
     frac_syn = unif_samp(range_list=frac_syn_r, n_samps=n_iter)
     #semh = unif_samp(range_list=[200, 300, 400], n_samps=n_iter)
@@ -56,7 +59,8 @@ def main():
     #lr = unif_samp(range_list=[1e-3, 2e-3, 5e-4], n_samps=n_iter)
     lr = [1e-3] * n_iter #x
     #lr_sem = log_samp(e_lo=-2, n_samps=n_iter)
-    lr_sem = unif_samp(range_list=[1, 100], n_samps=n_iter)
+    #lr_sem = unif_samp(range_list=[1, 100], n_samps=n_iter)
+    lr_sem = unif_samp(range_list=[1, 10, 100], n_samps=n_iter)
     #lr_sem = [1] * n_iter
     #lr_sdp = log_samp(e_lo=-2, n_samps=n_iter)
     #lr_stag = log_samp(e_lo=-2, n_samps=n_iter)
@@ -77,8 +81,8 @@ def main():
     stag_bs = [50] * n_iter #x
 
     #ldrop = unif_samp(range_list=[0.33, 0.4, 0.5], n_samps=n_iter)
-    ldrop = unif_samp(range_list=[0.1, 0.33], n_samps=n_iter)
-    #ldrop = [0.33] * n_iter
+    #ldrop = unif_samp(range_list=[0.1, 0.33], n_samps=n_iter)
+    ldrop = [0.33] * n_iter
     #ldrop = [0.5] * n_iter
     #edrop = unif_samp(range_list=[0, 0.25], n_samps=n_iter)
     #edrop = [0.1, 0.33] * (n_iter // 2)
@@ -98,18 +102,20 @@ def main():
     nchunks = [1] * n_iter
     #nchunks = [1, 3] * n_iter
 
-    #alpha = [40, 0.25, 40, 0.25, 0.25, 40] + unif_samp(range_list=[0.25, 40], n_samps=n_iter-6).tolist()
-    #alpha = [0] * n_iter
-    #alpha = [40] * n_iter
-    #alpha = unif_samp(range_list=[0, 0.4, 0.2], n_samps=n_iter)
-    alpha = unif_samp(range_list=[0.05, 0.1, 0.2, 0.3], n_samps=n_iter)
-    alpha = [0.05, 0.1, 0.2, 0.3] * n_iter
-    #alpha = unif_samp(range_list=[0, 40], n_samps=n_iter)
-    #alpha = [0] * 5 + [1] * 5 #x
+    #word_dropout_ = [40, 0.25, 40, 0.25, 0.25, 40] + unif_samp(range_list=[0.25, 40], n_samps=n_iter-6).tolist()
+    word_dropout = [0] * n_iter
+    #word_dropout_ = [40] * n_iter
+    #word_dropout_ = unif_samp(range_list=[0.1, 0.4, 0.3, 0.2], n_samps=n_iter)
+    #word_dropout_ = unif_samp(range_list=[0.05, 0.1, 0.2, 0.3], n_samps=n_iter)
+    #word_dropout_ = [0.2, 0.3, 0.4] * n_iter
+    #word_dropout_ = unif_samp(range_list=[0, 40], n_samps=n_iter)
+    #word_dropout_ = [0] * 5 + [1] * 5 #x
+
+    pos_dropout = [0] * n_iter
 
     #seed = np.random.randint(500, size=n_iter) #x
     #seed = [11, 11, 30, 30]
-    seed = [13] * n_iter
+    seed = [15] * n_iter
 
     #gloved = [0] * 5 + [100] * 5
     gloved = [100] * n_iter #x
@@ -130,13 +136,18 @@ def main():
 
     #auxdrop = unif_samp(range_list=[False, True], n_samps=n_iter)
 
-    cuda = [1] * n_iter
+    cuda = [0] * n_iter
 
-    layerdrop = [0.05, 0.3, 0.1, 0.2] * n_iter
+    #layerdrop = [0.05, 0.3, 0.1, 0.2] * n_iter
+    layerdrop = [0] * n_iter
+
+    start_epoch = unif_samp(range_list=[2, 3], n_samps=n_iter)
+    #start_epoch = unif_samp(range_list=[2], n_samps=n_iter)
+    #scale_adv_loss = unif_samp(range_list=[1, 1e-2, 10, 1e-3], n_samps=n_iter)
+    scale_adv_loss = 10 * log_samp(e_lo=-3, n_samps=n_iter)
 
 
-
-    for i in range(0, n_iter):
+    for i in range(1, n_iter):
         print('\n' * 2 + f'Entering training for {i}-th model.\n')
 
         finl_ = finl[i]
@@ -147,8 +158,8 @@ def main():
 
         finh_ = finh[i]
         #synh_ = finh[i]
-        synh_ = 25 * math.floor((finh_ * frac_syn[i]) / 25)
-        #synh_ = 200 #x
+        #synh_ = 25 * math.floor((finh_ * frac_syn[i]) / 25)
+        synh_ = 200 #x
         semh_ = finh_ - synh_
         #semh_ = 300
         #semh_ = semh[i]
@@ -173,8 +184,6 @@ def main():
 
         scramble_ = scramble[i]
 
-        alpha_ = alpha[i]
-
         gloved_ = gloved[i]
 
         margin_ = margin[i]
@@ -196,6 +205,9 @@ def main():
         cuda_ = cuda[i]
         layerdrop_ = layerdrop[i]
 
+        start_epoch_ = start_epoch[i]
+        scale_adv_loss_ = scale_adv_loss[i]
+
         model_name = f'{name_prefix[i]}_{i:02d}'
         command = f'python main.py {model_name}\
                 -pe {p_e_size_}\
@@ -203,17 +215,22 @@ def main():
                 -finl {finl_} -synl {synl_} -seml 1\
                 -lr {lr_} -lrsdp {lr_sdp_} -lrstag {lr_stag_} -lrsem {lr_sem_}\
                 -sdpbs {sdp_bs_} -stagbs {stag_bs_} -sembs {sem_bs_}\
-                -nchunks {nchunks_} -M 20 -epochs {epochs_} -gloved {gloved_} -scramble {scramble_} -a {alpha_}\
+                -nchunks {nchunks_} -M 20 -epochs {epochs_} -gloved {gloved_} -scramble {scramble_}\
+                -wd {word_dropout[i]} -pd {pos_dropout[i]}\
                 -margin {margin_}\
                 -ldrop {ldrop_} -edrop {edrop_}\
                 -seed {seed_}\
                 -dropstyle {style_}\
+                -startepoch {start_epoch_}\
+                -scaleAS {scale_adv_loss_}\
                 -auto -cuda {cuda_}'
 
         command = command.replace('\n', '')
 
-        command += ' -sdrop'
-        command += f' -layerdrop {layerdrop_}'
+        command += ' -advstag'
+
+        #command += ' -sdrop'
+        #command += f' -layerdrop {layerdrop_}'
 
         #if trunc_:
         #    command += ' --trunc'
@@ -223,8 +240,8 @@ def main():
 
         # for resuming the semDrop trials
         #if auxdrop[i]:
-        #    command += ' -wdsem'
-        #    command += ' -wdstag'
+        #command += ' -wdsem'
+        #command += ' -wdstag'
 
         #subprocess.call(command + ' -tm 0', shell=True) #x
         #subprocess.call(command + ' -tm 1', shell=True)

@@ -196,7 +196,8 @@ def main():
             train_unk=args.train_unk,
             vanilla=(args.train_mode == [0]),
             semantic_dropout=args.semantic_dropout,
-            layer_drop=args.layer_drop, #XXX
+            layer_drop=args.layer_drop, #XXX,
+            adversarial_stag=args.adv_stag,
             device=device)
 
 

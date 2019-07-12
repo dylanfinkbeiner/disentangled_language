@@ -92,7 +92,8 @@ def main():
             f = float(mods[0]['params'][p])
         except Exception:
             params.remove(p)
-    mods = sorted(mods, key=lambda m : m['params']['alpha'])
+    #mods = sorted(mods, key=lambda m : m['params']['alpha'])
+    #mods = sorted(mods, key=lambda m : m['params']['word_'])
 
     # SDP
     sdpR = {}
@@ -156,8 +157,9 @@ def R_dict(params, models=None, values=None):
     d = {}
     for p in params:
         try:
-            d[p] = get_corr(param=p, models=models, values=values)
-
+            R = get_corr(param=p, models=models, values=values)
+            if not np.isnan(R):
+                d[p] = R
         except Exception:
             continue
 

@@ -90,6 +90,9 @@ def train(args, parser, data, weights_path=None, experiment=None):
         log.info(f'There are {len(train_stag)} supertagging training examples.')
         log.info(f'There are {len(dev_stag)} supertagging dev examples.')
         stag_acc_record = []
+    if args.adv_stag:
+        train_adv_stag = data['data_stag']['train']
+        loader_adv_stag_train = data_utils.stag_data_loader(train_adv_stag, batch_size=args.stag_bs, shuffle_idx=True)
 
     opt = Adam(parser.parameters(), lr=args.lr, betas=[0.9, 0.9])
 
@@ -124,7 +127,41 @@ def train(args, parser, data, weights_path=None, experiment=None):
                     loss_stag.backward()
                     opt.step()
 
+            #elif 3 in args.train_mode:
+            #    opt.zero_grad()
+            #    for p in parser.parameters():
+            #        p.requires_grad = True
+            #    for p in parser.AdvStagMLP.parameters():
+            #        p.requires_grad = False
+            #    sdp_batch = next(loader_sdp_train)
+            #    stag_batch = next(loader_stag_train)
+            #    loss_stag = forward_adversarial_stag(parser, batch=stag_batch, args=args, data=data)
+            #    loss_syn = forward_syntactic_parsing(parser, batch=sdp_batch, args=args, data=data)
+            #    loss = loss_syn - (args.scale_adv_stag * loss_stag)
+            #    loss.backward()
+            #    print(gradient_update(parser, verbose=True))
+            #    breakpoint()
+            #    opt.step()
+
+            #    opt.zero_grad()
+            #    for p in parser.parameters():
+            #        p.requires_grad = False
+            #    for p in parser.AdvStagMLP.parameters():
+            #        p.requires_grad = True
+            #    stag_batch = next(loader_stag_train)
+            #    loss_stag = forward_adversarial_stag(parser, batch=stag_batch, args=args, data=data)
+            #    loss_stag.backward()
+            #    breakpoint()
+            #    opt.step()
+            
+
             elif 1 in args.train_mode:
+                if args.adv_stag:
+                    for p in parser.parameters():
+                        p.requires_grad = True
+                    for p in parser.AdvStagMLP.parameters():
+                        p.requires_grad = False
+
                 mini_remaining = ceil(len(train_ss) / args.sem_bs)
                 for m in range(n_megabatches):
                     megabatch = []
@@ -169,6 +206,17 @@ def train(args, parser, data, weights_path=None, experiment=None):
                                     data=data)
                             loss += loss_stag
 
+                        if (e+1) >= args.start_epoch and args.adv_stag:
+                            stag_adv_batch = next(loader_adv_stag_train)
+                            loss_adv_stag = forward_adversarial_stag(
+                                    parser,
+                                    batch=stag_batch,
+                                    args=args,
+                                    data=data)
+                            if x % print_grad_every == 0:
+                                log.info(f'Adversarial loss: {loss_adv_stag.item()}')
+                            loss -= (args.scale_adv_stag * loss_adv_stag)
+
                         loss_sem = forward_semantic(
                                 parser,
                                 s1=[mb_s1[i] for i in idxs[x]],
@@ -199,7 +247,7 @@ def train(args, parser, data, weights_path=None, experiment=None):
                         #    print(gradient_update(parser, verbose=False))
                         #print(gradient_update(parser, verbose=False))
 
-
+                    # End of individual megabatch's loop
                     if earlystop_counter >= args.earlystop_pt:
                         break
 
@@ -209,7 +257,36 @@ def train(args, parser, data, weights_path=None, experiment=None):
                     #update += '''Correlation: {:.4f}'''.format(correlation)
 
                     #log.info(update)
-                    
+
+                # End of megabatches loop    
+
+            if args.adv_stag:
+                stag_accuracy = stag_dev_eval(
+                        parser,
+                        args=args, 
+                        data=data, 
+                        loader=loader_stag_dev, 
+                        n_dev_batches=ceil(len(dev_stag) / 100),
+                        adversarial=True)
+                log.info(f'\nAdversarial supertagger accuracy before, epoch {e+1}: {stag_accuracy:.4f}\n')
+
+            if args.adv_stag and not (earlystop_counter >= args.earlystop_pt):
+                for p in parser.parameters():
+                    p.requires_grad = False
+                for p in parser.AdvStagMLP.parameters():
+                    p.requires_grad = True
+                n_stag_bs = ceil(len(train_adv_stag) / args.stag_bs)
+                for b in tqdm(range(n_stag_bs), ascii=True, desc=f'Adversarial stag training for epoch {e+1}/{args.epochs}', ncols=80):
+                    opt.zero_grad()
+                    adv_stag_batch = next(loader_adv_stag_train)
+                    loss_stag = forward_adversarial_stag(
+                            parser,
+                            batch=adv_stag_batch,
+                            args=args,
+                            data=data)
+                    loss_stag.backward()
+                    opt.step()
+
 
             update = f'\nUpdate for epoch: {e+1}/{args.epochs}\n'
             if 0 in args.train_mode:
@@ -235,9 +312,20 @@ def train(args, parser, data, weights_path=None, experiment=None):
                         args=args, 
                         data=data, 
                         loader=loader_stag_dev, 
-                        n_dev_batches=ceil(len(dev_stag) / 100))
+                        n_dev_batches=ceil(len(dev_stag) / 100),
+                        adversarial=False)
                 stag_acc_record.append(stag_accuracy)
                 update += f'\nSupertagging accuracy: {stag_accuracy:.4f}\n'
+            if args.adv_stag:
+                stag_accuracy = stag_dev_eval(
+                        parser,
+                        args=args, 
+                        data=data, 
+                        loader=loader_stag_dev, 
+                        n_dev_batches=ceil(len(dev_stag) / 100),
+                        adversarial=True)
+                update += f'\nAdversarial supertagger accuracy after, epoch {e+1}: {stag_accuracy:.4f}\n'
+
 
             log.info(update)
 
@@ -307,10 +395,10 @@ def forward_syntactic_parsing(parser, batch, args=None, data=None):
             i2w=data['vocabs']['i2x']['word'], 
             counts=data['word_counts'], 
             lens=sent_lens,
-            alpha=args.alpha,
+            rate=args.word_dropout,
             style=args.drop_style)
 
-    pos_d, mask = utils.pos_dropout(pos.to('cpu'), lens=sent_lens, p2i=data['vocabs']['x2i']['pos'], p=args.alpha)
+    pos_d, mask = utils.pos_dropout(pos.to('cpu'), lens=sent_lens, p2i=data['vocabs']['x2i']['pos'], p=args.pos_dropout)
 
     if not args.semantic_dropout:
         S_arc, S_rel, _ = parser(words_d.to(device), sent_lens, pos=pos_d.to(device))
@@ -338,7 +426,7 @@ def forward_stag(parser, batch, args=None, data=None):
     sent_lens = batch['sent_lens']
     pos = batch['pos'].to(device) if parser.pos_in else None
 
-    pos_d, mask = utils.pos_dropout(pos.to('cpu'), lens=sent_lens, p2i=data['vocabs']['x2i']['pos'], p=args.alpha)
+    pos_d, mask = utils.pos_dropout(pos.to('cpu'), lens=sent_lens, p2i=data['vocabs']['x2i']['pos'], p=args.pos_dropout)
 
     if args.wd_stag:
         words_d, mask = utils.word_dropout(
@@ -347,7 +435,7 @@ def forward_stag(parser, batch, args=None, data=None):
                 i2w=data['vocabs']['i2x']['word'], 
                 counts=data['word_counts'], 
                 lens=sent_lens,
-                alpha=args.alpha,
+                rate=args.word_dropout,
                 style=args.drop_style)
 
         lstm_input, indices, _, _ = parser.Embeddings(
@@ -371,6 +459,46 @@ def forward_stag(parser, batch, args=None, data=None):
     return loss
 
 
+def forward_adversarial_stag(parser, batch, args=None, data=None):
+    parser.train()
+    device = data['device']
+
+    stag_targets = batch['stag_targets'].to(device)
+    sent_lens = batch['sent_lens']
+    pos = batch['pos'].to(device) if parser.pos_in else None
+
+    pos_d, mask = utils.pos_dropout(pos.to('cpu'), lens=sent_lens, p2i=data['vocabs']['x2i']['pos'], p=args.pos_dropout)
+
+    if args.wd_stag:
+        words_d, mask = utils.word_dropout(
+                batch['words'], 
+                w2i=data['vocabs']['x2i']['word'], 
+                i2w=data['vocabs']['i2x']['word'], 
+                counts=data['word_counts'], 
+                lens=sent_lens,
+                rate=args.word_dropout,
+                style=args.drop_style)
+
+        lstm_input, indices, _, _ = parser.Embeddings(
+                #batch['words'].to(device), 
+                words_d.to(device), 
+                sent_lens,
+                pos=pos_d.to(device))
+    else:
+        lstm_input, indices, _, _ = parser.Embeddings(
+                batch['words'].to(device), 
+                sent_lens,
+                pos=pos_d.to(device))
+
+    outputs = parser.SemanticRNN(lstm_input)
+    logits = parser.AdvStagMLP(unsort(outputs, indices))
+
+    loss = losses.loss_stag(logits, stag_targets)
+    
+    return loss
+
+
+
 def forward_semantic(parser, s1, s2, n1, n2=None, args=None, data=None):
     parser.train()
     device = data['device']
@@ -383,11 +511,11 @@ def forward_semantic(parser, s1, s2, n1, n2=None, args=None, data=None):
     w1, p1, sl1 = data_utils.prepare_batch_ss(s1)
     w2, p2, sl2 = data_utils.prepare_batch_ss(s2)
     wn1, pn1, sln1 = data_utils.prepare_batch_ss(n1)
-    if args.alpha > 0. and args.wd_sem:
+    if args.word_dropout > 0. and args.wd_sem:
         counts = data['word_counts']
-        w1, _ = utils.word_dropout(w1, w2i=w2i, i2w=i2w, counts=counts, lens=sl1, alpha=args.alpha, style=args.drop_style)
-        w2, _ = utils.word_dropout(w2, w2i=w2i, i2w=i2w, counts=counts, lens=sl2, alpha=args.alpha, style=args.drop_style)
-        wn1, _ = utils.word_dropout(wn1, w2i=w2i, i2w=i2w, counts=counts, lens=sln1, alpha=args.alpha, style=args.drop_style)
+        w1, _ = utils.word_dropout(w1, w2i=w2i, i2w=i2w, counts=counts, lens=sl1, rate=args.word_dropout, style=args.drop_style)
+        w2, _ = utils.word_dropout(w2, w2i=w2i, i2w=i2w, counts=counts, lens=sl2, rate=args.word_dropout, style=args.drop_style)
+        wn1, _ = utils.word_dropout(wn1, w2i=w2i, i2w=i2w, counts=counts, lens=sln1, rate=args.word_dropout, style=args.drop_style)
     
     packed_s1, idx_s1, _, _ = parser.Embeddings(w1.to(device), sl1, pos=p1.to(device) if pi else None)
     packed_s2, idx_s2, _, _ = parser.Embeddings(w2.to(device), sl2, pos=p2.to(device) if pi else None)
@@ -464,7 +592,7 @@ def sdp_dev_eval(parser, args=None, data=None, loader=None, n_dev_batches=None):
     return UAS, LAS, dev_loss
 
 
-def stag_dev_eval(parser, args=None, data=None, loader=None, n_dev_batches=None):
+def stag_dev_eval(parser, args=None, data=None, loader=None, n_dev_batches=None, adversarial=False):
     device = data['device']
 
     parser.eval()
@@ -481,8 +609,12 @@ def stag_dev_eval(parser, args=None, data=None, loader=None, n_dev_batches=None)
                     batch['words'].to(device), 
                     sent_lens, 
                     pos=pos)
-            outputs = parser.SyntacticRNN(lstm_input)
-            logits = parser.StagMLP(unsort(outputs, indices))
+            if adversarial:
+                outputs = parser.SemanticRNN(lstm_input)
+                logits = parser.AdvStagMLP(unsort(outputs, indices))
+            else:
+                outputs = parser.SyntacticRNN(lstm_input)
+                logits = parser.StagMLP(unsort(outputs, indices))
             predictions = torch.argmax(logits, -1)
 
             n_correct = torch.eq(predictions, stag_targets.to(device)).sum().item()
@@ -528,7 +660,8 @@ def gradient_update(parser, verbose=False):
             t += n.item() ** 2
     t = t ** (1. / 2)
     if verbose:
-        update += '\n'.join(['{:35} {:3.8f}'.format(n, p.grad.data.norm(2).item()) for n, p in list(parser.named_parameters())])
+        update += '\n'.join(['{:35} {:3.8f}'.format(
+            n, p.grad.data.norm(2).item()) for n, p in list(parser.named_parameters()) if type(p.grad) != type(None)])
         update += f'\nTotal norm of gradient is {t}\n'
     else: 
         update += 'Total norm of gradient: {:5.8f}\n'.format(t)
@@ -546,3 +679,7 @@ def earlystop_check(args, LAS, prev_best, earlystop_counter):
         msg = f'LAS has not improved for {earlystop_counter} consecutive epoch(s).'
     
     return prev_best, earlystop_counter, msg
+
+def param_names(parser):
+    for n, _ in list(parser.named_parameters()):
+        print(n)

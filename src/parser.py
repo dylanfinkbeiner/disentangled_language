@@ -288,6 +288,7 @@ class BiaffineParser(nn.Module):
             unk_idx=None,
             train_unk=False,
             layer_drop=0.,
+            adversarial_stag=False,
             device=None):
         super(BiaffineParser, self).__init__()
 
@@ -321,6 +322,9 @@ class BiaffineParser(nn.Module):
 
         if stag_vocab_size != None:
             self.StagMLP = nn.Sequential(nn.Linear(2*syn_h, stag_vocab_size)).to(device)
+
+        if adversarial_stag:
+            self.AdvStagMLP = nn.Sequential(nn.Linear(2*syn_h, stag_vocab_size)).to(device)
 
         self.SemanticRNN = None
         if not vanilla:

@@ -76,7 +76,7 @@ def numericalize_stag(sents_list, x2i):
             new_s[i,0] = w2i.get(s[i,0].lower(), w2i[UNK_TOKEN])
             new_s[i,1] = p2i.get(s[i,1], p2i[UNK_TOKEN])
             new_s[i,2] = s2i.get(s[i,2], s2i[UNK_TOKEN])
-            #new_s[i,2] = s2i[s[i,2]]
+            #new_s[i,2] = s2i[s[i,2]] # This would be the more logical way, if not for the fact that there are tags which ONLY occur in the test set
 
         sents_numericalized.append(new_s)
 

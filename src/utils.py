@@ -117,11 +117,11 @@ def predict_sts_score(sem_h1, sem_h2, conventional_range=False):
     return sims.tolist()
 
 
-def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=None, style='freq'):
+def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, rate=None, style='freq'):
     mask = torch.ones(words.shape)
-    if alpha > 0.:
+    if rate > 0.:
         if style == 'unif':
-            assert(alpha <= 1. and alpha >= 0)
+            assert(rate <= 1. and rate >= 0)
         unk_i = int(w2i[UNK_TOKEN])
         dropped = torch.LongTensor(words)
         for i, sentence in enumerate(words):
@@ -129,9 +129,9 @@ def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, alpha=None, 
                 p = -1
                 if style == 'freq':
                     c = counts[ i2w[sentence[j].item()] ]
-                    p = alpha / (c + alpha) # Dropout probability
+                    p = rate / (c + rate) # Dropout probability
                 elif style == 'unif':
-                    p = alpha
+                    p = rate
                 if random.random() <= p:
                     dropped[i,j] = unk_i
                     mask[i,j] = 0
@@ -153,4 +153,4 @@ def pos_dropout(pos, lens=None, p2i=None, p=None):
                     mask[i,j] = 0
         return dropped, mask
     else:
-        return words, mask
+        return pos, mask
