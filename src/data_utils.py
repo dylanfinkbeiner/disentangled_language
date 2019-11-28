@@ -21,6 +21,7 @@ ROOT_TOKEN = '<root>'
 
 CONLLU_MASK = [1, 4, 6, 7]  # [word, pos, head, rel]
 CORENLP_URL = 'http://localhost:9000'
+#CORENLP_URL = 'http://0:0:0:0:0:0:0:0:9000'
 
 
 def stag_to_sents(f: str):
@@ -138,7 +139,7 @@ def build_ptb_dataset(conllu_files=[], filter_sents=False):
     return raw_data, x2i_ptb, i2x_ptb, word_counts
 
 
-def build_sdp_dataset(conllu_files: list, x2i=None, filter_sents=False):
+def build_sdp_dataset(conllu_files: list, x2i=None, filter_sents=False, predict_pos=False):
     '''
         For building a dataset from conllu files in general, once the x2i dict
         has been constructed by build_ptb_dataset.
@@ -157,6 +158,8 @@ def build_sdp_dataset(conllu_files: list, x2i=None, filter_sents=False):
 
         word_counts[name] = get_word_counts(sents_masked)
 
+        if predict_pos:
+            sents_masked = predict_pos_tags(sents_masked)
         data[name] = numericalize_sdp(sents_masked, x2i)
 
     return data, word_counts
@@ -333,6 +336,25 @@ def conllu_to_sents(f: str):
     return sents_list
 
 
+def predict_pos_tags(sents):
+    #listagain = sents.tolist()
+
+    words_of_sents = [s[:,0] for s in sents]
+
+    tagger = CoreNLPParser(url=f'{CORENLP_URL}', tagtype='pos')
+    for sent in tqdm(words_of_sents, ascii=True, desc=f'Sentences tagged', ncols=80):
+        result = tagger.tag(sent)
+        breakpoint()
+        #try:
+        #    result = tagger.tag(sent)
+        #    breakpoint()
+        #except Exception:
+        #    print(f'Problem sentence is:\n{sent}')
+        #    continue
+
+    return sents
+
+
 def paraphrase_to_sents(f: str):
     '''
         inputs:
@@ -427,23 +449,27 @@ def build_pretrained_w2v(word_v_file=None):
     return w2v
 
 
-def build_embedding_data(w2v):
-    w2i = defaultdict(lambda : len(w2i))
-    i2w = {}
-    word_v_list = []
+def build_embedding_data(w2v, w2i=None, i2w=None):
+    custom_w2i = (w2i == None)
+    if custom_w2i:
+        w2i = defaultdict(lambda : len(w2i))
+        i2w = {}
+        i2w[w2i[PAD_TOKEN]] = PAD_TOKEN
+        i2w[w2i[UNK_TOKEN]] = UNK_TOKEN
+        i2w[w2i[ROOT_TOKEN]] = ROOT_TOKEN # May or may not be important
 
     e_size = len(w2v['the']) # Should be the same length as any other word vector
-    
-    i2w[w2i[PAD_TOKEN]] = PAD_TOKEN
-    word_v_list.append([0] * e_size)
-    i2w[w2i[UNK_TOKEN]] = UNK_TOKEN
-    word_v_list.append([0] * e_size)
-    i2w[w2i[ROOT_TOKEN]] = ROOT_TOKEN # May or may not be important
-    word_v_list.append([0] * e_size)
+    word_v_list = [[0] * e_size] * len(w2i)
+    #word_v_list[w2i[PAD_TOKEN]] = [0] * e_size
+    #word_v_list[w2i[UNK_TOKEN]] = [0] * e_size
+    #word_v_list[w2i[ROOT_TOKEN]] = [0] * e_size
 
     for word, embedding in tqdm(w2v.items(), ascii=True, desc=f'Building embedding data', ncols=80):
-        i2w[w2i[word]] = word
-        word_v_list.append(embedding)
+        if custom_w2i:
+            i2w[w2i[word]] = word
+        if word in w2i: # We will ONLY have embeddings from words in w2i then
+            i = w2i[word]
+            word_v_list[i] = embedding
 
     word_e = np.array(word_v_list)
 

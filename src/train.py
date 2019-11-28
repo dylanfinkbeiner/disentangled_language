@@ -15,6 +15,7 @@ import torch.nn as nn
 from torch.optim import Adam
 from torch.autograd import Variable
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pack_padded_sequence
 
 import data_utils
 import utils 
@@ -55,11 +56,16 @@ def get_logger(experiment):
     return log
 
 
+def count_params(parser):
+    return sum(p.numel() for p in parser.parameters() if p.requires_grad)
+
+
 def train(args, parser, data, weights_path=None, experiment=None):
     # Append to existing training experiment file for given day
     prelude = write_prelude(args, experiment)
     log = get_logger(experiment)
     log.info(prelude)
+    log.info(f'Model has {count_params(parser)} many trainable parameters.')
     sleep(5)
 
     if 0 in args.train_mode:
@@ -114,7 +120,7 @@ def train(args, parser, data, weights_path=None, experiment=None):
                     loss.backward()
                     opt.step()
 
-            elif args.train_mode == [2]:
+            if args.train_mode == [2]:
                 n_stag_bs = ceil(len(train_stag) / args.stag_bs)
                 for b in tqdm(range(n_stag_bs), ascii=True, desc=f'Epoch {e+1}/{args.epochs} progress', ncols=80):
                     opt.zero_grad()
@@ -127,166 +133,158 @@ def train(args, parser, data, weights_path=None, experiment=None):
                     loss_stag.backward()
                     opt.step()
 
-            #elif 3 in args.train_mode:
-            #    opt.zero_grad()
-            #    for p in parser.parameters():
-            #        p.requires_grad = True
-            #    for p in parser.AdvStagMLP.parameters():
-            #        p.requires_grad = False
-            #    sdp_batch = next(loader_sdp_train)
-            #    stag_batch = next(loader_stag_train)
-            #    loss_stag = forward_adversarial_stag(parser, batch=stag_batch, args=args, data=data)
-            #    loss_syn = forward_syntactic_parsing(parser, batch=sdp_batch, args=args, data=data)
-            #    loss = loss_syn - (args.scale_adv_stag * loss_stag)
-            #    loss.backward()
-            #    print(gradient_update(parser, verbose=True))
-            #    breakpoint()
-            #    opt.step()
-
-            #    opt.zero_grad()
-            #    for p in parser.parameters():
-            #        p.requires_grad = False
-            #    for p in parser.AdvStagMLP.parameters():
-            #        p.requires_grad = True
-            #    stag_batch = next(loader_stag_train)
-            #    loss_stag = forward_adversarial_stag(parser, batch=stag_batch, args=args, data=data)
-            #    loss_stag.backward()
-            #    breakpoint()
-            #    opt.step()
-            
-
-            elif 1 in args.train_mode:
-                if args.adv_stag:
-                    for p in parser.parameters():
-                        p.requires_grad = True
-                    for p in parser.AdvStagMLP.parameters():
-                        p.requires_grad = False
-
-                mini_remaining = ceil(len(train_ss) / args.sem_bs)
-                for m in range(n_megabatches):
-                    megabatch = []
-                    idxs = [] # List of lists (minis of indices into flat mega)
-                    idx = 0
-                    for _ in range(min(args.M, mini_remaining)):
-                        batch = [train_ss[i] for i in next(idxloader_ss_train)]
-                        mini_remaining -= 1
-                        curr_idxs = [(i + idx) for i in range(len(batch))]
-                        megabatch.extend(batch)
-                        idxs.append(curr_idxs)
-                        idx += len(curr_idxs)
-
-                    with torch.no_grad():
-                        mb_s1, mb_s2, mb_n1, mb_n2 = data_utils.megabatch_breakdown(
-                                megabatch, 
-                                minibatch_size=args.sem_bs,
-                                parser=parser,
-                                args=args,
-                                data=data)
-
-                    for x in tqdm(range(len(idxs)), ascii=True, desc=f'Megabatch {m+1}/{n_megabatches} progress, e:{e+1}', ncols=80):
-                        loss = torch.zeros(1).to(data['device'])
-                        opt.zero_grad()
-
-                        if 0 in args.train_mode:
-                            sdp_batch = next(loader_sdp_train)
-                            sdp_batches -= 1
-                            loss_sdp = forward_syntactic_parsing(
-                                    parser, 
-                                    sdp_batch,
-                                    args=args, 
-                                    data=data)
-                            loss += loss_sdp
-
-                        if 2 in args.train_mode:
-                            stag_batch = next(loader_stag_train)
-                            loss_stag = forward_stag(
-                                    parser,
-                                    batch=stag_batch,
-                                    args=args,
-                                    data=data)
-                            loss += loss_stag
-
-                        if (e+1) >= args.start_epoch and args.adv_stag:
-                            stag_adv_batch = next(loader_adv_stag_train)
-                            loss_adv_stag = forward_adversarial_stag(
-                                    parser,
-                                    batch=stag_batch,
-                                    args=args,
-                                    data=data)
-                            if x % print_grad_every == 0:
-                                log.info(f'Adversarial loss: {loss_adv_stag.item()}')
-                            loss -= (args.scale_adv_stag * loss_adv_stag)
-
-                        loss_sem = forward_semantic(
-                                parser,
-                                s1=[mb_s1[i] for i in idxs[x]],
-                                s2=[mb_s2[i] for i in idxs[x]],
-                                n1=[mb_n1[i] for i in idxs[x]],
-                                n2=[mb_n2[i] for i in idxs[x]] if mb_n2 is not None else None,
-                                args=args,
-                                data=data)
-                        loss += loss_sem
-
-                        loss.backward()
-                        opt.step()
-
-                        if 0 in args.train_mode and sdp_batches == 0:
-                           _, LAS, _ = sdp_dev_eval(
-                                   parser, 
-                                   args=args, 
-                                   data=data, 
-                                   loader=loader_sdp_dev,
-                                   n_dev_batches=n_dev_batches)
-                           prev_best, earlystop_counter, msg = earlystop_check(args, LAS, prev_best, earlystop_counter)
-                           log.info(msg)
-                           if earlystop_counter >= args.earlystop_pt:
-                               break
-                           sdp_batches = n_train_batches
-
-                        #if x % print_grad_every == 0:
-                        #    print(gradient_update(parser, verbose=False))
-                        #print(gradient_update(parser, verbose=False))
-
-                    # End of individual megabatch's loop
-                    if earlystop_counter >= args.earlystop_pt:
-                        break
-
-                    #update = ''
-                    #update += f'''\nUpdate for megabatch: {m+1}\n'''
-                    #correlation = ss_dev_eval(parser, dev_ss, args=args, data=data)
-                    #update += '''Correlation: {:.4f}'''.format(correlation)
-
-                    #log.info(update)
-
-                # End of megabatches loop    
-
-            if args.adv_stag:
-                stag_accuracy = stag_dev_eval(
-                        parser,
-                        args=args, 
-                        data=data, 
-                        loader=loader_stag_dev, 
-                        n_dev_batches=ceil(len(dev_stag) / 100),
-                        adversarial=True)
-                log.info(f'\nAdversarial supertagger accuracy before, epoch {e+1}: {stag_accuracy:.4f}\n')
-
-            if args.adv_stag and not (earlystop_counter >= args.earlystop_pt):
-                for p in parser.parameters():
-                    p.requires_grad = False
-                for p in parser.AdvStagMLP.parameters():
-                    p.requires_grad = True
-                n_stag_bs = ceil(len(train_adv_stag) / args.stag_bs)
-                for b in tqdm(range(n_stag_bs), ascii=True, desc=f'Adversarial stag training for epoch {e+1}/{args.epochs}', ncols=80):
+            if set(args.train_mode) == set([0, 2]):
+                for _ in tqdm(range(n_train_batches), ascii=True, desc=f'Epoch {e+1}/{args.epochs} progress', ncols=80):
                     opt.zero_grad()
-                    adv_stag_batch = next(loader_adv_stag_train)
-                    loss_stag = forward_adversarial_stag(
+                    batch = next(loader_sdp_train)
+                    loss = forward_syntactic_parsing(parser, batch, args=args, data=data)
+                    loss.backward()
+                    opt.step()
+
+                    opt.zero_grad()
+                    stag_batch = next(loader_stag_train)
+                    loss_stag = forward_stag(
                             parser,
-                            batch=adv_stag_batch,
+                            batch=stag_batch,
                             args=args,
                             data=data)
                     loss_stag.backward()
                     opt.step()
 
+            #elif 1 in args.train_mode:
+            #    mini_remaining = ceil(len(train_ss) / args.sem_bs)
+            #    for m in range(n_megabatches):
+            #        megabatch = []
+            #        idxs = [] # List of lists (minis of indices into flat mega)
+            #        idx = 0
+            #        for _ in range(min(args.M, mini_remaining)):
+            #            batch = [train_ss[i] for i in next(idxloader_ss_train)]
+            #            mini_remaining -= 1
+            #            curr_idxs = [(i + idx) for i in range(len(batch))]
+            #            megabatch.extend(batch)
+            #            idxs.append(curr_idxs)
+            #            idx += len(curr_idxs)
+
+            #        with torch.no_grad():
+            #            mb_s1, mb_s2, mb_n1, mb_n2 = data_utils.megabatch_breakdown(
+            #                    megabatch, 
+            #                    minibatch_size=args.sem_bs,
+            #                    parser=parser,
+            #                    args=args,
+            #                    data=data)
+
+            #        for x in tqdm(range(len(idxs)), ascii=True, desc=f'Megabatch {m+1}/{n_megabatches} progress, e:{e+1}', ncols=80):
+            #            loss = torch.zeros(1).to(data['device'])
+            #            opt.zero_grad()
+
+            #            if (e+1) >= args.start_epoch and args.adv_stag:
+            #                for p in parser.parameters():
+            #                    p.requires_grad = True
+            #                for p in parser.AdvStagMLP.parameters():
+            #                    p.requires_grad = False
+            #                stag_adv_batch = next(loader_adv_stag_train)
+            #                loss_adv_stag = forward_adversarial_stag(
+            #                        parser,
+            #                        batch=stag_batch,
+            #                        args=args,
+            #                        data=data)
+            #                if x % print_grad_every == 0:
+            #                    log.info(f'Adversarial loss: {loss_adv_stag.item()}')
+            #                loss_adv_stag *= -1.
+            #                loss_adv_stag *= args.scale_adv_stag
+            #                if x % print_grad_every == 0:
+            #                    log.info(f'Scaled adversarial loss: {loss_adv_stag.item()}')
+
+            #                #loss_adv_stag.backward()
+            #                #opt.step()
+            #                #opt.zero_grad()
+
+            #                loss -= loss_adv_stag
+
+            #            if 0 in args.train_mode:
+            #                sdp_batch = next(loader_sdp_train)
+            #                sdp_batches -= 1
+            #                loss_sdp = forward_syntactic_parsing(
+            #                        parser, 
+            #                        sdp_batch,
+            #                        args=args, 
+            #                        data=data)
+            #                loss += loss_sdp
+
+            #            if 2 in args.train_mode:
+            #                stag_batch = next(loader_stag_train)
+            #                loss_stag = forward_stag(
+            #                        parser,
+            #                        batch=stag_batch,
+            #                        args=args,
+            #                        data=data)
+            #                loss += loss_stag
+
+            #            loss_sem = forward_semantic(
+            #                    parser,
+            #                    s1=[mb_s1[i] for i in idxs[x]],
+            #                    s2=[mb_s2[i] for i in idxs[x]],
+            #                    n1=[mb_n1[i] for i in idxs[x]],
+            #                    n2=[mb_n2[i] for i in idxs[x]] if mb_n2 is not None else None,
+            #                    args=args,
+            #                    data=data)
+            #            loss += loss_sem
+
+            #            if x % print_grad_every == 0:
+            #                log.info(f'Total loss: {loss.item()}')
+            #            loss.backward()
+            #            if x % print_grad_every == 0:
+            #                log.info(gradient_update(parser))
+            #            opt.step()
+
+            #            if 0 in args.train_mode and sdp_batches == 0:
+            #               _, LAS, _ = sdp_dev_eval(
+            #                       parser, 
+            #                       args=args, 
+            #                       data=data, 
+            #                       loader=loader_sdp_dev,
+            #                       n_dev_batches=n_dev_batches)
+            #               prev_best, earlystop_counter, msg = earlystop_check(args, LAS, prev_best, earlystop_counter)
+            #               log.info(msg)
+            #               if earlystop_counter >= args.earlystop_pt:
+            #                   break
+            #               sdp_batches = n_train_batches
+
+            #            if (e+1) >= args.start_epoch and args.adv_stag:
+            #                for p in parser.parameters():
+            #                    p.requires_grad = False
+            #                for p in parser.AdvStagMLP.parameters():
+            #                    p.requires_grad = True
+            #                opt.zero_grad()
+            #                stag_adv_batch = next(loader_adv_stag_train)
+            #                loss_adv_stag = forward_adversarial_stag(
+            #                        parser,
+            #                        batch=stag_batch,
+            #                        args=args,
+            #                        data=data)
+            #                #if x % print_grad_every == 0:
+            #                #    log.info(f'Adversarial loss: {loss_adv_stag.item()}')
+            #                loss_adv_stag *= args.scale_adv_stag
+            #                loss_adv_stag.backward()
+            #                opt.step()
+            #                opt.zero_grad()
+
+            #            #if x % print_grad_every == 0:
+            #            #    print(gradient_update(parser, verbose=False))
+            #            #print(gradient_update(parser, verbose=False))
+
+            #        # End of individual megabatch's loop
+            #        if earlystop_counter >= args.earlystop_pt:
+            #            break
+
+            #        #update = ''
+            #        #update += f'''\nUpdate for megabatch: {m+1}\n'''
+            #        #correlation = ss_dev_eval(parser, dev_ss, args=args, data=data)
+            #        #update += '''Correlation: {:.4f}'''.format(correlation)
+
+            #        #log.info(update)
+
+            #    # End of megabatches loop    
 
             update = f'\nUpdate for epoch: {e+1}/{args.epochs}\n'
             if 0 in args.train_mode:
@@ -316,17 +314,6 @@ def train(args, parser, data, weights_path=None, experiment=None):
                         adversarial=False)
                 stag_acc_record.append(stag_accuracy)
                 update += f'\nSupertagging accuracy: {stag_accuracy:.4f}\n'
-            if args.adv_stag:
-                stag_accuracy = stag_dev_eval(
-                        parser,
-                        args=args, 
-                        data=data, 
-                        loader=loader_stag_dev, 
-                        n_dev_batches=ceil(len(dev_stag) / 100),
-                        adversarial=True)
-                update += f'\nAdversarial supertagger accuracy after, epoch {e+1}: {stag_accuracy:.4f}\n'
-
-
             log.info(update)
 
             if args.train_mode != [-1]:
@@ -341,6 +328,40 @@ def train(args, parser, data, weights_path=None, experiment=None):
             if earlystop_counter >= args.earlystop_pt:
                 break
 
+            #if args.adv_stag:
+            #    stag_accuracy = stag_dev_eval(
+            #            parser,
+            #            args=args, 
+            #            data=data, 
+            #            loader=loader_stag_dev, 
+            #            n_dev_batches=ceil(len(dev_stag) / 100),
+            #            adversarial=True)
+            #    log.info(f'\nAdversarial supertagger accuracy before, epoch {e+1}: {stag_accuracy:.4f}\n')
+            if args.adv_stag and (e+1) == (args.start_epoch-1):
+                for p in parser.parameters():
+                    p.requires_grad = False
+                for p in parser.AdvStagMLP.parameters():
+                    p.requires_grad = True
+                n_stag_bs = ceil(len(train_adv_stag) / args.stag_bs)
+                for b in tqdm(range(n_stag_bs), ascii=True, desc=f'Adversarial stag training for epoch {e+1}/{args.epochs}', ncols=80):
+                    opt.zero_grad()
+                    adv_stag_batch = next(loader_adv_stag_train)
+                    loss_adv_stag = forward_adversarial_stag(
+                            parser,
+                            batch=adv_stag_batch,
+                            args=args,
+                            data=data)
+                    loss_adv_stag.backward()
+                    opt.step()
+            if args.adv_stag and (e+1) >= (args.start_epoch-1):
+                stag_accuracy = stag_dev_eval(
+                        parser,
+                        args=args, 
+                        data=data, 
+                        loader=loader_stag_dev, 
+                        n_dev_batches=ceil(len(dev_stag) / 100),
+                        adversarial=True)
+                log.info(f'\nAdversarial supertagger accuracy, epoch {e+1}: {stag_accuracy:.4f}\n')
             #if args.train_mode == [2]:
             #    if stag_accuracy > prev_best + 0.00005:
             #        msg = f'LAS improved from {prev_best} on epoch {e+1}/{args.epochs}.'
@@ -387,7 +408,8 @@ def forward_syntactic_parsing(parser, batch, args=None, data=None):
     parser.train()
     device = data['device']
     sent_lens = batch['sent_lens']
-    pos = batch['pos'].to(device) if parser.pos_in else None
+    #pos = batch['pos'].to(device) if parser.pos_in else None
+    pos = batch['pos'].to(device) 
     
     words_d, mask = utils.word_dropout(
             batch['words'], 
@@ -398,22 +420,38 @@ def forward_syntactic_parsing(parser, batch, args=None, data=None):
             rate=args.word_dropout,
             style=args.drop_style)
 
-    pos_d, mask = utils.pos_dropout(pos.to('cpu'), lens=sent_lens, p2i=data['vocabs']['x2i']['pos'], p=args.pos_dropout)
-
-    if not args.semantic_dropout:
-        S_arc, S_rel, _ = parser(words_d.to(device), sent_lens, pos=pos_d.to(device))
+    if parser.pos_in:
+        pos_d, mask = utils.pos_dropout(pos, lens=sent_lens, p2i=data['vocabs']['x2i']['pos'], p=args.pos_dropout)
     else:
+        pos_d = None
+
+    if not args.predicting_pos:
         S_arc, S_rel, _ = parser(
                 batch['words'].to(device), 
                 sent_lens, 
-                pos=pos_d.to(device), 
-                mask=mask)
+                pos=pos_d.to(device) if type(pos_d) != type(None) else None) 
+    else:
+        lstm_input, indices, lens_sorted, _ = parser.Embeddings(
+                words_d.to(device), 
+                sent_lens,
+                pos=None)
+        outputs = parser.SyntacticRNN(lstm_input)
+        logits = parser.PosMLP(unsort(outputs, indices))
+        tagging_loss = args.lrpos * losses.loss_ptag(logits, pos)
+
+        final_inputs = parser.final_dropout(outputs)
+        final_inputs = pack_padded_sequence(final_inputs, lens_sorted, batch_first=True)
+        final_outputs = parser.FinalRNN(final_inputs)
+        final_outputs = unsort(final_outputs, indices)
+        S_arc, S_rel, _ = parser.BiAffineAttention(final_outputs, sent_lens)
     
     loss_a = losses.loss_arcs(S_arc, batch['arc_targets'].to(device))
     loss_r = losses.loss_rels(S_rel, batch['rel_targets'].to(device))
     loss = loss_a + loss_r
+    if args.predicting_pos:
+        loss += tagging_loss
     
-    loss *= args.lr_sdp
+    #loss *= args.lr_sdp
 
     return loss
 
@@ -426,29 +464,21 @@ def forward_stag(parser, batch, args=None, data=None):
     sent_lens = batch['sent_lens']
     pos = batch['pos'].to(device) if parser.pos_in else None
 
-    pos_d, mask = utils.pos_dropout(pos.to('cpu'), lens=sent_lens, p2i=data['vocabs']['x2i']['pos'], p=args.pos_dropout)
+    pos_d, mask = utils.pos_dropout(pos, lens=sent_lens, p2i=data['vocabs']['x2i']['pos'], p=args.pos_dropout)
 
-    if args.wd_stag:
-        words_d, mask = utils.word_dropout(
-                batch['words'], 
-                w2i=data['vocabs']['x2i']['word'], 
-                i2w=data['vocabs']['i2x']['word'], 
-                counts=data['word_counts'], 
-                lens=sent_lens,
-                rate=args.word_dropout,
-                style=args.drop_style)
+    words_d, mask = utils.word_dropout(
+            batch['words'], 
+            w2i=data['vocabs']['x2i']['word'], 
+            i2w=data['vocabs']['i2x']['word'], 
+            counts=data['word_counts'], 
+            lens=sent_lens,
+            rate=args.word_dropout,
+            style=args.drop_style)
 
-        lstm_input, indices, _, _ = parser.Embeddings(
-                #batch['words'].to(device), 
-                words_d.to(device), 
-                sent_lens,
-                pos=pos_d.to(device))
-    else:
-        lstm_input, indices, _, _ = parser.Embeddings(
-                batch['words'].to(device), 
-                sent_lens,
-                pos=pos_d.to(device))
-
+    lstm_input, indices, _, _ = parser.Embeddings(
+            words_d.to(device), 
+            sent_lens,
+            pos=pos_d.to(device) if type(pos_d) != type(None) else None) 
     outputs = parser.SyntacticRNN(lstm_input)
     logits = parser.StagMLP(unsort(outputs, indices))
 

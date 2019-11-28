@@ -40,12 +40,15 @@ class Embeddings(nn.Module):
             padding_idx=None,
             unk_idx=None,
             train_unk=False,
+            unk_style=None,
             device=None):
         super(Embeddings, self).__init__()
 
         self.train_unk = train_unk
         self.unk_idx = unk_idx
         self.device = device
+
+        self.unk_style = unk_style
 
         self.word_emb = nn.Embedding(
                 word_vocab_size,
@@ -54,7 +57,7 @@ class Embeddings(nn.Module):
         if zero_we:
             self.word_emb.weight.data.copy_(
                     torch.zeros(word_vocab_size, word_e_size))
-        if pretrained_e is not None:
+        elif pretrained_e is not None:
             print('Using pretrained word embeddings!')
             self.word_emb.weight.data.copy_(torch.Tensor(pretrained_e))
 
@@ -69,11 +72,17 @@ class Embeddings(nn.Module):
 
 
     def forward(self, words, sent_lens, pos=None):
-        pos_in = pos is not None
+        pos_in = (type(pos) != type(None))
 
         #Zero-out "unk" word at test time (Jabberwocky paper)
-        if not self.train_unk or not self.training:
-            self.word_emb.weight.data[self.unk_idx,:] = 0.0 
+        #if not self.train_unk or not self.training:
+        #    self.word_emb.weight.data[self.unk_idx,:] = 0.0 
+        if not self.train_unk:
+            N, D = self.word_emb.weight.data.shape
+            if self.unk_style == 'zero':
+                self.word_emb.weight.data[self.unk_idx,:] = torch.zeros(D)
+            elif self.unk_style == 'rand':
+                self.word_emb.weight.data[self.unk_idx,:] = torch.randn(D)
 
         # Sort the words, pos, sent_lens (necessary for pack_padded_sequence)
         lens_sorted = sent_lens
@@ -177,6 +186,20 @@ class FinalRNN(nn.Module):
         outputs, _ = pad_packed_sequence(outputs, batch_first=True) 
 
         return outputs
+
+class PosMLP(nn.Module):
+    def __init__(
+            self,
+            input_size=None,
+            device=None):
+        super(SyntacticRNN, self).__init__()
+
+        self.MLP = nn.Sequential(nn.Linear(input_size, pos_vocab_size)).to(device)
+
+    def forward(self, input_seq):
+        logits, _ = self.MLP(input_seq[:,input_size])
+
+        return logits
 
 
 class BiAffineAttention(nn.Module):
@@ -289,6 +312,8 @@ class BiaffineParser(nn.Module):
             train_unk=False,
             layer_drop=0.,
             adversarial_stag=False,
+            unk_style=None,
+            predicting_pos=False,
             device=None):
         super(BiaffineParser, self).__init__()
 
@@ -308,6 +333,7 @@ class BiaffineParser(nn.Module):
                 padding_idx=padding_idx,
                 unk_idx=unk_idx,
                 train_unk=train_unk,
+                unk_style=unk_style,
                 device=device
                 ).to(device)
 
@@ -324,16 +350,21 @@ class BiaffineParser(nn.Module):
             self.StagMLP = nn.Sequential(nn.Linear(2*syn_h, stag_vocab_size)).to(device)
 
         if adversarial_stag:
-            self.AdvStagMLP = nn.Sequential(nn.Linear(2*syn_h, stag_vocab_size)).to(device)
+            self.AdvStagMLP = nn.Sequential(nn.Linear(2*sem_h, stag_vocab_size)).to(device)
+
+        self.PosMLP = None
+        if predicting_pos:
+            self.PosMLP = nn.Sequential(nn.Linear(2*syn_h, pos_vocab_size)).to(device)
+            #self.PosMLP = PosMLP(
 
         self.SemanticRNN = None
-        if not vanilla:
-            self.SemanticRNN = SemanticRNN(
-                    input_size=token_e_size,
-                    hidden_size=sem_h,
-                    num_layers=sem_nlayers,
-                    dropout=lstm_dropout,
-                    ).to(device)
+        #if not vanilla:
+        #    self.SemanticRNN = SemanticRNN(
+        #            input_size=token_e_size,
+        #            hidden_size=sem_h,
+        #            num_layers=sem_nlayers,
+        #            dropout=lstm_dropout,
+        #            ).to(device)
         
         self.final_dropout = nn.Dropout(p=lstm_dropout).to(device)
 
@@ -370,19 +401,19 @@ class BiaffineParser(nn.Module):
         packed_lstm_input, indices, lens_sorted, t_e = self.Embeddings(words, sent_lens, pos=pos)
 
         syntactic_outputs = self.SyntacticRNN(packed_lstm_input)
-        if self.SemanticRNN is not None:
-            semantic_outputs = self.SemanticRNN(packed_lstm_input)
-            if self.semantic_dropout and self.training:
-                if self.layer_drop <= 0.: #XXX
-                    mask = mask.to(self.device).index_select(0, indices)
-                    semantic_outputs = semantic_dropout(semantic_outputs, mask, self.device)
-                else:
-                    for i in range(semantic_outputs.shape[0]):
-                        if random.random() <= self.layer_drop: #XXX
-                            semantic_outputs[i] = torch.zeros(semantic_outputs[i].shape).to(self.device) #XXX
-            final_inputs = torch.cat([syntactic_outputs, semantic_outputs], dim=-1)
-        else:
-            final_inputs = syntactic_outputs
+        #if self.SemanticRNN is not None:
+        #    semantic_outputs = self.SemanticRNN(packed_lstm_input)
+        #    if self.semantic_dropout and self.training:
+        #        if self.layer_drop <= 0.: #XXX
+        #            mask = mask.to(self.device).index_select(0, indices)
+        #            semantic_outputs = semantic_dropout(semantic_outputs, mask, self.device)
+        #        else:
+        #            for i in range(semantic_outputs.shape[0]):
+        #                if random.random() <= self.layer_drop: #XXX
+        #                    semantic_outputs[i] = torch.zeros(semantic_outputs[i].shape).to(self.device) #XXX
+        #    final_inputs = torch.cat([syntactic_outputs, semantic_outputs], dim=-1)
+        #:else:
+        final_inputs = syntactic_outputs
 
         final_inputs = self.final_dropout(final_inputs)
         final_inputs = pack_padded_sequence(final_inputs, lens_sorted, batch_first=True)
@@ -402,17 +433,17 @@ def unsort(batch, indices):
     return batch
 
 
-def semantic_dropout(semantic_outputs, mask, device):
-    #sem outs have shape (b, l, 2*sem_h)
-    sem_shape = semantic_outputs.shape
-    mask = mask.unsqueeze(-1).cpu().numpy()
-    mask = np.repeat(mask, sem_shape[-1], axis=-1)
-    mask = torch.LongTensor(mask).to(device)
-    dropped = torch.where(
-            mask == 1,
-            semantic_outputs,
-            torch.zeros(semantic_outputs.shape).to(device))
-    return dropped
+#def semantic_dropout(semantic_outputs, mask, device):
+#    #sem outs have shape (b, l, 2*sem_h)
+#    sem_shape = semantic_outputs.shape
+#    mask = mask.unsqueeze(-1).cpu().numpy()
+#    mask = np.repeat(mask, sem_shape[-1], axis=-1)
+#    mask = torch.LongTensor(mask).to(device)
+#    dropped = torch.where(
+#            mask == 1,
+#            semantic_outputs,
+#            torch.zeros(semantic_outputs.shape).to(device))
+#    return dropped
 
 ## From https://github.com/chantera/biaffineparser/blob/master/pytorch_model.py#L86
 def mst_preds(S_arc, sent_lens):

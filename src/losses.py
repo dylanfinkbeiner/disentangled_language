@@ -30,3 +30,8 @@ def loss_stag(logits, stag_targets, pad_idx=-1):
     return losses.mean()
 
 
+def loss_ptag(logits, pos_targets, pad_idx=-1):
+    loss_nn = torch.nn.CrossEntropyLoss(ignore_index=pad_idx)
+    losses = loss_nn(logits.view(-1, logits.shape[-1]), pos_targets.flatten())
+
+    return losses.mean()

@@ -18,7 +18,9 @@ def attachment_scoring(
         rel_targets=None, 
         sent_lens=None, 
         include_root=False, 
-        keep_dim=False):
+        keep_dim=False,
+        original_sentence=None,
+        dep_of_unk=None):
     '''
         input:
             arc_preds - (b, l), (-1)-padded
@@ -59,6 +61,52 @@ def attachment_scoring(
     correct_arcs = arc_preds.eq(arc_targets).float()
     correct_rels = rel_preds.eq(rel_targets).float()
 
+    total_arc_errors = -1
+    total_rel_errors = -1
+    total_unks = -1
+    total_dep_of_unks = -1
+    arc_unk_errors = -1
+    rel_unk_errors = -1
+    dep_of_unk_arc_errors = -1
+    dep_of_unk_rel_errors = -1
+    if type(original_sentence) != type(None):
+        # We want 0's in this matrix to correspond to cases where arc was predicted correctly but rel was not
+        interesting_rels = torch.where(
+                correct_arcs == 1,
+                correct_rels,
+                torch.ones(correct_rels.shape).to(device))
+
+        unks = (original_sentence == 1).float() # UNK token integer encoding is 1
+        arc_unk_errors = torch.where(
+                correct_arcs == 0,
+                unks,
+                torch.zeros(unks.shape).to(device))
+        rel_unk_errors = torch.where(
+                interesting_rels == 0,
+                unks,
+                torch.zeros(unks.shape).to(device))
+
+        dep_of_unk_arc_errors = torch.where(
+                correct_arcs == 0,
+                dep_of_unk,
+                torch.zeros(unks.shape).to(device))
+        dep_of_unk_rel_errors = torch.where(
+                interesting_rels == 0,
+                dep_of_unk,
+                torch.zeros(unks.shape).to(device))
+
+
+        total_rel_errors = (interesting_rels == 0.).sum()
+        total_arc_errors = (correct_arcs == 0.).sum()
+        total_unks = unks.sum()
+        total_dep_of_unks = dep_of_unk.sum()
+        arc_unk_errors = arc_unk_errors.sum()
+        rel_unk_errors = rel_unk_errors.sum()
+        dep_of_unk_arc_errors = dep_of_unk_arc_errors.sum()
+        dep_of_unk_rel_errors = dep_of_unk_rel_errors.sum() 
+
+
+
     UAS_correct = correct_arcs.sum(1, True) # (b,l) -> (b,1)
     UAS_correct = UAS_correct + 1 if include_root else UAS_correct
     if not keep_dim:
@@ -79,7 +127,15 @@ def attachment_scoring(
             'LAS': LAS, 
             'total_words' : total_words,
             'UAS_correct' : UAS_correct,
-            'LAS_correct' : LAS_correct}
+            'LAS_correct' : LAS_correct,
+            'total_rel_errors' : total_rel_errors,
+            'total_arc_errors' : total_arc_errors,
+            'total_unks' : total_unks,
+            'total_dep_of_unks' : total_dep_of_unks,
+            'arc_unk_errors' : arc_unk_errors,
+            'rel_unk_errors' : rel_unk_errors,
+            'dep_of_unk_arc_errors' : dep_of_unk_arc_errors,
+            'dep_of_unk_rel_errors' : dep_of_unk_rel_errors}
 
 
 def average_hiddens(hiddens, sent_lens=None, sum_f_b=False):
@@ -141,16 +197,20 @@ def word_dropout(words, w2i=None, i2w=None, counts=None, lens=None, rate=None, s
 
 
 def pos_dropout(pos, lens=None, p2i=None, p=None):
-    mask = torch.ones(pos.shape)
-    if p > 0.:
-        assert(p <= 1. and p >= 0)
-        unk_i = int(p2i[UNK_TOKEN])
-        dropped = torch.LongTensor(pos)
-        for i, sentence in enumerate(pos):
-            for j in range(1, lens[i]):
-                if random.random() <= p:
-                    dropped[i,j] = unk_i
-                    mask[i,j] = 0
-        return dropped, mask
+    if type(pos) == type(None):
+        return None, None
     else:
-        return pos, mask
+        pos = pos.to('cpu')
+        mask = torch.ones(pos.shape)
+        if p > 0.:
+            assert(p <= 1. and p >= 0)
+            unk_i = int(p2i[UNK_TOKEN])
+            dropped = torch.LongTensor(pos)
+            for i, sentence in enumerate(pos):
+                for j in range(1, lens[i]):
+                    if random.random() <= p:
+                        dropped[i,j] = unk_i
+                        mask[i,j] = 0
+            return dropped, mask
+        else:
+            return pos, mask

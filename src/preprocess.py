@@ -38,8 +38,8 @@ log.addHandler(stream_handler)
 
 
 class DataPaths:
-    def __init__(self, filtered=False, glove_d=None, truncated=None):
-        if truncated is True and glove_d is None:
+    def __init__(self, filtered=False, glove_d=None, truncated=False):
+        if truncated and glove_d == None:
             raise Exception
 
         fs = 'filtered' if filtered else 'unfiltered' # Filtered status
@@ -68,8 +68,11 @@ class DataPaths:
     
         self.ptb_vocabs = os.path.join(sdp_data_dir, f'vocabs_{fs}.pkl')
         self.data_ptb = os.path.join(sdp_data_dir, f'data_ptb_{fs}_{voc}.pkl')
+        print(f'PTB path is {self.data_ptb}')
         self.counts_wsj = os.path.join(sdp_data_dir, f'counts_wsj_{fs}.pkl')
         self.data_brown = os.path.join(sdp_data_dir, f'data_brown_{fs}_{voc}.pkl')
+        self.data_brown_predicted = os.path.join(sdp_data_dir, f'data_brown_predictedpos_{fs}_{voc}.pkl')
+        print(f'Brown path is {self.data_brown}')
 
         self.stag_vocabs = os.path.join(stag_data_dir, f'stag_vocabs.pkl')
         self.data_stag = os.path.join(stag_data_dir, f'data_ptb_stag_{voc}.pkl')
@@ -87,6 +90,7 @@ def preprocess(args):
             truncated=args.truncated) 
 
     x2i, i2x = {}, {}
+    # ptb vocabs are eternally those constructed from training set, nothing to worry about
     if os.path.exists(paths.ptb_vocabs):
         with open(paths.ptb_vocabs, 'rb') as f:
             x2i, i2x = pickle.load(f)
@@ -95,36 +99,39 @@ def preprocess(args):
         with open(paths.glove_data, 'rb') as pkl:
             embedding_data = pickle.load(pkl)
 
-        if args.truncated:
-            ptb_words = set(x2i['word'].keys())
-            paranmt_words = set(embedding_data['w2i'].keys())
-            just_paranmt = paranmt_words - ptb_words
+        #if args.truncated:
+        #    ptb_words = set(x2i['word'].keys())
+        #    glove_words = set(embedding_data['w2i'].keys())
+        #    just_glove = glove_words - ptb_words
 
-            ##XXX
-            #just_ptb = ptb_words - paranmt_words
-            #print(len(just_ptb))
-            #sdp_data_dir = os.path.join(DATA_DIR, 'sdp_processed')
-            #patt = os.path.join(sdp_data_dir, f'data_ptb_unfiltered_glove100vocab.pkl')
-            #with open(patt, 'rb') as f:
-            #    _, counts = pickle.load(f)
-            #cts = []
-            #xs=[]
-            #for w in just_ptb:
-            #    cts.append((w, counts[w]))
-            #    xs.append(counts[w])
-            #
-            #ctssort = sorted(cts, key=lambda x: x[1])
-            #breakpoint()
-            #exit()
-            #XXX
+        #    ##XXX
+        #    #just_ptb = ptb_words - paranmt_words
+        #    #print(len(just_ptb))
+        #    #sdp_data_dir = os.path.join(DATA_DIR, 'sdp_processed')
+        #    #patt = os.path.join(sdp_data_dir, f'data_ptb_unfiltered_glove100vocab.pkl')
+        #    #with open(patt, 'rb') as f:
+        #    #    _, counts = pickle.load(f)
+        #    #cts = []
+        #    #xs=[]
+        #    #for w in just_ptb:
+        #    #    cts.append((w, counts[w]))
+        #    #    xs.append(counts[w])
+        #    #
+        #    #ctssort = sorted(cts, key=lambda x: x[1])
+        #    #breakpoint()
+        #    #exit()
+        #    #XXX
 
-            for w in just_paranmt:
-                embedding_data['i2w'].pop(embedding_data['w2i'][w], None)
-                embedding_data['w2i'].pop(w, None)
+        #    print(f'{glove_words} many glove words, {just_glove} many unique to glove')
+        #    count_before = len(glove_words)
+        #    for w in just_glove:
+        #        embedding_data['i2w'].pop(embedding_data['w2i'][w], None)
+        #        embedding_data['w2i'].pop(w, None)
 
 
-        x2i['word'] = embedding_data['w2i']
-        i2x['word'] = embedding_data['i2w']
+        ## Here's where things would go wrong if we didn't pop the just-glove words off
+        #x2i['word'].update(embedding_data['w2i'])
+        #i2x['word'].update(embedding_data['i2w'])
 
 
 
@@ -142,8 +149,8 @@ def preprocess(args):
             x2i.update(x2i_ptb)
             i2x.update(i2x_ptb)
             if args.pretrained_voc:
-                x2i['word'] = embedding_data['w2i']
-                i2x['word'] = embedding_data['i2w']
+                x2i['word'].update(embedding_data['w2i'])
+                i2x['word'].update(embedding_data['i2w'])
 
             data_ptb = {}
             for split, raw_data in raw_data_ptb.items():
@@ -164,29 +171,26 @@ def preprocess(args):
             unique = list(wc)
             print(total)
             print(len(unique))
-            breakpoint()
-            exit()
             with open(paths.data_brown, 'wb') as f:
                 pickle.dump(data_brown, f)
+            
+            if args.predict_brown_pos:
+                data_brown_predicted, _ =  data_utils.build_sdp_dataset(
+                        brown_conllus, 
+                        x2i=x2i, 
+                        filter_sents=args.filter,
+                        predict_pos=True)
+                with open(paths.data_brown_predicted, 'wb') as f:
+                    pickle.dump(data_brown_predicted, f)
 
 
+    # NOTE This logic is very weird
     if args.glove_d and not args.pretrained_voc:
         w2v = data_utils.build_pretrained_w2v(word_v_file=f'../data/glove/glove.6B.{args.glove_d}d.top100k.txt')
         with open(paths.glove_w2v, 'wb') as pkl:
             pickle.dump(w2v, pkl)
-        with open(paths.paranmt_counts, 'rb') as pkl:
-            word_counts = pickle.load(pkl)
 
-        n_removed = 0
-        w2v_cleaned = {}
-        for w, v in w2v.items():
-            if word_counts[w] != 0:
-                w2v_cleaned[w] = v
-            else:
-                n_removed += 1
-        print(f'Removed {n_removed} words from w2v.') 
-
-        glove_data = data_utils.build_embedding_data(w2v_cleaned)
+        glove_data = data_utils.build_embedding_data(w2v, w2i=x2i['word'], i2w=i2x['word'])
         with open(paths.glove_data, 'wb') as pkl:
             pickle.dump(glove_data, pkl)
 
@@ -249,7 +253,10 @@ def preprocess(args):
         with open(paths.stag_vocabs, 'wb') as f:
             pickle.dump((s2i, i2s), f)
         x2i['stag'] = s2i
-        i2x['stag'] = i2s
+        #i2x['stag'] = i2s
+        if args.pretrained_voc:
+            x2i['word'].update(embedding_data['w2i'])
+            #i2x['word'].update(embedding_data['i2w'])
 
         data_stag = {}
         for split, raw_sents in raw_stag_sents.items():
@@ -273,8 +280,9 @@ if __name__ == '__main__':
 
     pretrained_emb = parser.add_mutually_exclusive_group()
     pretrained_emb.add_argument('-g', help='Initialize data corresponding to glove word embeddings.', dest='glove_d', type=int, default=None)
+    parser.add_argument('--bpos', action='store_true', dest='predict_brown_pos', default=False)
     parser.add_argument('--pevoc', action='store_true', help='Shall we use the word vocabulary derived from the chosen pretrained embeddings?', dest='pretrained_voc', default=False)
-    parser.add_argument('--trunc', action='store_true', help='Vocab at the intersection of ParaNMT and PTB?', dest='truncated')
+    parser.add_argument('--trunc', action='store_true', help='Vocab at the intersection of Glove and PTB?', dest='truncated')
 
     parser.add_argument('-f', help='Should sentences be filtered?', action='store_true', dest='filter', default=False)
 

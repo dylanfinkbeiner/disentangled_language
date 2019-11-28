@@ -92,6 +92,15 @@ def eval_sdp(args, parser, data, experiment=None):
             dataset = data[name]
             data_loader = data_utils.sdp_data_loader(dataset, batch_size=1, shuffle_idx=False)
             predicted = os.path.join(PREDICTED_DIR, name + '_predicted.conllu')
+
+            total_arc_errors = 0
+            total_rel_errors = 0
+            total_unks = 0
+            total_dep_of_unks = 0
+            arc_unk_errors = 0
+            rel_unk_errors = 0
+            dep_of_unk_arc_errors = 0
+            dep_of_unk_rel_errors = 0
             with open(predicted, 'w') as f:
                 parser.eval()
                 with torch.no_grad():
@@ -99,14 +108,40 @@ def eval_sdp(args, parser, data, experiment=None):
                         batch = next(data_loader)
                         sent_len = batch['sent_lens'].to(device)
 
+                        dep_of_unk = torch.zeros(batch['words'].shape).to(device)
+                        heads = batch['arc_targets'][0]
+                        words = batch['words'][0]
+                        if len(heads) != len(words):
+                            raise Exception
+                        for i, head in enumerate(heads):
+                            if words[head] == 1: # I.e. if its head is an unk
+                                dep_of_unk[0][i] = 1 #NOTE This indexing is undesirable
+
                         _, S_rel, head_preds = parser(
                                 batch['words'].to(device), 
                                 sent_len, 
                                 pos=batch['pos'].to(device) if parser.pos_in else None)
                         rel_preds = utils.predict_relations(S_rel)
+
+                        result = utils.attachment_scoring(
+                                arc_preds=head_preds.to(device),
+                                rel_preds=rel_preds.to(device),
+                                arc_targets=batch['arc_targets'].to(device),
+                                rel_targets=batch['rel_targets'].to(device),
+                                sent_lens=sent_len,
+                                original_sentence=batch['words'].to(device),
+                                dep_of_unk=dep_of_unk)
+                        total_arc_errors += result['total_arc_errors']
+                        total_rel_errors += result['total_rel_errors']
+                        total_unks += result['total_unks']
+                        total_dep_of_unks += result['total_dep_of_unks']
+                        arc_unk_errors += result['arc_unk_errors']
+                        rel_unk_errors += result['rel_unk_errors']
+                        dep_of_unk_arc_errors += result['dep_of_unk_arc_errors']
+                        dep_of_unk_rel_errors += result['dep_of_unk_rel_errors']
+
                         rel_preds = rel_preds.view(-1)
                         rel_preds = [i2r[rel] for rel in rel_preds.numpy()]
-
                         s[:,6] = head_preds.view(-1)[1:].cpu().numpy()
                         s[:,7] = rel_preds[1:]
 
@@ -148,6 +183,14 @@ def eval_sdp(args, parser, data, experiment=None):
                 100 * UAS,
                 100 * LAS
             )
+            info += f'\nTotal unks: {total_unks}\n\
+                    Total dep-of-unks: {total_dep_of_unks}\n\
+                    Total arc errors: {total_arc_errors}\n\
+                    Total rel errors: {total_rel_errors}\n\
+                    Unk\'s head errors: {arc_unk_errors}\n \
+                    Unk\'s rel: {rel_unk_errors}\n\
+                    Dep of unk\'s head: {dep_of_unk_arc_errors}\n\
+                    Dep of unk\'s rel errors: {dep_of_unk_rel_errors}\n'
             exp_file.write(info)
             sdp_eval_data[name] = (UAS, LAS)
 

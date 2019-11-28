@@ -194,10 +194,13 @@ def main():
             padding_idx = x2i['word'][PAD_TOKEN],
             unk_idx = x2i['word'][UNK_TOKEN],
             train_unk=args.train_unk,
-            vanilla=(args.train_mode == [0]),
+            vanilla=(1 not in args.train_mode),
             semantic_dropout=args.semantic_dropout,
             layer_drop=args.layer_drop, #XXX,
             adversarial_stag=args.adv_stag,
+            unk_style=args.unkstyle,
+            zero_we=False,
+            predicting_pos=args.predicting_pos,
             device=device)
 
 
